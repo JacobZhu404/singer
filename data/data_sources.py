@@ -55,7 +55,18 @@ def _to_code6(code: str) -> str:
 def _safe_float(parts: list, idx: int, default: float = 0.0) -> float:
     try:
         v = parts[idx]
-        return float(v) if v.replace(".", "").replace("-", "").isdigit() else default
+        if not isinstance(v, str):
+            v = str(v)
+        # 先 strip，再检查是否为空
+        v = v.strip()
+        if not v:
+            return default
+        # 正确识别多小数点：只有一个小数点且全为数字才合法
+        # 例外：科学计数法 "1.5e-3" 也合法
+        if v.count(".") > 1:
+            return default
+        float(v)  # 触发异常则走 except
+        return float(v)
     except (IndexError, ValueError):
         return default
 

@@ -248,6 +248,56 @@ class MarketScanner:
     def get_realtime(self, code: str) -> dict:
         return get_stock_realtime(code)
 
+    def get_quotes(self, codes: List[str]) -> pd.DataFrame:
+        """
+        批量获取股票实时行情，返回 DataFrame。
+        兼容涨停基因策略的调用方式。
+        """
+        results = self.get_realtime_batch(codes)
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(list(results.values()))
+        return df
+
+    def get_realtime_quotes_sina(self, page: int = 1, num: int = 100) -> pd.DataFrame:
+        """
+        通过新浪接口获取全市场实时行情（单页）。
+        可分页调用获取全市场数据，用于快速行情扫描。
+        """
+        import requests
+        url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
+        headers = {
+            "Referer": "https://finance.sina.com.cn/",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        }
+        params = {
+            "page": page, "num": num,
+            "sort": "changepercent", "asc": 0,
+            "node": "hs_a", "_s_r_a": "page",
+        }
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+            resp.encoding = "utf-8"
+            import re, json
+            m = re.search(r'\[(.+)\]', resp.text.strip(), re.DOTALL)
+            if not m:
+                return pd.DataFrame()
+            rows = json.loads(f"[{m.group(1)}]")
+            if not rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(rows)
+            # 标准化列名
+            col_map = {}
+            for c in df.columns:
+                if c in ("symbol", "code", "代码"):
+                    col_map[c] = "ts_code"
+                elif c in ("name", "名称"):
+                    col_map[c] = "name"
+            return df.rename(columns=col_map) if col_map else df
+        except Exception as e:
+            logger.debug(f"get_realtime_quotes_sina page={page} failed: {e}")
+            return pd.DataFrame()
+
     def get_realtime_batch(self, codes: List[str]) -> Dict[str, dict]:
         """
         批量获取实时行情（利用腾讯批量接口，最多 90 只/次）

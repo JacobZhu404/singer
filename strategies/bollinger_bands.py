@@ -13,6 +13,7 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from ..utils.indicators import calc_bollinger, calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,7 @@ class BollingerBandsStrategy(BaseStrategy):
                 close = kline["close"]
                 vol = kline["vol"]
 
-                mid = close.rolling(20).mean()
-                std = close.rolling(20).std()
-                upper = mid + 2 * std
-                lower = mid - 2 * std
-
+                upper, mid, lower = calc_bollinger(close, 20, 2.0)
                 price = close.iloc[-1]
                 prev_price = close.iloc[-2]
                 lower_band = lower.iloc[-1]
@@ -79,9 +76,9 @@ class BollingerBandsStrategy(BaseStrategy):
                     signals.append("昨触布林下轨反弹")
                     score += 20
 
-                vol_ma5 = vol.rolling(5).mean()
-                vol_ratio = vol.iloc[-1] / vol_ma5.iloc[-1] if (not pd.isna(vol_ma5.iloc[-1]) and vol_ma5.iloc[-1] > 0) else 1.0
-                if vol_ratio < 0.6:
+                vol_ratio_series = calc_volume_ratio(vol, 5)
+                vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+                if vol_ratio_val < 0.6:
                     signals.append("缩量止跌")
                     score += 10
 
@@ -89,8 +86,6 @@ class BollingerBandsStrategy(BaseStrategy):
                     continue
 
                 quote = self._get_quote(scanner, code, float(price))
-                trade_rate = quote.get("换手率", 0.0)
-                vol_ratio_val = (trade_rate / 100 / 0.05) if trade_rate > 0 else float(vol_ratio)
 
                 candidates.append(StockSignal(
                     ts_code=code,
@@ -101,7 +96,7 @@ class BollingerBandsStrategy(BaseStrategy):
                     signals=signals,
                     latest_price=float(quote.get("最新价", price)),
                     pct_chg=float(quote.get("涨跌幅", 0.0)),
-                    volume_ratio=vol_ratio_val,
+                    volume_ratio=round(vol_ratio_val, 2),
                     risk_flags=_compute_risk_flags(kline),
                     trade_date=trade_date,
                     extra={

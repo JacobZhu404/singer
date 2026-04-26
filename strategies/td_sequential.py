@@ -82,7 +82,8 @@ class TDSequentialStrategy(BaseStrategy):
 
                 latest = close.iloc[i]
                 quote = self._get_quote(scanner, code, float(latest))
-                vol_ratio = round(float(vol.iloc[i]) / float(vol.iloc[i-5:i].mean()), 2) if i >= 5 else 1.0
+                avg_vol = float(vol.iloc[i-5:i].mean()) if i >= 5 else 0
+                vol_ratio = round(float(vol.iloc[i]) / avg_vol, 2) if avg_vol > 0 else 1.0
 
                 candidates.append(StockSignal(
                     ts_code=code,
