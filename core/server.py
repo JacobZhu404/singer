@@ -7,8 +7,8 @@ import json
 import logging
 import os
 import threading
-import time
 import queue
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -65,7 +65,7 @@ _sse_queues: List[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 
 # ── 筛选结果持久化 ──
-_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 _DATA_DIR = os.path.normpath(_DATA_DIR)
 os.makedirs(_DATA_DIR, exist_ok=True)
 _RESULT_FILE = os.path.join(_DATA_DIR, "last_screen_result.json")
@@ -425,18 +425,23 @@ def api_portfolio():
     """获取持仓账户概览"""
     try:
         pf = get_portfolio()
-        # 实时拉取持仓股票的最新价
+        # 并发拉取持仓股票的最新价（替代串行 sleep）
         price_map = {}
-        for pos in pf.positions:
-            code = pos["code"]
-            try:
-                kl = get_stock_history(code, days=5)
-                if not kl.empty:
-                    price_col = "close" if "close" in kl.columns else kl.columns[-1]
-                    price_map[code] = float(kl[price_col].iloc[-1])
-            except Exception:
-                price_map[code] = pos.get("current_price", 0)
-            time.sleep(0.1)
+        if pf.positions:
+            def _fetch_price(pos):
+                code = pos["code"]
+                try:
+                    kl = get_stock_history(code, days=5)
+                    if not kl.empty:
+                        price_col = "close" if "close" in kl.columns else kl.columns[-1]
+                        return code, float(kl[price_col].iloc[-1])
+                except Exception:
+                    pass
+                return code, pos.get("current_price", 0)
+
+            with ThreadPoolExecutor(max_workers=min(10, len(pf.positions))) as pool:
+                for code, price in pool.map(_fetch_price, pf.positions):
+                    price_map[code] = price
 
         account = pf.get_account(price_map)
         stats = pf.get_stats()
@@ -594,15 +599,23 @@ def serve_static(filename):
 @app.route("/", methods=["GET"])
 def index():
     """返回前端页面"""
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(_load_template())
 
 
-# ── 前端 HTML ──────────────────────────────────────────────────────────────
-_template_path = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "web", "templates", "index.html"
-)
-HTML_TEMPLATE = open(_template_path, encoding="utf-8").read()
+# ── 前端 HTML（惰性加载，启动时不读取文件）──
+def _load_template() -> str:
+    """惰性加载 HTML 模板，首次访问时读取"""
+    _path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "web", "templates", "index.html"
+    )
+    _path = os.path.normpath(_path)
+    try:
+        with open(_path, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error(f"HTML模板文件不存在: {_path}")
+        return "<html><body><h1>模板文件缺失，请检查部署</h1></body></html>"
 
 
 def _strategy_result_to_summary(name: str, sr) -> dict:

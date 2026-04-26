@@ -106,7 +106,7 @@ class ScreenEngine:
         market_scanner.load()
 
         code_col = "代码" if "代码" in stock_list.columns else "ts_code"
-        codes = stock_list[code_col].astype(str).tolist()[:500]
+        codes = stock_list[code_col].astype(str).tolist()[:2000]
 
         # 强制刷新：清空现有缓存（通过公共方法，线程安全）
         if force_refresh:

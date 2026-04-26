@@ -242,7 +242,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
                 signals.append("突破20日新高"); score += 25
             if vr > 1.5: signals.append(f"突破放量({vr:.1f}x)"); score += 20
             if c > mas["ma60"].iloc[i]: signals.append("股价站上MA60"); score += 15
-            if 50 <= rsi <= 72: signals.append(f"RSI强势区({rsi:.0f})"); score += 10
+            if 50 <= rsi <= 70: signals.append(f"RSI强势区({rsi:.0f})"); score += 10
             if dif.iloc[i] > 0: signals.append("MACD零轴以上"); score += 10
             if score < 40: return 0, []
 
@@ -274,7 +274,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if pd.isna(vm20) or vm20 <= 0: return 0, []
             vr = vol.iloc[i] / vm20
             price = close.iloc[i]
-            h30 = close.iloc[max(0, i-30):i].max()
+            h30 = high.iloc[max(0, i-30):i].max()  # 突破应基于最高价
             if vr >= 2.0: signals.append(f"量比{vr:.1f}x放量"); score += 35
             elif vr >= 1.5: signals.append(f"温和放量{vr:.1f}x"); score += 20
             if price > h30: signals.append("突破30日高点"); score += 30

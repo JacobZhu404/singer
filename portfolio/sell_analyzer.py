@@ -252,7 +252,7 @@ class SellAnalyzer:
             watch_signals.append("量价背离：上涨但缩量，上涨动力不足")
 
         # TD 九转卖出计数
-        td_count = td_sequential_count(close)
+        td_count = td_sequential_count(close, high, low)
         td_latest = td_count.iloc[-1]
         if td_latest <= -9:
             score += self.WEIGHTS["td_sell_count"]
