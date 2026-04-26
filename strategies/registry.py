@@ -11,6 +11,7 @@ from .rsi_oversold import RSIOversoldStrategy
 from .bollinger_bands import BollingerBandsStrategy
 from .volume_breakout import VolumeBreakoutStrategy
 from .chanlun import ChanlunStrategy
+from .chanlun_strict import ChanlunStrictStrategy
 from .golden_cross import GoldenCrossStrategy
 
 # 策略注册表
@@ -73,10 +74,17 @@ STRATEGY_REGISTRY = {
     },
     "chanlun": {
         "cls": ChanlunStrategy,
-        "name": "缠论中枢",
-        "description": "缠中说禅：底分型 + MACD背驰 + 中枢支撑 + 三类买点",
-        "tags": ["缠论", "中枢", "背驰"],
+        "name": "缠论中枢(简化)",
+        "description": "简化版：底分型 + MACD背驰 + 中枢支撑 + 三类买点",
+        "tags": ["缠论", "简化"],
         "icon": "🔱",
+    },
+    "chanlun_strict": {
+        "cls": ChanlunStrictStrategy,
+        "name": "缠论严格版",
+        "description": "严格版：包含处理→分型(5K)→笔→中枢→背驰→三类买点",
+        "tags": ["缠论", "严格", "中枢", "背驰"],
+        "icon": "⚡",
     },
     "golden_cross": {
         "cls": GoldenCrossStrategy,
