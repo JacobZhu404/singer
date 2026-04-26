@@ -91,7 +91,7 @@ def is_red_candle(open_: pd.Series, close: pd.Series) -> pd.Series:
     return close > open_
 
 
-def td_sequential_count(close: pd.Series, high: pd.Series = None) -> pd.Series:
+def td_sequential_count(close: pd.Series, high: pd.Series = None, low: pd.Series = None) -> pd.Series:
     """
     神奇九转 TD Sequential 计数（严格版）
 
@@ -107,7 +107,8 @@ def td_sequential_count(close: pd.Series, high: pd.Series = None) -> pd.Series:
     Args:
         close: 收盘价序列
         high: 最高价序列（用于卖出序列完美Bar校验）
-              若不传入，完美Bar校验跳过（兼容旧调用）
+        low:  最低价序列（用于买入序列完美Bar校验）
+              若不传入 low，完美Bar校验跳过（兼容旧调用）
     Returns:
         Series: 正数=买入计数, 负数=卖出计数, 0=无活跃序列
     """
@@ -148,19 +149,18 @@ def td_sequential_count(close: pd.Series, high: pd.Series = None) -> pd.Series:
             direction.iloc[i] = 0
 
     # ── 完美Bar校验：买入9要求收盘 < 前1根最低，卖出9要求收盘 > 前1根最高 ──
-    if high is not None and len(close) > 4:
+    if len(close) > 4:
         for i in range(4, len(close)):
             if count.iloc[i] == 9:
                 bar9_close = close.iloc[i]
-                bar8_low = close.iloc[i - 1]   # 降级：用前一根收盘代替最低（无 low 参数时）
+                # 优先用 low 参数，严格校验；无 low 时降级为前一根收盘
+                bar8_low = low.iloc[i - 1] if low is not None else close.iloc[i - 1]
                 if bar9_close >= bar8_low:
-                    # 不满足完美Bar，降为 8（不触发，等待下一根）
                     count.iloc[i] = 8
                     direction.iloc[i] = 1
             elif count.iloc[i] == -9:
                 bar9_close = close.iloc[i]
-                bar8_high = high.iloc[i - 1]
-                # 卖出完美Bar：第9根收盘须高于第8根最高
+                bar8_high = high.iloc[i - 1] if high is not None else close.iloc[i - 1]
                 if bar9_close <= bar8_high:
                     count.iloc[i] = -8
                     direction.iloc[i] = -1

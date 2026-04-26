@@ -15,7 +15,7 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_ma, calc_rsi, calc_macd
+from ..utils.indicators import calc_ma, calc_rsi, calc_macd, calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,6 @@ class GoldenCrossStrategy(BaseStrategy):
                     continue
 
                 quote = self._get_quote(scanner, code, c)
-                from ..utils.indicators import calc_volume_ratio
                 vr_series = calc_volume_ratio(vol, 5)
                 vr = float(vr_series.iloc[-1]) if not np.isnan(vr_series.iloc[-1]) else 1.0
 

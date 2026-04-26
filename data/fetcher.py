@@ -346,8 +346,9 @@ class MarketScanner:
             ma = ind.calc_ma(close, [5, 10, 20, 60])
             bb = ind.calc_bollinger(close)
             vr = ind.calc_volume_ratio(vol, 5)
-            td = ind.td_sequential_count(close)
             high = df["high"] if "high" in df.columns else close
+            low = df["low"] if "low" in df.columns else close
+            td = ind.td_sequential_count(close, high=high, low=low)
 
             result = {
                 "kline": df,
