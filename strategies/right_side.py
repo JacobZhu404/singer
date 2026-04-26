@@ -38,7 +38,7 @@ class RightSideTradingStrategy(BaseStrategy):
         candidates = []
         scanned = 0
 
-        for code in self._get_codes(stock_list)[:500]:
+        for code in self._get_codes(stock_list):
             try:
                 df = scanner.get_history(code, days=80)
                 if df is None or len(df) < 30:

@@ -178,7 +178,6 @@ def _detect_divergence_macd(kline: pd.DataFrame, lookback: int = 20) -> Tuple[Op
     # c段价格创了新低（低于a段低点），但 DIF 未创新低
     price_broke = recent_low_val < prev_low_val * 0.995   # 价格新低（容差5‰）
     # c段对应 DIF
-    c_dif_vals = win_dif.iloc[recent_low_pos - seg_len + (len(win_close) - start) - seg_len:]
     c_dif_vals = win_dif.iloc[
         max(0, recent_low_pos - seg_len):recent_low_pos
     ]
@@ -562,8 +561,8 @@ class ChanlunStrategy(BaseStrategy):
                     extra=extra,
                 ))
 
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"[缠论策略] {code} 计算失败: {e}")
 
         candidates.sort(key=lambda x: x.score, reverse=True)
         top = candidates[:self.top_n]

@@ -67,6 +67,8 @@ class StrongStockStrategy(BaseStrategy):
                 n = min(10, i + 1)
                 up_vol = down_vol = 0.0
                 for j in range(max(0, i - n + 1), i + 1):
+                    if pd.isna(red.iloc[j]):
+                        continue
                     v = float(vol.iloc[j])
                     (up_vol, down_vol)[not red.iloc[j]] += v
                 if down_vol > 0 and up_vol / (down_vol + 1e-8) > 1.5:

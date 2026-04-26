@@ -42,9 +42,9 @@ class LimitUpGeneStrategy(BaseStrategy):
         candidates = []
         scanned = 0
 
-        if limit_df.empty:
-            logger.debug("[涨停基因] 当日无涨停数据，跳过")
-        else:
+        codes_to_scan = []
+
+        if not limit_df.empty:
             # 标准化列名：支持 symbol/code/代码/ts_code 多种命名
             code_col = next(
                 (c for c in ["symbol", "code", "代码", "ts_code"] if c in limit_df.columns),
