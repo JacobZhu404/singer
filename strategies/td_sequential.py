@@ -44,8 +44,9 @@ class TDSequentialStrategy(BaseStrategy):
                 high = df["high"]
                 vol = df["vol"]
 
-                # 传入 high 以启用卖出九转的完美Bar校验
-                td_count = td_sequential_count(close, high=high)
+                # 传入 high/low 以启用严格完美Bar校验
+                low = df["low"]
+                td_count = td_sequential_count(close, high=high, low=low)
                 dif, dea, _ = calc_macd(close)
                 mas = calc_ma(close, [5, 20])
                 i = len(df) - 1
