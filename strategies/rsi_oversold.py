@@ -78,6 +78,7 @@ class RSIOversoldStrategy(BaseStrategy):
                 if score < 40:
                     continue
 
+                vol = kline["vol"]
                 quote = self._get_quote(scanner, code, float(close.iloc[-1]))
                 # 量比基于K线成交量计算（5日均量为基准），不再用换手率换算
                 vol_ma5 = vol.rolling(5).mean().iloc[-1]

@@ -11,6 +11,7 @@ from .rsi_oversold import RSIOversoldStrategy
 from .bollinger_bands import BollingerBandsStrategy
 from .volume_breakout import VolumeBreakoutStrategy
 from .chanlun import ChanlunStrategy
+from .golden_cross import GoldenCrossStrategy
 
 # 策略注册表
 STRATEGY_REGISTRY = {
@@ -76,6 +77,13 @@ STRATEGY_REGISTRY = {
         "description": "缠中说禅：底分型 + MACD背驰 + 中枢支撑 + 三类买点",
         "tags": ["缠论", "中枢", "背驰"],
         "icon": "🔱",
+    },
+    "golden_cross": {
+        "cls": GoldenCrossStrategy,
+        "name": "均线金叉",
+        "description": "MA5上穿MA10金叉 + 多头排列 + RSI确认，适合趋势启动初期",
+        "tags": ["金叉", "趋势", "均线"],
+        "icon": "✨",
     },
 }
 

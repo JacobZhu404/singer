@@ -90,7 +90,7 @@ class RightSideTradingStrategy(BaseStrategy):
                     score += 15
 
                 r = float(rsi.iloc[i]) if not pd.isna(rsi.iloc[i]) else 50
-                if 50 <= r <= 72:
+                if 50 <= r <= 70:
                     signals.append(f"RSI强势区间({r:.0f})")
                     score += 10
 
