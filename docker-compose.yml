@@ -1,0 +1,41 @@
+# ============================================================
+# 歌者 (Gezhe) - docker-compose 本地 / 云端通用配置
+# ============================================================
+#
+# 本地开发:
+#   docker compose up
+#
+# 阿里云 ECS (单节点):
+#   docker compose -f docker-compose.yml -f docker-compose.alibaba.yml up -d
+#
+# 腾讯云 CVM (单节点):
+#   docker compose -f docker-compose.yml -f docker-compose.tencent.yml up -d
+#
+
+services:
+  gezhe:
+    build:
+      context: ..
+      dockerfile: stock_screener/Dockerfile
+    container_name: gezhe
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5188}:5188"
+    environment:
+      - PORT=${PORT:-5188}
+      - TZ=Asia/Shanghai
+    volumes:
+      # 持久化持仓数据
+      - gezhe-data:/app/data
+      # 持久化日志
+      - gezhe-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5188/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  gezhe-data:
+  gezhe-logs:
