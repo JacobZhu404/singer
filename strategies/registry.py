@@ -15,6 +15,7 @@ from .chanlun_strict import ChanlunStrictStrategy
 from .golden_cross import GoldenCrossStrategy
 
 # 策略注册表
+# 排序说明：默认选中策略(8个)在前，未选中策略(3个)在后
 STRATEGY_REGISTRY = {
     "macd_bull": {
         "cls": MACDBullStrategy,
@@ -44,13 +45,6 @@ STRATEGY_REGISTRY = {
         "tags": ["突破", "中线"],
         "icon": "⚡",
     },
-    "limit_up_gene": {
-        "cls": LimitUpGeneStrategy,
-        "name": "涨停基因",
-        "description": "近期有涨停记录，涨停后未大幅回落，题材活跃",
-        "tags": ["涨停", "短线"],
-        "icon": "🔥",
-    },
     "rsi_oversold": {
         "cls": RSIOversoldStrategy,
         "name": "RSI 超卖",
@@ -72,13 +66,6 @@ STRATEGY_REGISTRY = {
         "tags": ["突破", "放量", "短线"],
         "icon": "🚀",
     },
-    "chanlun": {
-        "cls": ChanlunStrategy,
-        "name": "缠论(启发式近似)",
-        "description": "⚠️近似版：无笔/中枢非标准，推荐用严格版",
-        "tags": ["缠论", "近似", "备选"],
-        "icon": "⚠️",
-    },
     "chanlun_strict": {
         "cls": ChanlunStrictStrategy,
         "name": "缠论严格版",
@@ -86,12 +73,27 @@ STRATEGY_REGISTRY = {
         "tags": ["缠论", "严格", "中枢", "背驰"],
         "icon": "🔱",
     },
+    # ── 以下为未选中策略，按需手动启用 ──
+    "chanlun": {
+        "cls": ChanlunStrategy,
+        "name": "缠论(启发式近似)",
+        "description": "⚠️近似版：无笔/中枢非标准，推荐用严格版",
+        "tags": ["缠论", "近似", "备选"],
+        "icon": "⚠️",
+    },
     "golden_cross": {
         "cls": GoldenCrossStrategy,
         "name": "均线金叉(宽松)",
         "description": "macd_bull宽松版：3线多头+RSI，比macd_bull更早入场",
         "tags": ["金叉", "趋势", "均线", "宽松"],
         "icon": "✨",
+    },
+    "limit_up_gene": {
+        "cls": LimitUpGeneStrategy,
+        "name": "涨停基因",
+        "description": "近期有涨停记录，涨停后未大幅回落，题材活跃",
+        "tags": ["涨停", "短线"],
+        "icon": "🔥",
     },
 }
 
