@@ -100,7 +100,7 @@ class RightSideTradingStrategy(BaseStrategy):
 
                 if i >= 5:
                     gain_5d = (c - float(close.iloc[i-5])) / float(close.iloc[i-5]) * 100
-                    if gain_5d < 10:
+                    if 3 <= gain_5d <= 25:
                         signals.append("启动未过热")
                         score += 10
 

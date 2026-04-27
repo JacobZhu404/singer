@@ -220,7 +220,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if score < 40: return 0, []
 
         elif strategy_name == "td_sequential":
-            td = td_sequential_count(close)
+            td = td_sequential_count(close, high=high, low=low)
             dif, dea, _ = calc_macd(close)
             cnt = int(td.iloc[i])
             if cnt == 9:

@@ -147,66 +147,63 @@ def _merge_inclusive_strict(raw_bars: List[KBar]) -> List[KBar]:
     """
     严格包含处理：方向优先处理
     缠论规则：
-    - 先判断第一根K线方向（上升K线/下降K线）
-    - 方向确定后，统一处理后续所有包含关系
-    - 向上合并：取高高（较高high + 较高low）
-    - 向下合并：取低低（较低high + 较低low）
+    - 判断当前K线方向（上升/下降）
+    - 包含关系：一根K线的高点和低点完全包含另一根
+    - 向上合并（方向=up）：取高高（较高high + 较高low）
+    - 向下合并（方向=down）：取低低（较低high + 较低low）
+    - 方向随新K线动态更新：新K线 low > prev.low → up；< prev.low → down
     """
     if len(raw_bars) < 2:
         return raw_bars[:]
 
-    result: List[KBar] = []
+    result: List[KBar] = [raw_bars[0]]
 
-    # ── 第一步：确定初始方向 ──
-    # 取前3根K线判断初始方向（避免第一根就包含的情况）
-    init_bars = raw_bars[:min(3, len(raw_bars))]
-    up_count = sum(1 for b in init_bars[1:]
-                   if b.low >= init_bars[0].low)
-    direction = "up" if up_count >= len(init_bars) - 1 else "down"
+    # ── 初始方向 ──
+    # 由前两根非包含K线决定
+    direction = "up" if raw_bars[1].low >= raw_bars[0].low else "down"
 
-    # ── 第二步：逐根处理 ──
-    i = 0
-    n = len(raw_bars)
-
-    while i < n:
+    # ── 逐根处理 ──
+    for i in range(1, len(raw_bars)):
         b = raw_bars[i]
-
-        if not result:
-            result.append(b)
-            i += 1
-            continue
-
         prev = result[-1]
 
-        # 判断包含关系：prev 包含 b
-        # 上升K线（prev是上升K）：prev.low >= b.low 且 prev.high <= b.high
-        # 下降K线（prev是下降K）：prev.high <= b.high 且 prev.low >= b.low
-        if prev.low >= b.low and prev.high <= b.high:
-            # prev 包含 b，合并
-            new_bar = KBar(
-                index=b.index,
-                open=prev.open,
-                high=max(prev.high, b.high),
-                low=prev.low,           # 向上合并：low取较高值
-                close=max(prev.high, b.high),
-            )
+        # 判断包含关系：
+        # 包含 = 一根K线的高低点范围完全覆盖另一根
+        # 即：(prev.high >= b.high and prev.low <= b.low) → prev包含b
+        #  或 (b.high >= prev.high and b.low <= prev.low) → b包含prev
+        prev_contains_b = (prev.high >= b.high and prev.low <= b.low)
+        b_contains_prev = (b.high >= prev.high and b.low <= prev.low)
+
+        if prev_contains_b or b_contains_prev:
+            # 有包含关系，按当前方向合并
+            if direction == "up":
+                # 向上合并：取高高
+                new_bar = KBar(
+                    index=b.index,
+                    open=prev.open,
+                    high=max(prev.high, b.high),
+                    low=max(prev.low, b.low),   # 取较高的low
+                    close=max(prev.high, b.high),
+                )
+            else:
+                # 向下合并：取低低
+                new_bar = KBar(
+                    index=b.index,
+                    open=prev.open,
+                    high=min(prev.high, b.high), # 取较低的high
+                    low=min(prev.low, b.low),
+                    close=min(prev.low, b.low),
+                )
             result[-1] = new_bar
-            i += 1
-        elif prev.high <= b.high and prev.low >= b.low:
-            # b 包含 prev，替换
-            new_bar = KBar(
-                index=b.index,
-                open=prev.open,
-                high=b.high,
-                low=max(prev.low, b.low),  # 向下合并：low取较低值
-                close=b.low,
-            )
-            result[-1] = new_bar
-            i += 1
         else:
-            # 无包含，保留，方向切换
+            # 无包含关系，保留新K线
             result.append(b)
-            i += 1
+            # 动态更新方向：新K线的 low 与前一K线的 low 比较
+            if b.low > prev.low:
+                direction = "up"
+            elif b.low < prev.low:
+                direction = "down"
+            # 如果 low 相等（极少见），方向不变
 
     return result
 
@@ -426,12 +423,19 @@ def _detect_divergence_strokes(
     - 找到最近两段同向笔（a段 + c段）
     - 比较两段的价格幅度和DIF幅度
     - 价格创新低但DIF未创新低 → 底背驰
+
+    重要：DIF 使用全序列K线计算MACD，再按笔边界索引截取，
+    避免短序列EMA热启动偏差。
     """
     if len(strokes) < 4:
         return []
 
     divergences: List[Divergence] = []
     n = len(strokes)
+
+    # ── 全序列MACD（一次性计算，避免热启动偏差）──
+    all_closes = np.array([b.close for b in bars], dtype=float)
+    all_dif, _, _ = _calc_macd(all_closes)
 
     # 找最近的下落笔（c段）和它之前的第一段下落笔（a段）
     for i in range(n - 1, 2, -1):
@@ -453,19 +457,24 @@ def _detect_divergence_strokes(
         # 价格：c段低点创新低
         price_broke = c_stroke.end_price < a_stroke.end_price * 0.995
 
-        # 计算两段的DIF幅度
-        # 提取笔内收盘价序列
-        c_closes = np.array([b.close for b in c_stroke.bars])
-        a_closes = np.array([b.close for b in a_stroke.bars])
+        # 从全序列DIF中截取a段和c段范围内的DIF值
+        a_start_idx = a_stroke.start_fx.bar_index
+        a_end_idx = a_stroke.end_fx.bar_index
+        c_start_idx = c_stroke.start_fx.bar_index
+        c_end_idx = c_stroke.end_fx.bar_index
 
-        if len(c_closes) < 3 or len(a_closes) < 3:
+        # 边界检查
+        if a_start_idx >= len(all_dif) or c_start_idx >= len(all_dif):
             continue
 
-        c_dif, _, _ = _calc_macd(c_closes)
-        a_dif, _, _ = _calc_macd(a_closes)
+        a_dif_vals = all_dif[a_start_idx:min(a_end_idx + 1, len(all_dif))]
+        c_dif_vals = all_dif[c_start_idx:min(c_end_idx + 1, len(all_dif))]
 
-        c_dif_min = float(np.min(c_dif))
-        a_dif_min = float(np.min(a_dif))
+        if len(a_dif_vals) < 2 or len(c_dif_vals) < 2:
+            continue
+
+        a_dif_min = float(np.min(a_dif_vals))
+        c_dif_min = float(np.min(c_dif_vals))
 
         # DIF未创新低 → 底背驰
         dif_weak = c_dif_min > a_dif_min * 0.90  # 容差10%

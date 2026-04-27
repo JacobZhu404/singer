@@ -191,7 +191,7 @@ def calc_risk_flags(
     upper, mid, lower = calc_bollinger(close)
     ma_dict = calc_ma(close)
     vol_ratio = calc_volume_ratio(vol)
-    td_count = td_sequential_count(close)
+    td_count = td_sequential_count(close, high=high, low=low)
 
     # 最新值
     latest = float(close.iloc[-1])

@@ -86,7 +86,7 @@ def check_signal(code, name, df_hist, strat):
                 return None
 
         elif strat == 'td_sequential':
-            td = td_sequential_count(close)
+            td = td_sequential_count(close, high=high, low=low)
             cnt = int(td.iloc[i])
             if cnt == 9:
                 signals.append('九转完成'); score += 50
