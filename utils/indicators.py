@@ -126,21 +126,23 @@ def td_sequential_count(close: pd.Series, high: pd.Series = None, low: pd.Series
 
         if d < 0:          # 买入条件：今 < 4天前
             if prev_dir <= 0:
-                # 新买入序列或延续：计数+1，到9后归零重计
-                prev_count = max(0, count.iloc[i - 1])
-                count.iloc[i] = prev_count + 1 if prev_count < 9 else 0
+                # 新买入序列启动（prev_dir<=0 时，count 强制重置到 0 后+1=1）
+                # 注意：prev_dir==1 说明刚中断卖出序列，需先清零再启动买入
+                count.iloc[i] = 1
                 direction.iloc[i] = 1
             else:
-                # 当前已是买入序列，延续计数
+                # 当前已是买入序列，延续计数，到9后归零重计
                 count.iloc[i] = min(count.iloc[i - 1] + 1, 9)
                 direction.iloc[i] = 1
 
         elif d > 0:         # 卖出条件：今 > 4天前
             if prev_dir >= 0:
-                prev_count = min(0, count.iloc[i - 1])
-                count.iloc[i] = prev_count - 1 if prev_count > -9 else 0
+                # 新卖出序列启动（prev_dir>=0 时，count 强制重置到 0 后-1=-1）
+                # 注意：prev_dir==1 说明刚中断买入序列，需先清零再启动卖出
+                count.iloc[i] = -1
                 direction.iloc[i] = -1
             else:
+                # 当前已是卖出序列，延续计数，到-9后归零重计
                 count.iloc[i] = max(count.iloc[i - 1] - 1, -9)
                 direction.iloc[i] = -1
 

@@ -305,7 +305,7 @@ def _build_strokes(fractals: List[Fractal], bars: List[KBar], min_bi_len: int = 
         else:
             amplitude = (fx1.price - fx2.price) / fx1.price * 100
 
-        low = min(b.high for b in stroke_bars)
+        low = min(b.low for b in stroke_bars)
         high = max(b.high for b in stroke_bars)
 
         stroke = Stroke(
