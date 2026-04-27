@@ -218,7 +218,18 @@ def api_screen():
 def api_screen_progress():
     """获取当前筛选进度"""
     with _progress_lock:
-        return jsonify({"code": 0, "data": dict(_screen_progress)})
+        progress = dict(_screen_progress)
+    # 实时同步引擎的策略子进度（更准确，避免过期）
+    try:
+        from ..core.engine import get_engine as _get_eng
+        engine = _get_eng()
+        if engine:
+            eng_progress = engine.get_progress()
+            if eng_progress.get("strategies"):
+                progress["strategies"] = dict(eng_progress["strategies"])
+    except Exception:
+        pass
+    return jsonify({"code": 0, "data": progress})
 
 
 @app.route("/api/screen/stop", methods=["POST"])
