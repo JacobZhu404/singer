@@ -58,9 +58,10 @@ class TDSequentialStrategy(BaseStrategy):
                 if current_count == 9:
                     signals, score = ["买入九转完成(count=9)"], 50
                 # 标准TD Sequential仅在 Setup 完成（count=9）时产生信号
-                # count=7/8 为"九转进行中"，属于提前押注，胜率低于标注的60%，降为关注标签
+                # count=7/8 为"九转进行中"，属于提前押注，胜率低于标注的60%
+                # 为避免假信号，仅在 count==9 时进入候选，7/8 仅作观察跳过
                 elif current_count in (7, 8):
-                    signals, score = [f"九转进行中(count={current_count})"], 10
+                    continue
                 else:
                     continue
 
