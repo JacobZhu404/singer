@@ -1,12 +1,17 @@
 """
-均线金叉策略
+均线金叉策略（宽松模式）
+注意：本策略是 macd_bull 的宽松子集，门槛更低，选股范围更大。
+      macd_bull 要求 MA5>MA10>MA20>MA60 四线多头 + MACD柱放大 + DIF>DEA金叉，
+      本策略仅要求 MA5>MA10>MA20 三线 + RSI 50~65 + DIF>0。
+      满足 macd_bull 的股票几乎必然满足 golden_cross，反之不成立。
+
 原理：MA5 从下穿越 MA10，形成黄金交叉，视为短期趋势转多信号。
 条件：
   1. MA5 上穿 MA10（金叉当天）
-  2. MA5 > MA10 > MA20（多头排列）
+  2. MA5 > MA10 > MA20（多头排列，不含MA60）
   3. 股价站上 MA5（顺势确认）
   4. RSI 在 50~65（趋势确认但未超买）
-适用：趋势启动初期、短线波段
+适用：趋势启动初期、短线波段（比 macd_bull 更早入场，但假信号更多）
 """
 
 import pandas as pd
@@ -22,9 +27,9 @@ logger = logging.getLogger(__name__)
 
 
 class GoldenCrossStrategy(BaseStrategy):
-    """均线金叉策略"""
+    """均线金叉策略（macd_bull宽松模式：少MA60/MACD柱放大/RSI硬过滤）"""
     name = "golden_cross"
-    description = "MA5上穿MA10金叉 + 多头排列 + RSI确认，适合趋势启动初期。"
+    description = "均线金叉(macd_bull宽松版) - 仅3线多头+RSI确认，适合趋势初期"
     base_win_rate = 0.55
 
     def __init__(self, top_n: int = 10):

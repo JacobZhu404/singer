@@ -1,11 +1,16 @@
 """
-策略2: 强势股选股
-条件（综合评分，需满足大部分）：
+策略2: 强势股选股（优化版）
+条件（综合评分，满足即可）：
   1. 放量上涨（量比 > 1.5）
   2. 红肥绿瘦：涨时成交量大、跌时成交量小（近10日）
-  3. 五连小阳：连续5日小阳线
-  4. 跳空缺口：今日最低 > 昨日最高
-  5. MACD 零轴以上：DIF > 0
+  3. 五连小阳 / 跳空缺口（互斥，二选一加分）
+     - 五连小阳：连续5日小阳线
+     - 跳空缺口：今日最低 > 昨日最高
+  4. MACD 零轴以上：DIF > 0
+
+v2变更：
+- "五连小阳"与"跳空缺口"改为 elif 互斥（两者同时出现概率极低）
+- 入选门槛从40降至30（满足放量+红肥绿瘦+MACD即40分刚好及格）
 """
 
 import pandas as pd
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class StrongStockStrategy(BaseStrategy):
     name = "strong_stock"
-    description = "强势股 - 放量红肥绿瘦+五连小阳+跳空缺口+MACD零轴以上"
+    description = "强势股 - 放量红肥绿瘦+小阳/缺口(互斥)+MACD零轴(v2优化)"
     base_win_rate = 0.62
 
     def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
@@ -81,8 +86,8 @@ class StrongStockStrategy(BaseStrategy):
                        for k in range(5)):
                     signals.append("五连小阳")
                     score += 20
-
-                if gap_up.iloc[i]:
+                elif gap_up.iloc[i]:
+                    # 与五连小阳互斥：跳空高开会破坏小阳线节奏
                     signals.append("跳空缺口(今低>昨高)")
                     score += 20
 
@@ -90,7 +95,7 @@ class StrongStockStrategy(BaseStrategy):
                     signals.append("MACD零轴以上")
                     score += 20
 
-                if score < 40:
+                if score < 30:
                     continue
 
                 latest = close.iloc[i]
