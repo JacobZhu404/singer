@@ -72,20 +72,6 @@
       "prev_close": 119.71
     },
     {
-      "code": "300489",
-      "name": "光智科技",
-      "shares": 100,
-      "avg_cost": 80.26,
-      "cost": 8026.0,
-      "current_price": 101.9,
-      "current_value": 10190.0,
-      "position_pnl": 2164.0,
-      "position_pnl_pct": 26.96,
-      "buy_date": "2026-04-23",
-      "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout",
-      "prev_close": 80.26
-    },
-    {
       "code": "002081",
       "name": "金 螳 螂",
       "shares": 100,
@@ -100,41 +86,13 @@
       "prev_close": 4.49
     },
     {
-      "code": "600736",
-      "name": "苏州高新",
-      "shares": 100,
-      "avg_cost": 8.37,
-      "cost": 837.0,
-      "current_price": 8.5,
-      "current_value": 850.0,
-      "position_pnl": 13.0,
-      "position_pnl_pct": 1.55,
-      "buy_date": "2026-04-23",
-      "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout",
-      "prev_close": 8.37
-    },
-    {
-      "code": "300890",
-      "name": "翔丰华",
-      "shares": 100,
-      "avg_cost": 42.58,
-      "cost": 4258.0,
-      "current_price": 42.7,
-      "current_value": 4270.0,
-      "position_pnl": 12.0,
-      "position_pnl_pct": 0.28,
-      "buy_date": "2026-04-23",
-      "buy_strategy": "strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,macd_bull",
-      "prev_close": 42.58
-    },
-    {
       "code": "600499",
       "name": "科达制造",
       "shares": 200,
       "avg_cost": 19.81,
       "cost": 3962.0,
       "current_price": 19.81,
-      "current_value": 1981.0,
+      "current_value": 3962.0,
       "position_pnl": -0.0,
       "position_pnl_pct": -0.0,
       "buy_date": "2026-04-25",
@@ -168,6 +126,48 @@
       "buy_date": "2026-04-25",
       "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun",
       "prev_close": 6.36
+    },
+    {
+      "code": "301239",
+      "name": "普瑞眼科",
+      "shares": 100,
+      "avg_cost": 41.99,
+      "cost": 4199.0,
+      "current_price": 42.84,
+      "current_value": 4284.0,
+      "position_pnl": 85.0,
+      "position_pnl_pct": 2.02,
+      "buy_date": "2026-04-27",
+      "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun",
+      "prev_close": 41.99
+    },
+    {
+      "code": "603520",
+      "name": "司太立",
+      "shares": 100,
+      "avg_cost": 11.89,
+      "cost": 1189.0,
+      "current_price": 11.89,
+      "current_value": 1189.0,
+      "position_pnl": 0.0,
+      "position_pnl_pct": 0.0,
+      "buy_date": "2026-04-27",
+      "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun",
+      "prev_close": 11.89
+    },
+    {
+      "code": "603345",
+      "name": "安井食品",
+      "shares": 100,
+      "avg_cost": 98.8,
+      "cost": 9880.0,
+      "current_price": 98.8,
+      "current_value": 9880.0,
+      "position_pnl": 0.0,
+      "position_pnl_pct": 0.0,
+      "buy_date": "2026-04-27",
+      "buy_strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun",
+      "prev_close": 98.8
     }
   ],
   "trades": [
@@ -444,7 +444,85 @@
       "amount": 1981.0,
       "strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun",
       "note": "追加"
+    },
+    {
+      "id": 23,
+      "timestamp": "2026-04-27T09:58:42.489879",
+      "trade_date": "2026-04-27",
+      "action": "sell",
+      "code": "300890",
+      "name": "翔丰华",
+      "price": 42.7,
+      "shares": 100,
+      "amount": 4270.0,
+      "avg_cost": 42.58,
+      "realized_pnl": 12.0,
+      "hold_days": 4
+    },
+    {
+      "id": 24,
+      "timestamp": "2026-04-27T09:58:48.494727",
+      "trade_date": "2026-04-27",
+      "action": "sell",
+      "code": "600736",
+      "name": "苏州高新",
+      "price": 8.5,
+      "shares": 100,
+      "amount": 850.0,
+      "avg_cost": 8.37,
+      "realized_pnl": 13.0,
+      "hold_days": 4
+    },
+    {
+      "id": 25,
+      "timestamp": "2026-04-27T09:58:56.043408",
+      "trade_date": "2026-04-27",
+      "action": "sell",
+      "code": "300489",
+      "name": "光智科技",
+      "price": 101.9,
+      "shares": 100,
+      "amount": 10190.0,
+      "avg_cost": 80.26,
+      "realized_pnl": 2164.0,
+      "hold_days": 4
+    },
+    {
+      "id": 26,
+      "timestamp": "2026-04-27T09:59:09.276192",
+      "trade_date": "2026-04-27",
+      "action": "buy",
+      "code": "301239",
+      "name": "普瑞眼科",
+      "price": 41.99,
+      "shares": 100,
+      "amount": 4199.0,
+      "strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun"
+    },
+    {
+      "id": 27,
+      "timestamp": "2026-04-27T09:59:37.620398",
+      "trade_date": "2026-04-27",
+      "action": "buy",
+      "code": "603520",
+      "name": "司太立",
+      "price": 11.89,
+      "shares": 100,
+      "amount": 1189.0,
+      "strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun"
+    },
+    {
+      "id": 28,
+      "timestamp": "2026-04-27T12:08:54.669964",
+      "trade_date": "2026-04-27",
+      "action": "buy",
+      "code": "603345",
+      "name": "安井食品",
+      "price": 98.8,
+      "shares": 100,
+      "amount": 9880.0,
+      "strategy": "macd_bull,strong_stock,td_sequential,right_side,rsi_oversold,bollinger_bands,volume_breakout,chanlun"
     }
   ],
-  "updated_at": "2026-04-25T00:15:36.534839"
+  "updated_at": "2026-04-27T12:08:54.670557"
 }
