@@ -75,7 +75,10 @@ class StrongStockStrategy(BaseStrategy):
                     if pd.isna(red.iloc[j]):
                         continue
                     v = float(vol.iloc[j])
-                    (up_vol, down_vol)[not red.iloc[j]] += v
+                    if red.iloc[j]:
+                        up_vol += v
+                    else:
+                        down_vol += v
                 if down_vol > 0 and up_vol / (down_vol + 1e-8) > 1.5:
                     signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
                     score += 20
