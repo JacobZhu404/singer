@@ -239,7 +239,7 @@ def api_data_status():
     from ..data.fetcher import market_scanner
     status = market_scanner.get_cache_status()
     # 使用本地持久化缓存数量（重启后仍存在）
-    cached = status.get("local_cached", 0)
+    cached = status.get("cached_count", 0)
     # 判断数据是否足够（大约300只以上基本够用）
     data_ready = cached >= 50
     hint = f"已缓存 {cached} 只" if cached > 0 else "尚未下载数据"
