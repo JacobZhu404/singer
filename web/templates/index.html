@@ -1062,18 +1062,19 @@ function updateDataStatusUI(data, isRunning) {
   if (!bar || !txt) return;
   const count = data.cached_count || 0;
   const total = data.total_stocks || 0;
+  const totalStr = total > 0 ? total : '-';
   if (isRunning) {
     bar.classList.remove('ready');
     txt.innerHTML = `<span class="cached-count">⏳</span> 执行中...`;
+  } else if (count === 0) {
+    bar.classList.remove('ready');
+    txt.innerHTML = '尚未下载数据，请先更新';
   } else if (data.data_ready) {
     bar.classList.add('ready');
-    txt.innerHTML = `<span class="cached-count">${count}</span> / ${total || '-'}` +
-      (count >= 300 ? ' ✅ 数据就绪' : count >= 50 ? ' ⚠️ 数据较少，建议更新' : ' ❌ 数据不足');
+    txt.innerHTML = `<span class="cached-count">${count}</span> / ${totalStr} ✅ 数据就绪`;
   } else {
     bar.classList.remove('ready');
-    txt.innerHTML = count > 0
-      ? `<span class="cached-count">${count}</span> / ${total || '-'} — 数据较少，建议先更新`
-      : '尚未下载数据，建议先更新';
+    txt.innerHTML = `<span class="cached-count">${count}</span> / ${totalStr} ⚠️ 数据较少，建议先更新`;
   }
   // 根据数据就绪状态启用/禁用快速筛选
   const fastBtn = document.getElementById('fastBtn');
@@ -1316,7 +1317,7 @@ async function pollProgress() {
     document.getElementById('progressDetail').textContent = p.current || '';
 
     if (p.phase === 'prefetch') {
-      // 阶段1：加载行情数据（~500只，30并发约15-25秒）
+      // 阶段1：加载行情数据（全市场约3400只，50并发）
       _setPhase(0, 'active');
       document.getElementById('progressLabel').textContent = '📥 加载行情数据';
       if (p.total > 0) {
