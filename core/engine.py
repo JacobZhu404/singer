@@ -129,18 +129,31 @@ class ScreenEngine:
             if progress_callback:
                 progress_callback("prefetch", f"加载K线 {done}/{total_codes}...", done, total_codes)
 
-        market_scanner.prefetch_batch(codes, days=120, max_workers=50,
+        fetch_result = market_scanner.prefetch_batch(codes, days=120, max_workers=50,
                                        progress_callback=_on_fetch)
 
         status_after = market_scanner.get_cache_status()
         after_count = status_after["memory_cached"]
         downloaded = after_count - before_count
+        total_codes = len(codes)
+        failed_codes = fetch_result.get("failed", [])
 
-        self._set_progress("done", f"数据更新完成，已缓存 {after_count} 只", after_count, after_count)
-        if progress_callback:
-            progress_callback("done", f"数据更新完成，已缓存 {after_count} 只", after_count, after_count)
+        if failed_codes:
+            self._set_progress("done",
+                               f"数据更新完成，已缓存 {after_count}/{total_codes} 只"
+                               f"（{len(failed_codes)}只获取失败）",
+                               after_count, total_codes)
+            if progress_callback:
+                progress_callback("done",
+                                  f"数据更新完成，已缓存 {after_count}/{total_codes} 只",
+                                  after_count, total_codes)
+        else:
+            self._set_progress("done", f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
+            if progress_callback:
+                progress_callback("done", f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
 
-        return {"status": "ok", "cached_count": after_count, "downloaded": downloaded}
+        return {"status": "ok", "cached_count": after_count, "downloaded": downloaded,
+                "failed_count": len(failed_codes)}
 
     def screen_strategies(
         self,
