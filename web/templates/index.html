@@ -1481,8 +1481,10 @@ function resetActionUI() {
   clearInterval(_resultTimer);
   clearInterval(_dataStatusTimer);
   closeSSE();
-  _clearSidebarCardProgress();
-  setActionButtonsState('idle');
+  // 延迟清除策略卡片进度（保留2.5秒让用户看到最终"X只命中"状态）
+  setTimeout(() => { _clearSidebarCardProgress(); }, 2500);
+  // 延迟隐藏进度条和恢复按钮（保留1.5秒让用户看到"筛选完成"）
+  setTimeout(() => { setActionButtonsState('idle'); }, 1500);
   fetchDataStatus();
 }
 

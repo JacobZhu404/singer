@@ -229,9 +229,14 @@ class ScreenEngine:
         results = {}
         completed_lock = threading.Lock()
 
-        # 初始化各策略状态为 pending
+        # 初始化各策略状态为 pending（前端会显示"等待中"）
         for name in strategy_names:
             self._set_strategy_progress(name, "pending")
+
+        # 先广播 running 阶段开始，让前端有时间渲染策略卡片状态
+        self._set_progress("running", "策略启动中...", 0, total)
+        if progress_callback:
+            progress_callback("running", "策略启动中...", 0, total)
 
         def run_one(name: str) -> tuple:
             if self._stop_requested():
