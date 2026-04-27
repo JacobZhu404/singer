@@ -236,18 +236,29 @@ def api_data_status():
     查询当前K线缓存状态。
     返回已缓存的股票数量，辅助用户判断是否需要先更新数据。
     """
-    from ..data.fetcher import market_scanner
+    from ..data.fetcher import market_scanner, get_stock_list
     status = market_scanner.get_cache_status()
     # 使用本地持久化缓存数量（重启后仍存在）
     cached = status.get("cached_count", 0)
-    # 判断数据是否足够（大约300只以上基本够用）
-    data_ready = cached >= 50
-    hint = f"已缓存 {cached} 只" if cached > 0 else "尚未下载数据"
+    # 全市场股票总数（用于前端显示 "3257 / 3400"）
+    try:
+        total_stocks = len(get_stock_list())
+    except Exception:
+        total_stocks = cached  # 获取失败时以缓存数代替
+    # 判断数据是否足够（覆盖全市场50%以上认为数据充足）
+    data_ready = (total_stocks > 0 and cached >= total_stocks * 0.5) or cached >= 500
+    if data_ready:
+        hint = f"已缓存 {cached} 只 / 全市场 {total_stocks} 只 ✅"
+    elif cached > 0:
+        hint = f"已缓存 {cached} 只 / 全市场 {total_stocks} 只 ⚠️ 建议更新"
+    else:
+        hint = "尚未下载数据，请先更新"
     return jsonify({
         "code": 0,
         "data": {
             **status,
-            "cached_count": cached,   # 前端兼容字段
+            "cached_count": cached,
+            "total_stocks": total_stocks,
             "data_ready": data_ready,
             "hint": hint,
         }
