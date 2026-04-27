@@ -193,8 +193,17 @@ class MarketScanner:
         days: int = 60,
         max_workers: int = 50,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
-    ) -> None:
-        """并发预加载K线到内存缓存"""
+    ) -> Dict:
+        """
+        并发预加载K线到内存缓存，带自动补全机制。
+
+        分3轮执行：
+          第1轮：高并发(max_workers)快速下载
+          第2轮：低并发(15)补全第1轮失败的
+          第3轮：串行补全剩余的（每次间隔1s避免限流）
+
+        Returns: {"cached": int, "failed": list, "total": int}
+        """
         def to6(c: str) -> str:
             c = str(c).strip()
             return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz") else c
@@ -206,38 +215,76 @@ class MarketScanner:
 
         if not need_fetch:
             logger.info("预加载K线: 全部命中缓存")
-            return
+            return {"cached": len(all_codes), "failed": [], "total": len(all_codes)}
 
-        logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取 (并发{max_workers})")
-        done_count = 0
-        total = len(need_fetch)
+        logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
 
-        def _fetch_one(code6: str):
-            nonlocal done_count
-            df = get_stock_history(code6, days)
-            if df.empty:
-                time.sleep(0.5)
-                df = get_stock_history(code6, days)
-            if not df.empty:
-                with self._lock:
-                    self._kline_cache[code6] = df
-                    self._cache_days[code6] = days
-            with self._lock:
-                done_count += 1
-                cur = done_count
-            if progress_callback and cur % 50 == 0:
-                progress_callback(code6, cur, total)
+        # 第1轮：高并发快速下载
+        failed = self._fetch_round(need_fetch, days, max_workers, "第1轮",
+                                   progress_callback)
 
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            list(pool.map(_fetch_one, need_fetch))
+        # 第2轮：中并发补全
+        if failed:
+            logger.info(f"第1轮完成，{len(failed)}只失败，启动第2轮补全(并发15)")
+            failed = self._fetch_round(failed, days, 15, "第2轮",
+                                       progress_callback)
 
-        if progress_callback:
-            progress_callback("完成", done_count, total)
+        # 第3轮：串行补全（每只间隔1s）
+        if failed:
+            logger.info(f"第2轮后仍有{len(failed)}只失败，启动第3轮串行补全")
+            failed = self._fetch_round(failed, days, 1, "第3轮",
+                                       progress_callback)
+
+        if failed:
+            logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
 
         cache = _get_cache()
         with self._lock:
             mem_count = len(self._kline_cache)
-        logger.info(f"K线缓存完成: 内存{mem_count}只 | 本地{cache.get_cache_status()['total_stocks']}只")
+        logger.info(f"K线缓存完成: 内存{mem_count}只 | 本地{cache.get_cache_status()['total_stocks']}只 | 失败{len(failed)}只")
+
+        if progress_callback:
+            progress_callback("完成", mem_count, len(all_codes))
+
+        return {"cached": mem_count, "failed": failed or [], "total": len(all_codes)}
+
+    def _fetch_round(self, codes: List[str], days: int, workers: int,
+                     round_label: str, callback=None) -> List[str]:
+        """单轮下载，返回失败的代码列表"""
+        done_count = 0
+        total = len(codes)
+        failed_codes = []
+
+        def _fetch_one(code6: str):
+            nonlocal done_count
+            df = get_stock_history(code6, days)
+
+            # 重试逻辑：最多重试3次，递增延迟
+            retry_delays = [0.5, 1.0, 2.0]
+            for delay in retry_delays:
+                if not df.empty:
+                    break
+                time.sleep(delay)
+                df = get_stock_history(code6, days)
+
+            with self._lock:
+                done_count += 1
+                cur = done_count
+
+            if not df.empty:
+                with self._lock:
+                    self._kline_cache[code6] = df
+                    self._cache_days[code6] = days
+            else:
+                failed_codes.append(code6)
+
+            if callback and cur % max(50, workers * 2) == 0:
+                callback(code6, cur, total)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(_fetch_one, codes))
+
+        return failed_codes
 
     def clear_memory_cache(self) -> None:
         with self._lock:
