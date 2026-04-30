@@ -479,6 +479,18 @@ def api_portfolio():
         return jsonify({"code": 1, "msg": str(e)})
 
 
+@app.route("/api/quick_price", methods=["GET"])
+def api_quick_price():
+    """快速获取单只股票实时最新价，用于卖出确认框展示"""
+    code = request.args.get("code", "")
+    if not code:
+        return jsonify({"code": 1, "msg": "股票代码不能为空"})
+    quote = get_stock_realtime(code)
+    price = quote.get("最新价", 0)
+    name = quote.get("名称", code)
+    return jsonify({"code": 0, "data": {"code": code, "name": name, "price": price}})
+
+
 @app.route("/api/portfolio/buy", methods=["POST"])
 def api_buy():
     """虚拟买入

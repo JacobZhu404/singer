@@ -8,6 +8,9 @@ build/
 # Data
 data/cache/klines/*.csv
 data/cache/temp/
+data/cache/meta.json
+data/last_screen_result.json
+data/portfolio.json
 *.sqlite
 
 # Environment
