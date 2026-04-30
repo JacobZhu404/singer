@@ -167,20 +167,26 @@ class MarketScanner:
         self._cache_days: Dict[str, int] = {}
         self._indicator_cache: Dict[str, Dict[str, Any]] = {}  # 代码 → 预计算指标
         self._lock = threading.Lock()
+        self._include_realtime: bool = True
 
     def load(self) -> bool:
         self._loaded = True
         return True
 
-    def get_history(self, code: str, days: int = 60) -> pd.DataFrame:
+    def get_history(self, code: str, days: int = 60, pure: bool = False) -> pd.DataFrame:
         """单只K线（内存 → 本地 → 网络），线程安全"""
         code6 = str(code).strip()
         if len(code6) > 2 and code6[:2].lower() in ("sh", "sz"):
             code6 = code6[2:]
         with self._lock:
             if code6 in self._kline_cache and self._cache_days.get(code6, 0) >= days:
-                return self._kline_cache[code6]
+                cached = self._kline_cache[code6]
+                if pure or self._include_realtime:
+                    return cached
+                # 如果缓存已有实时合成但开关变了，需要重新处理
         df = get_stock_history(code6, days)
+        if not df.empty and not pure and self._include_realtime:
+            df = self._merge_today_realtime(df, code6)
         if not df.empty:
             with self._lock:
                 self._kline_cache[code6] = df
@@ -460,6 +466,70 @@ class MarketScanner:
                 except Exception:
                     pass
         return results
+
+    def _merge_today_realtime(self, df: pd.DataFrame, code6: str) -> pd.DataFrame:
+        """
+        将实时行情合成到K线末尾，让策略能基于当天盘中数据计算。
+        仅在交易日盘中有效，非交易日不合并。
+        """
+        if df.empty or "date" not in df.columns:
+            return df
+        today = datetime.now().strftime("%Y-%m-%d")
+        # 避免重复合并
+        if str(df["date"].iloc[-1]) == today:
+            return df
+        quote = self.get_realtime(code6)
+        if not quote:
+            return df
+        price = quote.get("最新价", 0)
+        if price <= 0:
+            return df
+        # 判断今天是否有交易：有成交量或涨跌幅非零
+        vol = quote.get("成交量", 0)
+        pct = quote.get("涨跌幅", 0)
+        if vol <= 0 and abs(pct) < 0.01:
+            return df
+        open_price = quote.get("今开", price)
+        high_price = quote.get("最高价", max(open_price, price))
+        low_price = quote.get("最低价", min(open_price, price))
+        # 成交量用预估全天量，避免早盘量比被严重低估
+        est_vol = self._estimate_full_day_volume(vol)
+        # 构造今日K线行（与历史K线列对齐）
+        row = {"date": today, "open": open_price, "close": price,
+               "high": high_price, "low": low_price, "vol": est_vol}
+        # 兼容可能的额外列（如 pct_chg）
+        for col in df.columns:
+            if col not in row:
+                if col in ("pct_chg", "daily_chg"):
+                    row[col] = pct
+                else:
+                    row[col] = 0.0
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        return df
+
+    @staticmethod
+    def _estimate_full_day_volume(current_vol: float) -> float:
+        """
+        按A股交易时间比例预估全天成交量。
+        9:30-11:30(120min), 13:00-15:00(120min), 共240min。
+        """
+        if current_vol <= 0:
+            return 0.0
+        now = datetime.now().time()
+        morning_start = datetime.strptime("09:30", "%H:%M").time()
+        morning_end = datetime.strptime("11:30", "%H:%M").time()
+        afternoon_start = datetime.strptime("13:00", "%H:%M").time()
+        afternoon_end = datetime.strptime("15:00", "%H:%M").time()
+
+        if morning_start <= now <= morning_end:
+            minutes = (now.hour - 9) * 60 + (now.minute - 30)
+        elif afternoon_start <= now <= afternoon_end:
+            minutes = 120 + (now.hour - 13) * 60 + now.minute
+        else:
+            return current_vol
+        if minutes <= 0:
+            return current_vol
+        return current_vol * 240 / minutes
 
 
 # 全局扫描器（所有策略共享）

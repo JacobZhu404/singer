@@ -35,7 +35,7 @@ class TDSequentialStrategy(BaseStrategy):
 
         for code in self._get_codes(stock_list):
             try:
-                df = scanner.get_history(code, days=60)
+                df = scanner.get_history(code, days=60, pure=True)
                 if df is None or len(df) < 20:
                     continue
 
