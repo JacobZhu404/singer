@@ -19,7 +19,7 @@ import pandas as pd
 
 from .engine import ScreenEngine
 from ..strategies.registry import list_strategies
-from ..data.fetcher import get_latest_trade_date, get_stock_realtime, get_stock_history
+from ..data.fetcher import get_latest_trade_date, get_stock_realtime, get_stock_history, market_scanner
 from ..portfolio.manager import get_portfolio
 from ..portfolio.sell_analyzer import get_analyzer
 from ..strategies.base import ScreenResult
@@ -558,6 +558,7 @@ def api_portfolio_signals():
     对所有持仓股票进行多维度卖出信号检测
     """
     try:
+        from ..data.fetcher import market_scanner
         pf = get_portfolio()
         analyzer = get_analyzer()
 
