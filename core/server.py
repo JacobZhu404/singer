@@ -455,10 +455,10 @@ def api_portfolio():
             def _fetch_price(pos):
                 code = pos["code"]
                 try:
-                    kl = get_stock_history(code, days=5)
-                    if not kl.empty:
-                        price_col = "close" if "close" in kl.columns else kl.columns[-1]
-                        return code, float(kl[price_col].iloc[-1])
+                    quote = get_stock_realtime(code)
+                    price = quote.get("最新价", 0)
+                    if price > 0:
+                        return code, price
                 except Exception:
                     pass
                 return code, pos.get("current_price", 0)
@@ -565,7 +565,11 @@ def api_portfolio_signals():
 
         for pos in pf.positions:
             code = pos["code"]
-            price = pos.get("current_price", 0)
+            # 优先使用实时最新价，保证盈亏计算和技术指标一致性
+            quote = get_stock_realtime(code)
+            price = quote.get("最新价", 0)
+            if price <= 0:
+                price = pos.get("current_price", 0)
             if price <= 0:
                 continue
 
