@@ -505,6 +505,15 @@
     content: ''; position: absolute; bottom: 100%; left: 20px;
     border: 6px solid transparent; border-bottom-color: var(--surface);
   }
+
+  /* ── Toggle Switch ── */
+  .toggle-wrap { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .toggle-switch { position:relative; width:36px; height:20px; display:inline-block; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:var(--border); border-radius:20px; transition:.2s; }
+  .toggle-slider:before { content:""; position:absolute; height:14px; width:14px; left:3px; bottom:3px; background:var(--text); border-radius:50%; transition:.2s; }
+  .toggle-switch input:checked + .toggle-slider { background:var(--accent); }
+  .toggle-switch input:checked + .toggle-slider:before { transform:translateX(16px); }
 </style>
 </head>
 <body>
@@ -535,6 +544,13 @@
     </div>
 
     <div class="sidebar-section" style="flex:1">
+      <div class="toggle-wrap">
+        <label class="toggle-switch">
+          <input type="checkbox" id="realtimeToggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:12px;color:var(--muted)">使用盘中实时数据</span>
+      </div>
       <h3>选股策略</h3>
       <div id="strategyList"></div>
     </div>
@@ -684,8 +700,29 @@ let currentName = '';
 let riskFilter = 'all';  // all | safe | hide_high | conflict_only
 let _renderedStrategyTabs = new Set();  // 已渲染过的策略tab（用于增量更新）
 
+async function loadRealtimeConfig() {
+  try {
+    const r = await fetch('/api/config/realtime');
+    const j = await r.json();
+    if (j.code === 0) {
+      document.getElementById('realtimeToggle').checked = j.data.enabled;
+    }
+  } catch (e) {}
+}
+
+document.getElementById('realtimeToggle').addEventListener('change', async function() {
+  try {
+    await fetch('/api/config/realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: this.checked })
+    });
+  } catch (e) {}
+});
+
 // ── Init ──
 async function init() {
+  await loadRealtimeConfig();
   await loadStrategies();
   // 优先从 localStorage 恢复上次 UI 状态
   const hasRestored = restoreUIState();

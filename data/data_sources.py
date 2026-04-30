@@ -191,6 +191,7 @@ class TencentDataSource(DataSource):
                 "成交额": _safe_float(parts, 37), "换手率": _safe_float(parts, 38),
                 "市盈率": _safe_float(parts, 39), "涨跌幅": _safe_float(parts, 32),
                 "涨跌额": _safe_float(parts, 31),
+                "最高价": _safe_float(parts, 33), "最低价": _safe_float(parts, 34),
             }
         except Exception as e:
             logger.debug(f"腾讯实时行情解析失败 {code}: {e}")
@@ -217,6 +218,7 @@ class TencentDataSource(DataSource):
                             "成交额": _safe_float(parts, 37), "换手率": _safe_float(parts, 38),
                             "市盈率": _safe_float(parts, 39), "涨跌幅": _safe_float(parts, 32),
                             "涨跌额": _safe_float(parts, 31),
+                            "最高价": _safe_float(parts, 33), "最低价": _safe_float(parts, 34),
                         }
             time.sleep(0.15)
         return results

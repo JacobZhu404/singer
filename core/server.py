@@ -70,6 +70,8 @@ _DATA_DIR = os.path.normpath(_DATA_DIR)
 os.makedirs(_DATA_DIR, exist_ok=True)
 _RESULT_FILE = os.path.join(_DATA_DIR, "last_screen_result.json")
 
+_enable_realtime = True
+
 
 def _load_last_result() -> Optional[dict]:
     """启动时从文件恢复上次筛选结果"""
@@ -610,6 +612,22 @@ def api_portfolio_signals():
     except Exception as e:
         logger.error(f"卖出信号分析失败: {e}")
         return jsonify({"code": 1, "msg": str(e)})
+
+
+@app.route("/api/config/realtime", methods=["GET"])
+def api_get_realtime_config():
+    return jsonify({"code": 0, "data": {"enabled": _enable_realtime}})
+
+
+@app.route("/api/config/realtime", methods=["POST"])
+def api_set_realtime_config():
+    global _enable_realtime
+    body = request.get_json() or {}
+    _enable_realtime = bool(body.get("enabled", True))
+    # 同步到全局扫描器
+    from ..data.fetcher import market_scanner
+    market_scanner._include_realtime = _enable_realtime
+    return jsonify({"code": 0, "data": {"enabled": _enable_realtime}})
 
 
 @app.route("/static/<path:filename>", methods=["GET"])
