@@ -178,12 +178,24 @@ class MarketScanner:
         code6 = str(code).strip()
         if len(code6) > 2 and code6[:2].lower() in ("sh", "sz"):
             code6 = code6[2:]
+        today = datetime.now().strftime("%Y-%m-%d")
         with self._lock:
             if code6 in self._kline_cache and self._cache_days.get(code6, 0) >= days:
                 cached = self._kline_cache[code6]
-                if pure or self._include_realtime:
+                last_date = str(cached["date"].iloc[-1]).split()[0]
+                if pure:
+                    # pure 模式：只有缓存不含今日数据时才直接返回（含实时合并的缓存要绕过）
+                    if last_date != today:
+                        return cached
+                    # 被实时污染了，继续走下面的逻辑重新获取纯历史
+                elif self._include_realtime:
+                    # 非 pure + 开关开启：只有缓存已有今天数据才直接返回
+                    if last_date == today:
+                        return cached
+                    # 否则继续重新获取并合并
+                else:
+                    # 开关关闭：直接返回缓存（纯历史）
                     return cached
-                # 如果缓存已有实时合成但开关变了，需要重新处理
         df = get_stock_history(code6, days)
         if not df.empty and not pure and self._include_realtime:
             df = self._merge_today_realtime(df, code6)
@@ -475,8 +487,9 @@ class MarketScanner:
         if df.empty or "date" not in df.columns:
             return df
         today = datetime.now().strftime("%Y-%m-%d")
-        # 避免重复合并
-        if str(df["date"].iloc[-1]) == today:
+        # 避免重复合并（兼容 date 为字符串或 datetime64 两种格式）
+        last_date = str(df["date"].iloc[-1]).split()[0]
+        if last_date == today:
             return df
         quote = self.get_realtime(code6)
         if not quote:

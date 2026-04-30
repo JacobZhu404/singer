@@ -2279,11 +2279,21 @@ async function loadTradeHistory() {
 }
 
 async function sellStock(code, name, price, shares) {
-  if (!confirm(`确认卖出 ${name}(${code}) ${shares}股？\n（将以实时最新价结算）`)) return;
+  // 自动获取实时最新价用于确认框展示
+  let sellPrice = price;
+  if (sellPrice <= 0) {
+    try {
+      const r = await fetch(`/api/quick_price?code=${code}`);
+      const j = await r.json();
+      if (j.code === 0) sellPrice = j.data.price;
+    } catch (e) {}
+  }
+  const priceStr = sellPrice > 0 ? `¥${sellPrice.toFixed(2)}` : '实时最新价';
+  if (!confirm(`确认卖出 ${name}(${code}) ${shares}股？\n结算价格：${priceStr}`)) return;
   const resp = await fetch('/api/portfolio/sell', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, price, shares })
+    body: JSON.stringify({ code, price: 0, shares })
   });
   const j = await resp.json();
   if (j.code === 0) { notify(j.data.msg, 'success'); loadPortfolio(); }
