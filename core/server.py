@@ -555,9 +555,9 @@ def api_portfolio_signals():
             if price <= 0:
                 continue
 
-            # 拉取历史K线（60日）
+            # 拉取历史K线（60日），使用 MarketScanner 以支持盘中实时数据
             try:
-                kl = get_stock_history(code, days=60)
+                kl = market_scanner.get_history(code, days=60)
             except Exception:
                 kl = pd.DataFrame()
 
