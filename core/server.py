@@ -491,8 +491,15 @@ def api_buy():
     shares = int(body.get("shares", 100))
     strategy = body.get("strategy", "")
 
-    if not code or price <= 0:
-        return jsonify({"code": 1, "msg": "股票代码和价格不能为空"})
+    if not code:
+        return jsonify({"code": 1, "msg": "股票代码不能为空"})
+
+    # 如果未提供价格，自动获取实时最新价（收盘后即为收盘价）
+    if price <= 0:
+        quote = get_stock_realtime(code)
+        price = quote.get("最新价", 0)
+        if price <= 0:
+            return jsonify({"code": 1, "msg": "无法获取当前价格，请稍后重试"})
 
     pf = get_portfolio()
     result = pf.buy(code, name, price, shares, strategy)
@@ -509,8 +516,15 @@ def api_sell():
     price = float(body.get("price", 0))
     shares = body.get("shares")
 
-    if not code or price <= 0:
-        return jsonify({"code": 1, "msg": "股票代码和价格不能为空"})
+    if not code:
+        return jsonify({"code": 1, "msg": "股票代码不能为空"})
+
+    # 如果未提供价格，自动获取实时最新价（收盘后即为收盘价）
+    if price <= 0:
+        quote = get_stock_realtime(code)
+        price = quote.get("最新价", 0)
+        if price <= 0:
+            return jsonify({"code": 1, "msg": "无法获取当前价格，请稍后重试"})
 
     pf = get_portfolio()
     result = pf.sell(code, price, shares)
