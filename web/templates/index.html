@@ -165,6 +165,8 @@
   .progress-phase-label.done { color: var(--green); }
   .btn-sell { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); padding: 4px 12px; font-size: 12px; width: auto; border-radius: 6px; }
   .btn-sell:hover { background: rgba(248,81,73,0.25); }
+  .btn-add { background: rgba(88,166,255,0.15); border: 1px solid var(--accent); color: var(--accent); padding: 4px 12px; font-size: 12px; width: auto; border-radius: 6px; margin-right: 6px; }
+  .btn-add:hover { background: rgba(88,166,255,0.25); }
   .sort-arrow { font-size: 10px; color: var(--accent); margin-left: 2px; }
 
   /* ── Main area ── */
@@ -2257,6 +2259,7 @@ function renderPortfolio(data) {
           const sig = signalMap[pos.code];
           const sellDiag = sig ? renderSellDiag(sig) : '<span style="color:var(--muted);font-size:12px">未分析</span>';
           const sellBtn = sig ? renderSellBtn(sig, pos) : `<button class="btn-sell" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">卖出</button>`;
+          const addBtn = `<button class="btn-add" onclick="addPosition('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
           return `
             <tr>
               <td>${stockNameHtml(pos.code, pos.name)}</td>
@@ -2268,7 +2271,7 @@ function renderPortfolio(data) {
               <td>${renderBuyStrategyTags(pos.buy_strategy, pos.code)}</td>
               <td>¥${(pos.current_value||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}</td>
               <td>${sellDiag}</td>
-              <td>${sellBtn}</td>
+              <td style="white-space:nowrap">${addBtn} ${sellBtn}</td>
             </tr>
           `;
         }).join('')}
@@ -2360,6 +2363,10 @@ function switchTopTab(tab) {
     // 重置卖出信号区域（下次 loadPortfolio 会自动触发）
   }
   saveUIState();
+}
+
+function addPosition(code, name, price) {
+  openBuyModal(code, name, price);
 }
 
 // ── Buy Modal ──
