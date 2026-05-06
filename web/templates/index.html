@@ -165,6 +165,7 @@
   .progress-phase-label.done { color: var(--green); }
   .btn-sell { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); padding: 4px 12px; font-size: 12px; width: auto; border-radius: 6px; }
   .btn-sell:hover { background: rgba(248,81,73,0.25); }
+  .sort-arrow { font-size: 10px; color: var(--accent); margin-left: 2px; }
 
   /* ── Main area ── */
   .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
@@ -703,6 +704,8 @@ let currentPrice = 0;
 let currentName = '';
 let riskFilter = 'all';  // all | safe | hide_high | conflict_only
 let _renderedStrategyTabs = new Set();  // 已渲染过的策略tab（用于增量更新）
+let lastPortfolioData = null;
+let portfolioSort = { key: null, asc: true };
 
 async function loadRealtimeConfig() {
   try {
@@ -1965,6 +1968,7 @@ async function loadPortfolio() {
         total_positions: sj.data.total_positions || 0
       };
     }
+    lastPortfolioData = data;
     renderPortfolio(data);
     document.getElementById('positionBadge').textContent = data.account.position_count || 0;
     updateSignalSummary(data.signalSummary);
@@ -2124,11 +2128,43 @@ function renderSellBtn(sig, pos) {
   return `<button class="btn-sell" style="${style}" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">${label}</button>`;
 }
 
+function setPortfolioSort(key) {
+  if (portfolioSort.key === key) {
+    portfolioSort.asc = !portfolioSort.asc;
+  } else {
+    portfolioSort.key = key;
+    portfolioSort.asc = true;
+  }
+  if (lastPortfolioData) renderPortfolio(lastPortfolioData);
+}
+
 function renderPortfolio(data) {
   const acc = data.account;
-  const positions = data.positions || [];
+  let positions = (data.positions || []).slice();
   const stats = data.stats || {};
   const container = document.getElementById('portfolioContent');
+
+  // 持仓排序
+  if (portfolioSort.key) {
+    positions.sort((a, b) => {
+      let av, bv;
+      if (portfolioSort.key === 'code') { av = a.code || ''; bv = b.code || ''; }
+      else if (portfolioSort.key === 'hold_days') {
+        av = a.buy_date ? Math.floor((new Date() - new Date(a.buy_date)) / 86400000) : 0;
+        bv = b.buy_date ? Math.floor((new Date() - new Date(b.buy_date)) / 86400000) : 0;
+      }
+      else { av = a[portfolioSort.key] || 0; bv = b[portfolioSort.key] || 0; }
+      if (av < bv) return portfolioSort.asc ? -1 : 1;
+      if (av > bv) return portfolioSort.asc ? 1 : -1;
+      return 0;
+    });
+  }
+  // 更新排序箭头显示
+  document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
+  if (portfolioSort.key) {
+    const arrowEl = document.getElementById('sort-' + portfolioSort.key);
+    if (arrowEl) arrowEl.textContent = portfolioSort.asc ? ' ▲' : ' ▼';
+  }
   // 清空独立的卖出信号卡片区域
   const sellContainer = document.getElementById('sellSignalsContent');
   if (sellContainer) sellContainer.innerHTML = '';
@@ -2197,7 +2233,15 @@ function renderPortfolio(data) {
     <table>
       <thead>
         <tr>
-          <th>股票</th><th>持仓成本</th><th>最新价</th><th>盈亏金额</th><th>盈亏比例</th><th>持仓天数</th><th>买入策略</th><th>市值</th><th>卖出诊断</th><th>操作</th>
+          <th onclick="setPortfolioSort('code')" style="cursor:pointer">股票<span class="sort-arrow" id="sort-code"></span></th>
+          <th onclick="setPortfolioSort('avg_cost')" style="cursor:pointer">持仓成本<span class="sort-arrow" id="sort-avg_cost"></span></th>
+          <th onclick="setPortfolioSort('current_price')" style="cursor:pointer">最新价<span class="sort-arrow" id="sort-current_price"></span></th>
+          <th onclick="setPortfolioSort('position_pnl')" style="cursor:pointer">盈亏金额<span class="sort-arrow" id="sort-position_pnl"></span></th>
+          <th onclick="setPortfolioSort('position_pnl_pct')" style="cursor:pointer">盈亏比例<span class="sort-arrow" id="sort-position_pnl_pct"></span></th>
+          <th onclick="setPortfolioSort('hold_days')" style="cursor:pointer">持仓天数<span class="sort-arrow" id="sort-hold_days"></span></th>
+          <th>买入策略</th>
+          <th onclick="setPortfolioSort('current_value')" style="cursor:pointer">市值<span class="sort-arrow" id="sort-current_value"></span></th>
+          <th>卖出诊断</th><th>操作</th>
         </tr>
       </thead>
       <tbody>
