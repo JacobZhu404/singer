@@ -197,8 +197,8 @@ class ScreenEngine:
                 strategy = get_strategy(name, top_n=self.top_n)
                 result = strategy.screen(stock_list, scanner=market_scanner)
                 results[name] = result
-                logger.info(f"策略 {name} 完成，命中 {len(result.signals)} 只")
-                self._set_strategy_progress(name, "done", 100, len(result.signals))
+                logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
+                self._set_strategy_progress(name, "done", 100, len(result.all_signals))
                 if on_strategy_done:
                     on_strategy_done(name, result)
             except Exception as e:
@@ -260,7 +260,7 @@ class ScreenEngine:
                         results[name] = result
                         completed += 1
                         current_completed = completed
-                    logger.info(f"策略 {name} 完成，命中 {len(result.signals)} 只")
+                    logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
                     if on_strategy_done:
                         on_strategy_done(name, result)
                     self._set_progress("running", f"已完成 {current_completed}/{total}", current_completed, total)
@@ -314,7 +314,7 @@ class ScreenEngine:
 
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
-            for sig in result.signals:
+            for sig in result.all_signals:
                 code = sig.ts_code
                 if code not in merged:
                     merged[code] = {
@@ -470,7 +470,7 @@ class ScreenEngine:
                 "strategy_desc": result.strategy_desc,
                 "trade_date": result.trade_date,
                 "total_scanned": result.total_scanned,
-                "hit_count": len(result.signals),
+                "hit_count": len(result.all_signals),
                 "top_stocks": [
                     {
                         "ts_code": s.ts_code,

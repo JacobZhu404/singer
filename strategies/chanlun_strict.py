@@ -826,4 +826,5 @@ class ChanlunStrictStrategy(BaseStrategy):
             signals=top,
             trade_date=trade_date,
             total_scanned=scanned,
+            all_signals=candidates[:],
         )

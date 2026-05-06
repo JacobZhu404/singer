@@ -38,6 +38,7 @@ class ScreenResult:
     signals: List[StockSignal]
     trade_date: str
     total_scanned: int
+    all_signals: List[StockSignal] = field(default_factory=list)  # 全部命中（供合并用）
 
 
 class BaseStrategy(ABC):
@@ -106,7 +107,7 @@ class BaseStrategy(ABC):
 
     def _build_result(self, candidates: List[StockSignal], trade_date: str,
                       scanned: int, sort_key=None) -> ScreenResult:
-        """统一构造筛选结果"""
+        """统一构造筛选结果：signals 为 Top N 展示用，all_signals 为全量命中供合并用"""
         key = sort_key or (lambda x: x.score)
         candidates.sort(key=key, reverse=True)
         return ScreenResult(
@@ -115,6 +116,7 @@ class BaseStrategy(ABC):
             signals=candidates[:self.top_n],
             trade_date=trade_date,
             total_scanned=scanned,
+            all_signals=candidates[:],
         )
 
 

@@ -696,7 +696,7 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
         "strategy_desc": sr.strategy_desc,
         "trade_date": sr.trade_date,
         "total_scanned": sr.total_scanned,
-        "hit_count": len(sr.signals),
+        "hit_count": len(sr.all_signals),
         "stocks": [
             {
                 "ts_code": s.ts_code,
