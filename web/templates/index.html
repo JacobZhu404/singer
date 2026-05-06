@@ -647,6 +647,10 @@
     <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <div class="sig-summary" id="sigSummary"></div>
       <button class="analyze-btn" id="analyzeBtn" onclick="loadSellSignals()">🔮 分析卖出信号</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <input id="directBuyCode" placeholder="输入股票代码" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:120px;outline:none" />
+        <button class="btn btn-buy" onclick="directBuy()">📈 直接买入</button>
+      </div>
     </div>
     <div id="sellSignalsContent" style="margin-bottom:24px"></div>
     <div id="portfolioContent"></div>
@@ -2324,6 +2328,23 @@ function openBuyModal(code, name, price) {
   document.getElementById('modalShares').value = 1;
   updateModalAmount();
   document.getElementById('buyModal').classList.add('show');
+}
+
+async function directBuy() {
+  const code = document.getElementById('directBuyCode').value.trim();
+  if (!code) { notify('请输入股票代码', 'error'); return; }
+  try {
+    const resp = await fetch('/api/quick_price?code=' + encodeURIComponent(code));
+    const j = await resp.json();
+    if (j.code !== 0 || !j.data || j.data.price <= 0) {
+      notify('无法获取该股票实时价格，请检查代码', 'error');
+      return;
+    }
+    openBuyModal(j.data.code, j.data.name, j.data.price);
+    document.getElementById('directBuyCode').value = '';
+  } catch (e) {
+    notify('查询失败: ' + e.message, 'error');
+  }
 }
 
 function setShares(n) {
