@@ -168,7 +168,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
     try:
         from stock_screener.utils.indicators import (
             calc_macd, calc_rsi, calc_bollinger, calc_ma,
-            calc_volume_ratio, td_sequential_count
+            calc_volume_ratio, td_sequential_count, calc_skdj
         )
         close = df["close"]
         high  = df["high"]
@@ -279,6 +279,48 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             elif vr >= 1.5: signals.append(f"温和放量{vr:.1f}x"); score += 20
             if price > h30: signals.append("突破30日高点"); score += 30
             if score < 40: return 0, []
+
+        elif strategy_name == "chan20":
+            dif, dea, _ = calc_macd(close)
+            sk, sd = calc_skdj(close, high, low)
+            mas = calc_ma(close, [5, 10, 20])
+
+            # 检测零轴下金叉
+            crosses = []
+            for ci in range(1, len(dif)):
+                if pd.isna(dif.iloc[ci]) or pd.isna(dea.iloc[ci]):
+                    continue
+                if dif.iloc[ci - 1] <= dea.iloc[ci - 1] and dif.iloc[ci] > dea.iloc[ci]:
+                    if dif.iloc[ci] < 0 and dea.iloc[ci] < 0:
+                        crosses.append(ci)
+
+            if len(crosses) >= 2 and (i - crosses[-1]) <= 5:
+                signals.append("MACD零轴下二次金叉"); score += 40
+            elif len(crosses) >= 1 and (i - crosses[-1]) <= 3:
+                signals.append("MACD零轴下金叉"); score += 25
+            else:
+                return 0, []
+
+            skv, sdv = sk.iloc[i], sd.iloc[i]
+            skp, sdp = sk.iloc[i - 1], sd.iloc[i - 1]
+            if skp <= sdp and skv > sdv:
+                if skv < 30:
+                    signals.append("SKDJ低位金叉"); score += 30
+                else:
+                    signals.append("SKDJ金叉"); score += 15
+            if skv < 20:
+                signals.append("SKDJ超卖"); score += 15
+            elif skv < 30:
+                signals.append("SKDJ低位"); score += 10
+
+            ma5 = mas["ma5"].iloc[i]
+            if not pd.isna(ma5) and close.iloc[i] > ma5:
+                signals.append("站上5日线"); score += 10
+            vr = calc_volume_ratio(vol, 5).iloc[i]
+            if vr > 1.2:
+                signals.append("温和放量"); score += 5
+            if score < 45:
+                return 0, []
 
         elif strategy_name == "limit_up_gene":
             pct = close.pct_change() * 100

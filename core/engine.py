@@ -42,6 +42,7 @@ class ScreenEngine:
             "strategies": {},  # name -> {status, pct, hits}
         }
         self._progress_lock = threading.Lock()
+        self._running_count = 0  # 当前正在运行的策略数（并行用）
 
     def _stop_requested(self) -> bool:
         if self._stop_event is None:
@@ -59,13 +60,28 @@ class ScreenEngine:
             })
 
     def _set_strategy_progress(self, name: str, status: str, pct: int = 0, hits: int = 0):
-        """更新单个策略的进度状态"""
+        """更新单个策略的进度状态，并同步跟踪 running 策略数量"""
         with self._progress_lock:
+            old = self._progress["strategies"].get(name, {})
+            old_status = old.get("status")
+            if old_status != "running" and status == "running":
+                self._running_count += 1
+            elif old_status == "running" and status != "running":
+                self._running_count = max(0, self._running_count - 1)
             self._progress["strategies"][name] = {
-                "status": status,  # pending | running | done
+                "status": status,
                 "pct": pct,
                 "hits": hits,
             }
+
+    def _calc_progress_with_running(self, completed: int, total: int) -> int:
+        """计算总体进度：已完成 + running 中策略按 50% 计算"""
+        if total <= 0:
+            return 0
+        with self._progress_lock:
+            running = self._running_count
+        raw = completed + running * 0.5
+        return min(int(raw / total * 100), 99)
 
     def get_progress(self) -> Dict:
         with self._progress_lock:
@@ -188,10 +204,11 @@ class ScreenEngine:
                 self._set_progress("done", "已停止", idx, total)
                 break
 
-            self._set_progress("running", name, idx, total)
+            # 执行期间用 idx-1，避免第一个策略刚开始就显示非0进度
+            self._set_progress("running", name, idx - 1, total)
             self._set_strategy_progress(name, "running", 50)
             if progress_callback:
-                progress_callback("running", name, idx, total)
+                progress_callback("running", name, idx - 1, total)
 
             try:
                 strategy = get_strategy(name, top_n=self.top_n)
@@ -201,6 +218,10 @@ class ScreenEngine:
                 self._set_strategy_progress(name, "done", 100, len(result.all_signals))
                 if on_strategy_done:
                     on_strategy_done(name, result)
+                # 完成后更新为 idx
+                self._set_progress("running", name, idx, total)
+                if progress_callback:
+                    progress_callback("running", name, idx, total)
             except Exception as e:
                 logger.error(f"策略 {name} 执行失败: {e}")
                 self._set_strategy_progress(name, "done", 100, 0)
@@ -263,9 +284,10 @@ class ScreenEngine:
                     logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
                     if on_strategy_done:
                         on_strategy_done(name, result)
-                    self._set_progress("running", f"已完成 {current_completed}/{total}", current_completed, total)
+                    pct = self._calc_progress_with_running(current_completed, total)
+                    self._set_progress("running", f"已完成 {current_completed}/{total}", pct, total)
                     if progress_callback:
-                        progress_callback("running", name, current_completed, total)
+                        progress_callback("running", name, pct, total)
                 except Exception as e:
                     logger.error(f"策略执行失败: {e}")
                     # 标记失败的策略为 error 状态
