@@ -161,6 +161,43 @@ def check_signal(code, name, df_hist, strat):
             if score < 40:
                 return None
 
+        elif strat == 'chan20':
+            dif, dea, _ = calc_macd(close)
+            sk, sd = calc_skdj(close, high, low)
+            mas = calc_ma(close, [5, 10, 20])
+            crosses = []
+            for ci in range(1, len(dif)):
+                if pd.isna(dif.iloc[ci]) or pd.isna(dea.iloc[ci]):
+                    continue
+                if dif.iloc[ci - 1] <= dea.iloc[ci - 1] and dif.iloc[ci] > dea.iloc[ci]:
+                    if dif.iloc[ci] < 0 and dea.iloc[ci] < 0:
+                        crosses.append(ci)
+            if len(crosses) >= 2 and (i - crosses[-1]) <= 5:
+                signals.append('MACD零轴下二次金叉'); score += 40
+            elif len(crosses) >= 1 and (i - crosses[-1]) <= 3:
+                signals.append('MACD零轴下金叉'); score += 25
+            else:
+                return None
+            skv, sdv = sk.iloc[i], sd.iloc[i]
+            skp, sdp = sk.iloc[i - 1], sd.iloc[i - 1]
+            if skp <= sdp and skv > sdv:
+                if skv < 30:
+                    signals.append('SKDJ低位金叉'); score += 30
+                else:
+                    signals.append('SKDJ金叉'); score += 15
+            if skv < 20:
+                signals.append('SKDJ超卖'); score += 15
+            elif skv < 30:
+                signals.append('SKDJ低位'); score += 10
+            ma5 = mas['ma5'].iloc[i]
+            if not pd.isna(ma5) and close.iloc[i] > ma5:
+                signals.append('站上5日线'); score += 10
+            vr = calc_volume_ratio(vol, 5).iloc[i]
+            if vr > 1.2:
+                signals.append('温和放量'); score += 5
+            if score < 45:
+                return None
+
         elif strat == 'chanlun':
             from stock_screener.strategies.chanlun import _chanlun_score
             score, signals, _ = _chanlun_score(df_hist)

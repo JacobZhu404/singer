@@ -170,6 +170,34 @@ def td_sequential_count(close: pd.Series, high: pd.Series = None, low: pd.Series
     return count
 
 
+def calc_skdj(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    n: int = 9,
+    m: int = 3
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    计算 SKDJ 指标（慢速随机指标）
+    返回: (SK, SD)
+    """
+    ll = low.rolling(window=n).min()
+    hh = high.rolling(window=n).max()
+    rsv = (close - ll) / (hh - ll) * 100
+    rsv = rsv.fillna(50)
+
+    sk = pd.Series(index=close.index, dtype=float)
+    sd = pd.Series(index=close.index, dtype=float)
+
+    sk.iloc[0] = 50.0
+    sd.iloc[0] = 50.0
+    for i in range(1, len(close)):
+        sk.iloc[i] = (2 / 3) * sk.iloc[i - 1] + (1 / 3) * rsv.iloc[i]
+        sd.iloc[i] = (2 / 3) * sd.iloc[i - 1] + (1 / 3) * sk.iloc[i]
+
+    return sk, sd
+
+
 def calc_risk_flags(
     close: pd.Series,
     high: pd.Series,
