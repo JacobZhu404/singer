@@ -60,6 +60,11 @@ class BollingerBandsStrategy(BaseStrategy):
                 if pd.isna(lower_band) or pd.isna(upper_band) or lower_band == 0:
                     continue
 
+                # 趋势过滤：避免在明显下跌趋势中抄底
+                ma20 = close.iloc[-20:].mean()
+                if price < ma20 * 0.95:
+                    continue
+
                 signals = []
                 score = 0
                 lower_touch_pct = (price - lower_band) / lower_band * 100
