@@ -28,7 +28,6 @@ class RSIOversoldStrategy(BaseStrategy):
 
     def __init__(self, top_n: int = 10):
         super().__init__(top_n=top_n)
-        self._cache: set = set()
 
     def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
         if scanner is None:
@@ -41,8 +40,6 @@ class RSIOversoldStrategy(BaseStrategy):
         scanned = 0
 
         for code in self._get_codes(stock_list):
-            if code in self._cache:
-                continue
             try:
                 kline = scanner.get_history(code, days=60)
                 if kline is None or len(kline) < 30:
@@ -75,7 +72,7 @@ class RSIOversoldStrategy(BaseStrategy):
                     signals.append("价格<20日均线超跌")
                     score += 10
 
-                if score < 40:
+                if score < 30:
                     continue
 
                 vol = kline["vol"]
@@ -98,7 +95,6 @@ class RSIOversoldStrategy(BaseStrategy):
                     trade_date=trade_date,
                     extra={"rsi": round(rsi_val, 1)},
                 ))
-                self._cache.add(code)
 
             except Exception as e:
                 logger.debug(f"[RSI策略] {code} 计算失败: {e}")
