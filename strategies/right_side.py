@@ -75,9 +75,24 @@ class RightSideTradingStrategy(BaseStrategy):
                         signals.append(f"突破20日新高({high_20:.2f})")
                         score += 25
 
+                # 60日高点突破（加分项，信号更强）
+                if i >= 60:
+                    high_60 = float(high.iloc[i-60:i].max())
+                    if c > high_60:
+                        signals.append(f"突破60日新高({high_60:.2f})")
+                        score += 10
+
                 if vr > 1.5:
                     signals.append(f"突破放量(量比{vr:.1f}x)")
                     score += 20
+
+                # 突破前缩量调整（过滤假突破）
+                if i >= 21:
+                    vol_ma5_before = float(vol.iloc[i-6:i-1].mean())
+                    vol_ma20_before = float(vol.iloc[i-21:i-1].mean())
+                    if vol_ma5_before < vol_ma20_before * 0.9:
+                        signals.append("突破前缩量调整")
+                        score += 10
 
                 if (ma5_prev is not None and ma20_prev is not None and
                         not pd.isna(ma5_prev) and not pd.isna(ma20_prev) and
