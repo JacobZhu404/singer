@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(message)s', str
 from stock_screener.strategies.registry import STRATEGY_REGISTRY
 from stock_screener.utils.indicators import (
     calc_risk_flags, calc_macd, calc_rsi, calc_bollinger,
-    calc_ma, calc_volume_ratio, td_sequential_count
+    calc_ma, calc_volume_ratio, td_sequential_count, calc_skdj
 )
 
 HOLD = [3, 5, 10, 30]
@@ -196,6 +196,44 @@ def check_signal(code, name, df_hist, strat):
             if vr > 1.2:
                 signals.append('温和放量'); score += 5
             if score < 45:
+                return None
+
+        elif strat == 'chanlun_strict':
+            from stock_screener.strategies.chanlun_strict import _analyze, _compute_score
+            analysis = _analyze(df_hist)
+            score, signals, _ = _compute_score(analysis) if analysis else (0, [], {})
+            if score < 40:
+                return None
+
+        elif strat == 'golden_cross':
+            dif, dea, _ = calc_macd(close)
+            mas = calc_ma(close, [5, 10, 20])
+            rsi = calc_rsi(close, 14)
+            m5 = float(mas['ma5'].iloc[i])
+            m10 = float(mas['ma10'].iloc[i])
+            m20 = float(mas['ma20'].iloc[i])
+            m5_prev = float(mas['ma5'].iloc[i-1]) if i >= 1 else m5
+            m10_prev = float(mas['ma10'].iloc[i-1]) if i >= 1 else m10
+            if any(pd.isna(x) for x in [m5, m10, m20]):
+                return None
+            if m5 > m10 and m5_prev <= m10_prev:
+                signals.append('MA金叉'); score += 40
+            elif m5 > m10:
+                signals.append('MA多头'); score += 20
+            if m5 > m10 > m20:
+                signals.append('均线多头'); score += 25
+            c = float(close.iloc[i])
+            if c > m5:
+                signals.append('站上MA5'); score += 15
+            r = float(rsi.iloc[i]) if not pd.isna(rsi.iloc[i]) else 50
+            if 50 <= r <= 65:
+                signals.append(f'RSI确认({r:.0f})'); score += 10
+            elif r < 50:
+                score -= 10
+            d = float(dif.iloc[i]) if not pd.isna(dif.iloc[i]) else 0
+            if d > 0:
+                signals.append('MACD零轴上'); score += 10
+            if score < 40:
                 return None
 
         elif strat == 'chanlun':

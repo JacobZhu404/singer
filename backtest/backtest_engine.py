@@ -280,6 +280,47 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if price > h30: signals.append("突破30日高点"); score += 30
             if score < 40: return 0, []
 
+        elif strategy_name == "chanlun_strict":
+            try:
+                from stock_screener.strategies.chanlun_strict import _analyze, _compute_score
+                analysis = _analyze(df)
+                score, signals, _ = _compute_score(analysis) if analysis else (0, [], {})
+                if score < 40:
+                    return 0, []
+            except Exception:
+                return 0, []
+
+        elif strategy_name == "golden_cross":
+            dif, dea, _ = calc_macd(close)
+            mas = calc_ma(close, [5, 10, 20])
+            rsi = calc_rsi(close, 14)
+            ma5 = mas["ma5"].iloc[i]
+            ma10 = mas["ma10"].iloc[i]
+            ma20 = mas["ma20"].iloc[i]
+            m5_prev = mas["ma5"].iloc[i-1] if i >= 1 else ma5
+            m10_prev = mas["ma10"].iloc[i-1] if i >= 1 else ma10
+            if any(pd.isna(x) for x in [ma5, ma10, ma20]):
+                return 0, []
+            if ma5 > ma10 and m5_prev <= m10_prev:
+                signals.append("MA金叉"); score += 40
+            elif ma5 > ma10:
+                signals.append("MA多头"); score += 20
+            if ma5 > ma10 > ma20:
+                signals.append("均线多头"); score += 25
+            c = close.iloc[i]
+            if c > ma5:
+                signals.append("站上MA5"); score += 15
+            r = float(rsi.iloc[i]) if not pd.isna(rsi.iloc[i]) else 50
+            if 50 <= r <= 65:
+                signals.append(f"RSI确认({r:.0f})"); score += 10
+            elif r < 50:
+                score -= 10
+            d = float(dif.iloc[i]) if not pd.isna(dif.iloc[i]) else 0
+            if d > 0:
+                signals.append("MACD零轴上"); score += 10
+            if score < 40:
+                return 0, []
+
         elif strategy_name == "chan20":
             dif, dea, _ = calc_macd(close)
             sk, sd = calc_skdj(close, high, low)
