@@ -7,11 +7,13 @@
 
 信号评分：
   - MA5上穿MA10当日金叉：+25（最强信号）
-  - DIF>0 且 DEA>0：+15（零轴以上）
+  - MACD零轴金叉（DIF>0且DEA>0且DIF>DEA）：+25
+  - MACD零轴下金叉：+15
+  - DIF零轴以上（尚未金叉）：+10
   - MA5>MA10>MA20>MA60均线多头：+20
   - MA20>MA60中期多头：+15
   - MACD柱放大（近3日连续）：+15
-  - 价格站上所有均线：+10
+  - 价格站上MA5（短期趋势确认）：+10
 适用：趋势确认、中线持仓
 """
 
@@ -100,20 +102,24 @@ class MACDBullStrategy(BaseStrategy):
                         signals.append("MA20>MA60中期多头")
                         score += 15
 
-                    # ── 条件4: 价格站上均线（MA5>MA10 是多头前提）──
-                    if close.iloc[i] > ma5 > ma10 > ma20 > ma60:
-                        signals.append("价格站上所有均线")
+                # ── 条件4: 价格站上MA5（短期趋势确认）──
+                    if close.iloc[i] > ma5:
+                        signals.append("价格站上MA5")
                         score += 10
 
-                # ── 条件5: MACD 零轴确认 ──
-                # DIF>0：快线在零轴上方，多头动能确认（10分）
-                # 零轴金叉（DIF>0 且 DIF>DEA）：最强组合（+15分，含零轴确认）
-                if dif.iloc[i] > dea.iloc[i]:
+                # ── 条件5: MACD 零轴判断 ──
+                # 零轴上方金叉（最强）：DIF>0 且 DEA>0 且 DIF>DEA
+                if dif.iloc[i] > 0 and dea.iloc[i] > 0 and dif.iloc[i] > dea.iloc[i]:
                     signals.append("MACD零轴金叉")
-                    score += 25          # 同时满足 DIF>0(隐含) + 金叉 = 最强信号
+                    score += 25
+                # 零轴下方金叉（较弱）：DIF>DEA 但零线以下
+                elif dif.iloc[i] > dea.iloc[i]:
+                    signals.append("MACD金叉（零轴下）")
+                    score += 15
+                # DIF零轴以上但尚未金叉
                 elif dif.iloc[i] > 0:
                     signals.append("DIF零轴以上")
-                    score += 10          # DIF 在零轴上方但尚未金叉
+                    score += 10
 
                 # ── 条件7: MACD 柱放大（近3日连续） ──
                 if i >= 2 and not pd.isna(macd_bar.iloc[i - 2]):
