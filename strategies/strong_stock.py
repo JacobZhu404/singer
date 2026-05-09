@@ -79,7 +79,7 @@ class StrongStockStrategy(BaseStrategy):
                         up_vol += v
                     else:
                         down_vol += v
-                if down_vol > 0 and up_vol / (down_vol + 1e-8) > 1.5:
+                if down_vol > 0 and up_vol / (down_vol + 1e-8) > 2.0:  # 从 1.5 提高到 2.0
                     signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
                     score += 20
 
@@ -87,8 +87,11 @@ class StrongStockStrategy(BaseStrategy):
                    all(not pd.isna(pct_chg.iloc[i - k]) and
                        abs(float(pct_chg.iloc[i - k])) <= 3.0
                        for k in range(5)):
-                    signals.append("五连小阳")
-                    score += 20
+                    # 增加累计涨幅限制（防止追高）
+                    cumulative_gain = (close.iloc[i] / close.iloc[i-4] - 1) * 100
+                    if cumulative_gain < 12.0:  # 累计涨幅 < 12%
+                        signals.append("五连小阳")
+                        score += 20
                 elif gap_up.iloc[i]:
                     # 与五连小阳互斥：跳空高开会破坏小阳线节奏
                     signals.append("跳空缺口(今低>昨高)")
@@ -98,7 +101,7 @@ class StrongStockStrategy(BaseStrategy):
                     signals.append("MACD零轴以上")
                     score += 20
 
-                if score < 30:
+                if score < 50:  # 从 30 提高到 50（根据回测结果优化）
                     continue
 
                 latest = close.iloc[i]
