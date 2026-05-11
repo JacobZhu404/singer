@@ -156,7 +156,12 @@ def api_screen():
                 _screen_progress["current"] = current
                 _screen_progress["current_index"] = idx
                 _screen_progress["total"] = total
-                _screen_progress["pct"] = int(idx / total * 100) if total > 0 else 0
+                # running 阶段使用引擎计算的 overall_pct（含 running 中策略的加权），
+                # 其他阶段按原始计数计算百分比
+                if phase == "running":
+                    _screen_progress["pct"] = engine.get_progress().get("pct", 0)
+                else:
+                    _screen_progress["pct"] = int(idx / total * 100) if total > 0 else 0
                 # 同步引擎内部的策略子进度
                 _screen_progress["strategies"] = dict(engine.get_progress().get("strategies", {}))
 
@@ -251,8 +256,8 @@ def api_data_status():
     """
     from ..data.fetcher import market_scanner, get_stock_list
     status = market_scanner.get_cache_status()
-    # 使用本地持久化缓存数量（重启后仍存在）
-    cached = status.get("cached_count", 0)
+    # 使用内存缓存数量（与当前进度条保持一致）
+    cached = status.get("memory_cached", 0)
     # 全市场股票总数（用于前端显示 "3257 / 3400"）
     try:
         total_stocks = len(get_stock_list())
