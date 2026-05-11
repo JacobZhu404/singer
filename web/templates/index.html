@@ -156,13 +156,6 @@
   .progress-track { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--yellow), var(--accent)); border-radius: 3px; transition: width 0.5s ease; width: 0%; }
   .progress-detail { font-size: 11px; color: var(--muted); margin-top: 4px; text-align: center; }
-  .progress-phases { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-  .progress-phase-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
-  .progress-phase-dot.active { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); animation: pulse 1s infinite; }
-  .progress-phase-dot.done { background: var(--green); }
-  .progress-phase-label { font-size: 10px; color: var(--muted); flex: 1; }
-  .progress-phase-label.active { color: var(--yellow); font-weight: 600; }
-  .progress-phase-label.done { color: var(--green); }
   .btn-sell { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); padding: 4px 12px; font-size: 12px; width: auto; border-radius: 6px; }
   .btn-sell:hover { background: rgba(248,81,73,0.25); }
   .btn-add { background: rgba(88,166,255,0.15); border: 1px solid var(--accent); color: var(--accent); padding: 4px 12px; font-size: 12px; width: auto; border-radius: 6px; margin-right: 6px; }
@@ -574,7 +567,6 @@
         <div class="progress-track">
           <div class="progress-fill" id="progressFill" style="width:0%"></div>
         </div>
-        <div class="progress-phases" id="progressPhases"></div>
         <div class="progress-detail" id="progressDetail"></div>
       </div>
 
@@ -788,14 +780,20 @@ async function checkStatus() {
     if (prog.phase === 'prefetch') {
       showProgress('prefetch', '📥 加载行情数据', prog.current || '');
       if (prog.total > 0) {
-        document.getElementById('progressPct').textContent = `${prog.pct}%`;
-        document.getElementById('progressFill').style.width = `${Math.min(prog.pct * 0.4, 40)}%`;
+        document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
+        document.getElementById('progressFill').style.width = `${Math.min(prog.pct * 0.2, 20)}%`;
+      }
+    } else if (prog.phase === 'precalc') {
+      showProgress('precalc', '⚙️ 指标预计算', prog.current || '');
+      if (prog.total > 0) {
+        document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
+        document.getElementById('progressFill').style.width = `${20 + Math.min(prog.pct * 0.2, 20)}%`;
       }
     } else if (prog.phase === 'running') {
-      const pct = prog.total > 0 ? Math.round((prog.current_index / prog.total) * 100) : 0;
-      showProgress('running', `📊 执行 ${prog.current || ''}`, '');
-      document.getElementById('progressPct').textContent = `${pct}%`;
-      document.getElementById('progressFill').style.width = `${40 + pct * 0.6}%`;
+      const overallPct = prog.pct || 0;
+      showProgress('running', `📊 ${prog.current || '策略执行中...'}`, '');
+      document.getElementById('progressPct').textContent = `${overallPct}%`;
+      document.getElementById('progressFill').style.width = `${40 + overallPct * 0.3}%`;
     }
   }
 }
@@ -1236,10 +1234,6 @@ function showProgress(phase, label, detail) {
   document.getElementById('progressDetail').textContent = detail || '';
   document.getElementById('statusDot').className = 'status-dot running';
 
-  // 阶段指示：0=数据下载 1=策略执行 2=完成
-  const phaseIdx = phase === 'prefetch' ? 0 : phase === 'running' ? 1 : 2;
-  _setPhase(phaseIdx);
-
   // 进度条宽度随 phase 变化
   const fill = document.getElementById('progressFill');
   if (phase === 'prefetch') {
@@ -1408,16 +1402,6 @@ function startResultPoll() {
   _resultTimer = setInterval(pollResult, 2000);
 }
 
-function _setPhase(idx, cls) {
-  ['0','1','2'].forEach((i, _) => {
-    const dot = document.getElementById('phaseDot' + i);
-    const lbl = document.getElementById('phaseLbl' + i);
-    if (!dot) return;
-    if (i < idx) { dot.className = 'progress-phase-dot done'; if(lbl) lbl.className = 'progress-phase-label done'; }
-    else if (i == idx) { dot.className = 'progress-phase-dot active'; if(lbl) lbl.className = 'progress-phase-label active'; }
-    else { dot.className = 'progress-phase-dot'; if(lbl) lbl.className = 'progress-phase-label'; }
-  });
-}
 
 async function pollProgress() {
   try {
@@ -1430,27 +1414,38 @@ async function pollProgress() {
 
     if (p.phase === 'prefetch') {
       // 阶段1：加载行情数据（全市场约3400只，50并发）
-      _setPhase(0, 'active');
       document.getElementById('progressLabel').textContent = '📥 加载行情数据';
       if (p.total > 0) {
-        document.getElementById('progressPct').textContent = `${p.pct}%`;
-        document.getElementById('progressFill').style.width = `${Math.min(p.pct * 0.4, 40)}%`;
+        document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
+        document.getElementById('progressFill').style.width = `${Math.min(p.pct * 0.2, 20)}%`;
       }
       _renderStrategyProgress(p.strategies || {});
       // 所有已选中策略卡片显示"等待数据"
       _setAllCardsWaiting('prefetch');
+    } else if (p.phase === 'precalc') {
+      // 阶段1.5：指标预计算
+      document.getElementById('progressLabel').textContent = '⚙️ 指标预计算';
+      if (p.total > 0) {
+        document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
+        document.getElementById('progressFill').style.width = `${20 + Math.min(p.pct * 0.2, 20)}%`;
+      }
+      _renderStrategyProgress(p.strategies || {});
+      _setAllCardsWaiting('precalc');
     } else if (p.phase === 'running') {
-      // 阶段2：执行策略
-      _setPhase(1, 'active');
-      const name = p.current || `策略${p.current_index}`;
-      const pct = p.total > 0 ? Math.round((p.current_index / p.total) * 100) : 0;
-      document.getElementById('progressLabel').textContent = `📊 执行 ${name}`;
-      document.getElementById('progressPct').textContent = `${pct}%`;
-      document.getElementById('progressFill').style.width = `${40 + pct * 0.6}%`;
+      // 阶段2：执行策略（并行，显示整体进度）
+      const overallPct = p.pct || 0;
+      document.getElementById('progressLabel').textContent = `📊 ${p.current || '策略执行中...'}`;
+      document.getElementById('progressPct').textContent = `${overallPct}%`;
+      document.getElementById('progressFill').style.width = `${40 + overallPct * 0.3}%`;
+      _renderStrategyProgress(p.strategies || {});
+      _updateSidebarCardProgress(p.strategies || {});
+    } else if (p.phase === 'merging') {
+      document.getElementById('progressLabel').textContent = '📦 结果合并中...';
+      document.getElementById('progressPct').textContent = `${p.pct || 0}%`;
+      document.getElementById('progressFill').style.width = `${70 + (p.pct || 0) * 0.3}%`;
       _renderStrategyProgress(p.strategies || {});
       _updateSidebarCardProgress(p.strategies || {});
     } else if (p.phase === 'done') {
-      _setPhase(2, 'done');
       document.getElementById('progressLabel').textContent = '✅ 筛选完成';
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
@@ -1484,7 +1479,16 @@ function _renderStrategyProgress(strategies) {
     const displayName = meta.name || name;
     const status = st.status || 'pending';
     const hits = st.hits || 0;
-    const hitsText = status === 'done' ? `${hits}只` : '';
+    const scanned = st.scanned || 0;
+    const total = st.total_stocks || 0;
+    let hitsText = '';
+    if (status === 'done') {
+      hitsText = `${hits}只`;
+    } else if (status === 'running' && st.phase === 'executing' && total > 0) {
+      hitsText = `${scanned}/${total}`;
+    } else if (status === 'running') {
+      hitsText = st.phase === 'loading' ? '加载中' : st.phase === 'writing' ? '写入中' : '执行中';
+    }
     return `
       <div class="strategy-progress-item">
         <span class="strategy-progress-name" title="${displayName}">${displayName}</span>
@@ -1515,14 +1519,31 @@ function _updateSidebarCardProgress(strategies) {
         (card.querySelector('.strategy-card-progress-label-text').textContent = `${st.hits || 0}只命中`);
     } else if (st.status === 'running') {
       card.classList.add('running');
-      const pct = st.pct || 50;
+      const phase = st.phase || 'executing';
+      const pct = st.pct || 0;
       const fill = card.querySelector('.strategy-card-progress-fill');
       if (fill) {
         fill.style.width = `${pct}%`;
         fill.style.setProperty('--pct', `${pct}%`);
       }
       const label = card.querySelector('.strategy-card-progress-label-text');
-      if (label) label.textContent = '执行中...';
+      if (label) {
+        if (phase === 'loading') {
+          label.textContent = '📥 数据加载中...';
+        } else if (phase === 'executing') {
+          const scanned = st.scanned || 0;
+          const total = st.total_stocks || 0;
+          if (total > 0) {
+            label.textContent = `扫描中 ${scanned}/${total}`;
+          } else {
+            label.textContent = '策略执行中...';
+          }
+        } else if (phase === 'writing') {
+          label.textContent = '💾 结果写入中...';
+        } else {
+          label.textContent = '执行中...';
+        }
+      }
     } else if (st.status === 'pending') {
       card.classList.add('waiting');
       const fill = card.querySelector('.strategy-card-progress-fill');

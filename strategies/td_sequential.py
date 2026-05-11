@@ -12,7 +12,6 @@ import numpy as np
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import td_sequential_count, calc_macd, calc_ma
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -32,23 +31,24 @@ class TDSequentialStrategy(BaseStrategy):
 
         candidates = []
         scanned = 0
+        codes = self._get_codes(stock_list)
 
-        for code in self._get_codes(stock_list):
+        for code in codes:
             try:
-                df = scanner.get_history(code, days=60, pure=True)
-                if df is None or len(df) < 20:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 20:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(codes))
+                df = indicators["kline"]
                 close = df["close"]
                 high = df["high"]
-                vol = df["vol"]
-
-                # 传入 high/low 以启用严格完美Bar校验
                 low = df["low"]
-                td_count = td_sequential_count(close, high=high, low=low)
-                dif, dea, _ = calc_macd(close)
-                mas = calc_ma(close, [5, 20])
+                td_count = indicators["td_count"]
+                dif, dea, _ = indicators["macd"]
+                mas = indicators["ma"]
+                vol_ratio_series = indicators["vol_ratio"]
                 i = len(df) - 1
 
                 current_count = int(td_count.iloc[i])
@@ -69,11 +69,9 @@ class TDSequentialStrategy(BaseStrategy):
                     signals.append("价格上穿确认")
                     score += 20
 
-                if i >= 5:
-                    avg_vol = float(vol.iloc[i-5:i].mean())
-                    if avg_vol > 0 and float(vol.iloc[i]) > avg_vol * 1.2:
-                        signals.append("成交量确认放大")
-                        score += 15
+                if i >= 5 and not pd.isna(vol_ratio_series.iloc[i]) and float(vol_ratio_series.iloc[i]) > 1.2:
+                    signals.append("成交量确认放大")
+                    score += 15
 
                 if not pd.isna(dif.iloc[i]) and not pd.isna(dea.iloc[i]) and \
                    dif.iloc[i] > dea.iloc[i] and i >= 1 and dif.iloc[i-1] <= dea.iloc[i-1]:
@@ -86,8 +84,7 @@ class TDSequentialStrategy(BaseStrategy):
 
                 latest = close.iloc[i]
                 quote = self._get_quote(scanner, code, float(latest))
-                avg_vol = float(vol.iloc[i-5:i].mean()) if i >= 5 else 0
-                vol_ratio = round(float(vol.iloc[i]) / avg_vol, 2) if avg_vol > 0 else 1.0
+                vol_ratio = round(float(vol_ratio_series.iloc[i]), 2) if not pd.isna(vol_ratio_series.iloc[i]) else 1.0
 
                 candidates.append(StockSignal(
                     ts_code=code,
@@ -109,5 +106,8 @@ class TDSequentialStrategy(BaseStrategy):
 
             except Exception as e:
                 logger.debug(f"[九转策略] {code} 计算失败: {e}")
+
+        return self._build_result(candidates, trade_date, scanned)
+
 
         return self._build_result(candidates, trade_date, scanned)
