@@ -103,6 +103,20 @@ class ScreenEngine:
             self._stock_list = get_stock_list()
         return self._stock_list
 
+    def _precalc(self, stock_list: pd.DataFrame,
+                 progress_callback: Optional[Callable[[str, str, int, int], None]] = None):
+        """预计算指标并缓存，避免各策略重复计算"""
+        from ..utils.precalc import precalc_indicators
+        codes = self._get_codes(stock_list)
+        if not codes:
+            return
+
+        def _on_precalc_progress(done: int, total: int, code: str):
+            if progress_callback:
+                progress_callback("precalc", f"预计算指标 {done}/{total}...", done, total)
+
+        precalc_indicators(codes, market_scanner, days=120, progress_callback=_on_precalc_progress)
+
     def run_single(self, strategy_name: str) -> ScreenResult:
         """执行单个策略"""
         stock_list = self._load_stock_list()
@@ -503,7 +517,7 @@ class ScreenEngine:
 
         # 阶段1：预加载K线数据
         self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
-        # 阶段1.5：预计算指标
+        # 阶段1.5：预计算指标（按需，非阻塞）
         stock_list = self._load_stock_list()
         self._precalc(stock_list, progress_callback=progress_callback)
 
