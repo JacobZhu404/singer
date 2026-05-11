@@ -776,6 +776,7 @@ class ChanlunStrictStrategy(BaseStrategy):
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(codes))
                 analysis = _analyze(df)
                 score, signals, extra = _compute_score(analysis)
 
@@ -786,10 +787,10 @@ class ChanlunStrictStrategy(BaseStrategy):
                 quote = scanner.get_realtime(code)
                 pct = float(quote.get("涨跌幅", 0.0) or 0.0)
 
-                # 量比
+                # 统一使用 calc_volume_ratio（含当日，period=5）
                 vol = df["vol"]
-                vol_ma5 = vol.rolling(5).mean().iloc[-1]
-                vol_ratio = float(vol.iloc[-1] / vol_ma5) if (not pd.isna(vol_ma5) and vol_ma5 > 0) else 1.0
+                vol_ratio_series = calc_volume_ratio(vol, 5)
+                vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
 
                 price = quote.get("最新价", quote.get("close", df["close"].iloc[-1])) or df["close"].iloc[-1]
                 price = float(price)
