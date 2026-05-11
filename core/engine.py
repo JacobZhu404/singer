@@ -107,7 +107,10 @@ class ScreenEngine:
                  progress_callback: Optional[Callable[[str, str, int, int], None]] = None):
         """预计算指标并缓存，避免各策略重复计算"""
         from ..utils.precalc import precalc_indicators
-        codes = self._get_codes(stock_list)
+        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
+        if stock_list.empty or code_col not in stock_list.columns:
+            return
+        codes = stock_list[code_col].astype(str).tolist()
         if not codes:
             return
 
