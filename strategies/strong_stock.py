@@ -44,11 +44,13 @@ class StrongStockStrategy(BaseStrategy):
 
         for code in self._get_codes(stock_list):
             try:
-                df = scanner.get_history(code, days=30)
-                if df is None or len(df) < 10:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 10:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
                 open_ = df["open"]
                 high = df["high"]
@@ -59,9 +61,9 @@ class StrongStockStrategy(BaseStrategy):
                 signals = []
                 score = 0
 
-                vol_ratio = calc_volume_ratio(vol, 5)
+                vol_ratio = indicators["vol_ratio"]
                 red = is_red_candle(open_, close)
-                dif, dea, macd_bar = calc_macd(close)
+                dif, dea, macd_bar = indicators["macd"]
                 gap_up = detect_gap_up(high, low, open_, close)
                 i = len(df) - 1
 

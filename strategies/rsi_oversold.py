@@ -14,7 +14,7 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_rsi
+from ..utils.indicators import calc_rsi, calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -41,13 +41,17 @@ class RSIOversoldStrategy(BaseStrategy):
 
         for code in self._get_codes(stock_list):
             try:
-                kline = scanner.get_history(code, days=60)
-                if kline is None or len(kline) < 30:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 30:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                kline = indicators["kline"]
                 close = kline["close"]
-                rsi = calc_rsi(close, 14)
+                rsi = indicators["rsi"]
+                ma20 = indicators["ma"]["ma20"]
+                vol_ratio_series = indicators["vol_ratio"]
                 rsi_val = float(rsi.iloc[-1])
                 rsi_prev = float(rsi.iloc[-2]) if len(rsi) >= 2 else rsi_val
 
@@ -67,7 +71,6 @@ class RSIOversoldStrategy(BaseStrategy):
                     signals.append(f"RSI({rsi_val:.0f})低位")
                     score += 15
 
-                ma20 = close.rolling(20).mean()
                 if not pd.isna(ma20.iloc[-1]) and close.iloc[-1] < ma20.iloc[-1]:
                     signals.append("价格<20日均线超跌")
                     score += 10
@@ -75,11 +78,8 @@ class RSIOversoldStrategy(BaseStrategy):
                 if score < 30:
                     continue
 
-                vol = kline["vol"]
                 quote = self._get_quote(scanner, code, float(close.iloc[-1]))
-                # 量比基于K线成交量计算（5日均量为基准），不再用换手率换算
-                vol_ma5 = vol.rolling(5).mean().iloc[-1]
-                vol_ratio_val = float(vol.iloc[-1] / vol_ma5) if (not pd.isna(vol_ma5) and vol_ma5 > 0) else 1.0
+                vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
 
                 candidates.append(StockSignal(
                     ts_code=code,

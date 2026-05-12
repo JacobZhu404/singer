@@ -55,6 +55,7 @@ class GoldenCrossStrategy(BaseStrategy):
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
                 close = df["close"]
                 vol = df["vol"]
                 i = len(df) - 1
@@ -116,8 +117,7 @@ class GoldenCrossStrategy(BaseStrategy):
                     continue
 
                 quote = self._get_quote(scanner, code, c)
-                vr_series = calc_volume_ratio(vol, 5)
-                vr = float(vr_series.iloc[-1]) if not np.isnan(vr_series.iloc[-1]) else 1.0
+                vr = float(vol_ratio_series.iloc[-1]) if not np.isnan(vol_ratio_series.iloc[-1]) else 1.0
 
                 candidates.append(StockSignal(
                     ts_code=code,
@@ -143,4 +143,5 @@ class GoldenCrossStrategy(BaseStrategy):
             except Exception as e:
                 logger.debug(f"[金叉策略] {code} 计算失败: {e}")
 
+        return self._build_result(candidates, trade_date, scanned)
         return self._build_result(candidates, trade_date, scanned)

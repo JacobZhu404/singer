@@ -14,6 +14,7 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from ..utils.indicators import calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -43,25 +44,28 @@ class VolumeBreakoutStrategy(BaseStrategy):
             if code in self._cache:
                 continue
             try:
-                kline = scanner.get_history(code, days=60)
-                if kline is None or len(kline) < 30:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 30:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                kline = indicators["kline"]
                 close = kline["close"]
                 high = kline["high"]
                 vol = kline["vol"]
+                vol_ratio_series = indicators["vol_ratio"]
                 # 用今日最高价（而非收盘价）判断是否突破
                 today_high = float(high.iloc[-1])
                 price = float(close.iloc[-1])       # 收盘价用于收阳判断
                 prev_price = float(close.iloc[-2])
 
-                vol_ma20 = vol.rolling(20).mean().iloc[-1]
-                if pd.isna(vol_ma20) or vol_ma20 <= 0:
+                vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+                vol_ratio_prev = float(vol_ratio_series.iloc[-2]) if len(vol_ratio_series) >= 2 and not pd.isna(vol_ratio_series.iloc[-2]) else 1.0
+                if pd.isna(vol_ratio) or vol_ratio <= 0:
                     continue
-
-                vol_ratio = vol.iloc[-1] / vol_ma20
-                vol_ratio_prev = vol.iloc[-2] / vol.iloc[-7:-2].mean() if len(vol) >= 7 else 1.0
+                # 保留 20 日均量供 extra 展示
+                vol_ma20 = vol.rolling(20).mean().iloc[-1]
                 # 突破判断用最高价，而非收盘价
                 high_30 = high.iloc[-31:-1].max() if len(high) >= 31 else high.iloc[:-1].max()
                 high_5 = high.iloc[-6:-1].max() if len(high) >= 6 else high.iloc[:-1].max()

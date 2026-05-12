@@ -36,22 +36,36 @@ class BollingerBandsStrategy(BaseStrategy):
         scanner.load()
         name_map = self._get_name_map(stock_list)
 
+        # 清空缓存，避免上次运行结果影响本次
+        self._cache.clear()
+
         candidates: List[StockSignal] = []
         scanned = 0
 
-        for code in self._get_codes(stock_list):
+        # 获取股票代码列表
+        codes = self._get_codes(stock_list)
+        total = len(codes)
+
+        # 先报告一次总进度，确保 total_stocks 被正确设置
+        self._report_progress("executing", 0, total)
+
+        for code in codes:
             if code in self._cache:
                 continue
             try:
-                kline = scanner.get_history(code, days=80)
-                if kline is None or len(kline) < 30:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 30:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                kline = indicators["kline"]
                 close = kline["close"]
-                vol = kline["vol"]
-
-                upper, mid, lower = calc_bollinger(close, 20, 2.0)
+                bb = indicators["bollinger"]
+                upper = bb["upper"]
+                mid = bb["mid"]
+                lower = bb["lower"]
+                vol_ratio_series = indicators["vol_ratio"]
                 price = close.iloc[-1]
                 prev_price = close.iloc[-2]
                 lower_band = lower.iloc[-1]
@@ -61,7 +75,7 @@ class BollingerBandsStrategy(BaseStrategy):
                     continue
 
                 # 趋势过滤：避免在明显下跌趋势中抄底
-                ma20 = close.iloc[-20:].mean()
+                ma20 = mid.iloc[-1]  # 布林带中轨即 20 日均线
                 if price < ma20 * 0.95:
                     continue
 
@@ -81,7 +95,6 @@ class BollingerBandsStrategy(BaseStrategy):
                     signals.append("昨触布林下轨反弹")
                     score += 20
 
-                vol_ratio_series = calc_volume_ratio(vol, 5)
                 vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
                 if vol_ratio_val < 0.6:
                     signals.append("缩量止跌")

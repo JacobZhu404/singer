@@ -20,7 +20,7 @@ from typing import List, Tuple, Optional
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_macd
+from ..utils.indicators import calc_macd, calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -312,11 +312,11 @@ def _chanlun_score(kline: pd.DataFrame) -> Tuple[int, List[str], dict]:
     # ── 6. 量价配合（放量突破布林中轨） ──
     if n >= 20:
         vol = kline["vol"]
-        ma_vol = vol.rolling(20).mean()
         mid = close.rolling(20).mean()
         latest = close.iloc[-1]
-        if not (pd.isna(mid.iloc[-1]) or pd.isna(ma_vol.iloc[-1]) or pd.isna(vol.iloc[-1])):
-            vol_ratio = vol.iloc[-1] / ma_vol.iloc[-1]
+        vol_ratio_series = calc_volume_ratio(vol, 5)
+        if not (pd.isna(mid.iloc[-1]) or pd.isna(vol_ratio_series.iloc[-1])):
+            vol_ratio = float(vol_ratio_series.iloc[-1])
             if vol_ratio > 1.5 and latest > mid.iloc[-1]:
                 signals.append(f"放量({vol_ratio:.1f}x)突破中轨")
                 score += 10
@@ -525,6 +525,7 @@ class ChanlunStrategy(BaseStrategy):
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
                 score, signals, extra = _chanlun_score(kline)
 
                 if score < 40:
@@ -533,10 +534,10 @@ class ChanlunStrategy(BaseStrategy):
                 # 实时行情
                 quote = scanner.get_realtime(code)
                 pct = quote.get("涨跌幅", 0.0) or 0.0
-                # 量比改为基于K线成交量计算（5日均量为基准）
+                # 统一使用 calc_volume_ratio（含当日，period=5）
                 vol = kline["vol"]
-                vol_ma5 = vol.rolling(5).mean().iloc[-1]
-                vol_ratio_val = float(vol.iloc[-1] / vol_ma5) if (not pd.isna(vol_ma5) and vol_ma5 > 0) else 1.0
+                vol_ratio_series = calc_volume_ratio(vol, 5)
+                vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
                 price = quote.get("最新价", quote.get("close", kline["close"].iloc[-1])) or kline["close"].iloc[-1]
 
                 win_rate = self._calc_win_rate(score, signals)

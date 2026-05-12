@@ -64,6 +64,15 @@ _current_strategies_lock = threading.Lock()
 _sse_queues: List[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 
+# 各阶段对应的进度条百分比范围 (low, high)
+_PHASE_RANGES = {
+    "prefetch": (0, 30),
+    "precalc": (30, 35),
+    "running": (35, 100),
+    "merging": (99, 99),
+    "done": (100, 100),
+}
+
 # ── 筛选结果持久化 ──
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 _DATA_DIR = os.path.normpath(_DATA_DIR)
@@ -146,6 +155,7 @@ def api_screen():
     market = body.get("market", "主板")
     top_n = int(body.get("top_n", 10))
     force_refresh = bool(body.get("force_refresh", False))
+    skip_download = bool(body.get("skip_download", False))
 
     def run_task():
         global _last_result, _is_running, _partial_results, _current_strategies_run
@@ -156,12 +166,21 @@ def api_screen():
                 _screen_progress["current"] = current
                 _screen_progress["current_index"] = idx
                 _screen_progress["total"] = total
-                # running 阶段使用引擎计算的 overall_pct（含 running 中策略的加权），
-                # 其他阶段按原始计数计算百分比
+                low, high = _PHASE_RANGES.get(phase, (0, 100))
                 if phase == "running":
-                    _screen_progress["pct"] = engine.get_progress().get("pct", 0)
+                    engine_pct = engine.get_progress().get("pct", 0)
+                    pct = low + int(engine_pct / 100 * (high - low))
+                    pct = min(pct, 99)
+                elif phase == "done":
+                    pct = 100
                 else:
-                    _screen_progress["pct"] = int(idx / total * 100) if total > 0 else 0
+                    if total > 0:
+                        phase_pct = int(idx / total * 100)
+                    else:
+                        phase_pct = 0
+                    pct = low + int(phase_pct / 100 * (high - low))
+                    pct = min(pct, 99)
+                _screen_progress["pct"] = pct
                 # 同步引擎内部的策略子进度
                 _screen_progress["strategies"] = dict(engine.get_progress().get("strategies", {}))
 
@@ -197,6 +216,7 @@ def api_screen():
                 progress_callback=_on_progress,
                 force_refresh=force_refresh,
                 on_strategy_done=_on_strategy_done,
+                skip_download=skip_download,
             )
             _last_result = result
         except KeyboardInterrupt:

@@ -1,0 +1,284 @@
+[
+  {
+    "params": {
+      "score_threshold": 50,
+      "vr_threshold": 1.5,
+      "up_down_threshold": 1.5,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 12.0
+    },
+    "result": {
+      "total": 280,
+      "periods": {
+        "3": {
+          "win_rate": 49.6,
+          "avg_return": 1.19,
+          "avg_drawdown": 3.99,
+          "max_return": 42.77,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "5": {
+          "win_rate": 47.9,
+          "avg_return": 1.89,
+          "avg_drawdown": 5.88,
+          "max_return": 61.32,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "10": {
+          "win_rate": 54.4,
+          "avg_return": 3.22,
+          "avg_drawdown": 9.27,
+          "max_return": 76.42,
+          "max_loss": -34.13,
+          "total": 270
+        },
+        "30": {
+          "win_rate": 47.8,
+          "avg_return": 5.14,
+          "avg_drawdown": 16.6,
+          "max_return": 159.39,
+          "max_loss": -33.61,
+          "total": 230
+        }
+      }
+    }
+  },
+  {
+    "params": {
+      "score_threshold": 50,
+      "vr_threshold": 1.5,
+      "up_down_threshold": 2.0,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 12.0
+    },
+    "result": {
+      "total": 277,
+      "periods": {
+        "3": {
+          "win_rate": 53.4,
+          "avg_return": 1.59,
+          "avg_drawdown": 3.99,
+          "max_return": 42.77,
+          "max_loss": -26.72,
+          "total": 277
+        },
+        "5": {
+          "win_rate": 49.1,
+          "avg_return": 2.16,
+          "avg_drawdown": 5.93,
+          "max_return": 61.32,
+          "max_loss": -26.72,
+          "total": 277
+        },
+        "10": {
+          "win_rate": 55.8,
+          "avg_return": 3.85,
+          "avg_drawdown": 9.3,
+          "max_return": 76.42,
+          "max_loss": -34.13,
+          "total": 267
+        },
+        "30": {
+          "win_rate": 49.8,
+          "avg_return": 5.2,
+          "avg_drawdown": 17.02,
+          "max_return": 116.6,
+          "max_loss": -33.61,
+          "total": 227
+        }
+      }
+    }
+  },
+  {
+    "params": {
+      "score_threshold": 50,
+      "vr_threshold": 2.0,
+      "up_down_threshold": 1.5,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 12.0
+    },
+    "result": {
+      "total": 272,
+      "periods": {
+        "3": {
+          "win_rate": 51.5,
+          "avg_return": 1.37,
+          "avg_drawdown": 4.28,
+          "max_return": 72.8,
+          "max_loss": -26.72,
+          "total": 272
+        },
+        "5": {
+          "win_rate": 47.8,
+          "avg_return": 1.81,
+          "avg_drawdown": 6.19,
+          "max_return": 61.32,
+          "max_loss": -26.72,
+          "total": 272
+        },
+        "10": {
+          "win_rate": 53.8,
+          "avg_return": 3.85,
+          "avg_drawdown": 9.28,
+          "max_return": 67.65,
+          "max_loss": -34.13,
+          "total": 262
+        },
+        "30": {
+          "win_rate": 48.4,
+          "avg_return": 5.02,
+          "avg_drawdown": 16.96,
+          "max_return": 116.6,
+          "max_loss": -33.61,
+          "total": 223
+        }
+      }
+    }
+  },
+  {
+    "params": {
+      "score_threshold": 40,
+      "vr_threshold": 1.5,
+      "up_down_threshold": 1.5,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 10.0
+    },
+    "result": {
+      "total": 280,
+      "periods": {
+        "3": {
+          "win_rate": 49.6,
+          "avg_return": 1.29,
+          "avg_drawdown": 3.97,
+          "max_return": 42.77,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "5": {
+          "win_rate": 48.2,
+          "avg_return": 1.98,
+          "avg_drawdown": 5.84,
+          "max_return": 61.32,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "10": {
+          "win_rate": 54.4,
+          "avg_return": 3.36,
+          "avg_drawdown": 9.17,
+          "max_return": 76.42,
+          "max_loss": -34.13,
+          "total": 270
+        },
+        "30": {
+          "win_rate": 47.4,
+          "avg_return": 5.0,
+          "avg_drawdown": 16.64,
+          "max_return": 159.39,
+          "max_loss": -33.61,
+          "total": 230
+        }
+      }
+    }
+  },
+  {
+    "params": {
+      "score_threshold": 40,
+      "vr_threshold": 1.5,
+      "up_down_threshold": 1.5,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 15.0
+    },
+    "result": {
+      "total": 280,
+      "periods": {
+        "3": {
+          "win_rate": 48.2,
+          "avg_return": 1.01,
+          "avg_drawdown": 4.08,
+          "max_return": 42.77,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "5": {
+          "win_rate": 46.4,
+          "avg_return": 1.79,
+          "avg_drawdown": 5.93,
+          "max_return": 61.32,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "10": {
+          "win_rate": 53.7,
+          "avg_return": 3.07,
+          "avg_drawdown": 9.25,
+          "max_return": 76.42,
+          "max_loss": -34.13,
+          "total": 270
+        },
+        "30": {
+          "win_rate": 47.0,
+          "avg_return": 5.2,
+          "avg_drawdown": 16.58,
+          "max_return": 159.39,
+          "max_loss": -33.61,
+          "total": 230
+        }
+      }
+    }
+  },
+  {
+    "params": {
+      "score_threshold": 30,
+      "vr_threshold": 1.5,
+      "up_down_threshold": 1.5,
+      "add_gap_up": true,
+      "add_macd": true,
+      "max_cumulative_gain": 999.0
+    },
+    "result": {
+      "total": 280,
+      "periods": {
+        "3": {
+          "win_rate": 48.9,
+          "avg_return": 0.8,
+          "avg_drawdown": 4.43,
+          "max_return": 42.77,
+          "max_loss": -26.72,
+          "total": 280
+        },
+        "5": {
+          "win_rate": 46.4,
+          "avg_return": 1.76,
+          "avg_drawdown": 6.29,
+          "max_return": 61.32,
+          "max_loss": -27.41,
+          "total": 280
+        },
+        "10": {
+          "win_rate": 54.1,
+          "avg_return": 3.78,
+          "avg_drawdown": 9.48,
+          "max_return": 86.87,
+          "max_loss": -34.13,
+          "total": 270
+        },
+        "30": {
+          "win_rate": 46.1,
+          "avg_return": 5.25,
+          "avg_drawdown": 17.46,
+          "max_return": 159.39,
+          "max_loss": -34.25,
+          "total": 230
+        }
+      }
+    }
+  }
+]

@@ -52,22 +52,21 @@ class MACDBullStrategy(BaseStrategy):
 
         for code in codes:
             try:
-                df = scanner.get_history(code, days=120)
-                if df is None or len(df) < 60:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 60:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
                 high = df["high"]
                 low = df["low"]
-                vol = df["vol"]
 
-                # 计算 MACD
-                dif, dea, macd_bar = calc_macd(close)
-                # 计算均线
-                mas = calc_ma(close, [5, 10, 20, 60])
-                # 量比
-                vol_ratio = calc_volume_ratio(vol, 5)
+                # 查表获取预计算指标
+                dif, dea, macd_bar = indicators["macd"]
+                mas = indicators["ma"]
+                vol_ratio = indicators["vol_ratio"]
 
                 i = len(df) - 1
                 if pd.isna(dif.iloc[i]) or pd.isna(dea.iloc[i]):

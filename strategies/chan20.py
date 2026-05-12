@@ -3,12 +3,12 @@
 
 核心逻辑：
   1. MACD在零轴下方（DIF<0, DEA<0）出现两次金叉
-  2. SKDJ在低位（SK<30）形成金叉共振
+  2. SKDJ在低位（SK<25）形成金叉共振
   3. 底部形态确认，反弹概率高
 
-评分规则：
-  - MACD零轴下二次金叉：+40（核心信号）
-  - SKDJ低位金叉（SK<30）：+30（共振确认）
+评分规则（已收紧）：
+  - MACD零轴下二次金叉（3日内）：+40（核心信号）
+  - SKDJ低位金叉（SK<25）：+30（共振确认）
   - SKDJ低位（20以下）：+15（超卖）
   - 价格站上5日均线：+10
   - 温和放量：+5
@@ -22,7 +22,7 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_macd, calc_skdj, calc_ma, calc_volume_ratio
+from ..utils.indicators import calc_macd, calc_skdj, calc_ma
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -70,23 +70,24 @@ class Chan20Strategy(BaseStrategy):
 
         for code in codes:
             try:
-                df = scanner.get_history(code, days=120)
-                if df is None or len(df) < 60:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 60:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
                 high = df["high"]
                 low = df["low"]
-                vol = df["vol"]
 
                 i = len(df) - 1
 
-                # 计算指标
-                dif, dea, macd_bar = calc_macd(close)
-                sk, sd = calc_skdj(close, high, low)
-                mas = calc_ma(close, [5, 10, 20])
-                vol_ratio = calc_volume_ratio(vol, 5)
+                # 查表获取预计算指标
+                dif, dea, macd_bar = indicators["macd"]
+                sk, sd = indicators["skdj"]
+                mas = indicators["ma"]
+                vol_ratio = indicators["vol_ratio"]
 
                 if pd.isna(dif.iloc[i]) or pd.isna(dea.iloc[i]) or pd.isna(sk.iloc[i]) or pd.isna(sd.iloc[i]):
                     continue
@@ -96,11 +97,11 @@ class Chan20Strategy(BaseStrategy):
 
                 # ── 核心条件1: MACD零轴下二次金叉 ──
                 zero_crosses = _detect_macd_crosses_below_zero(dif, dea)
-                # 需要至少两次金叉，且最近一次金叉在5个交易日内
-                if len(zero_crosses) >= 2 and (i - zero_crosses[-1]) <= 5:
+                # tightened: 二次金叉要求最近一次在3日内，单次金叉在2日内
+                if len(zero_crosses) >= 2 and (i - zero_crosses[-1]) <= 3:
                     signals.append("MACD零轴下二次金叉")
                     score += 40
-                elif len(zero_crosses) >= 1 and (i - zero_crosses[-1]) <= 3:
+                elif len(zero_crosses) >= 1 and (i - zero_crosses[-1]) <= 2:
                     signals.append("MACD零轴下金叉")
                     score += 25
                 else:
@@ -112,20 +113,20 @@ class Chan20Strategy(BaseStrategy):
                 sk_prev = sk.iloc[i - 1]
                 sd_prev = sd.iloc[i - 1]
 
-                # SKDJ金叉
+                # SKDJ金叉（tightened: SK<25）
                 if sk_prev <= sd_prev and sk_val > sd_val:
-                    if sk_val < 30:
+                    if sk_val < 25:
                         signals.append("SKDJ低位金叉")
                         score += 30
                     else:
                         signals.append("SKDJ金叉")
                         score += 15
 
-                # SKDJ超卖区
+                # SKDJ超卖区（tightened: 低位阈值<25）
                 if sk_val < 20:
                     signals.append("SKDJ超卖")
                     score += 15
-                elif sk_val < 30:
+                elif sk_val < 25:
                     signals.append("SKDJ低位")
                     score += 10
 
@@ -145,8 +146,8 @@ class Chan20Strategy(BaseStrategy):
                     signals.append("温和放量")
                     score += 5
 
-                # 阈值过滤（核心策略需要至少满足一个核心条件）
-                if score < 45:
+                # 阈值过滤（tightened: 最低分从45提高到55）
+                if score < 55:
                     continue
 
                 latest = close.iloc[i]

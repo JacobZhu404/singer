@@ -40,20 +40,22 @@ class RightSideTradingStrategy(BaseStrategy):
 
         for code in self._get_codes(stock_list):
             try:
-                df = scanner.get_history(code, days=80)
-                if df is None or len(df) < 30:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 30:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
                 high = df["high"]
                 vol = df["vol"]
                 i = len(df) - 1
 
-                mas = calc_ma(close, [5, 10, 20, 60])
-                vol_ratio = calc_volume_ratio(vol, 5)
-                rsi = calc_rsi(close, 14)
-                dif, dea, _ = calc_macd(close)
+                mas = indicators["ma"]
+                vol_ratio = indicators["vol_ratio"]
+                rsi = indicators["rsi"]
+                dif, dea, _ = indicators["macd"]
 
                 signals = []
                 score = 0
