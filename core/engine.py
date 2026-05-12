@@ -312,19 +312,19 @@ class ScreenEngine:
         self._set_progress("running", "策略启动中...", 0, total)
         if progress_callback:
             progress_callback("running", "策略启动中...", 0, total)
-        print(f"[{datetime.now()}] 设置'策略启动中'完成, 耗时: {datetime.now()-_t3}", flush=True)
+        logger.info(f"[{datetime.now()}] 设置'策略启动中'完成, 耗时: {datetime.now()-_t3}")
 
         def run_one(name: str) -> tuple:
             _t_run = datetime.now()
             import sys
-            print(f"[{datetime.now()}] [ENGINE] run_one 开始: {name}", flush=True)
+            logger.info(f"[{datetime.now()}] [ENGINE] run_one 开始: {name}")
             if self._stop_requested():
                 raise RuntimeError("stopped")
             self._set_strategy_progress(name, "running", 0, 0, "loading")
-            print(f"[{datetime.now()}] [ENGINE] {name} 已设置loading, 耗时: {datetime.now()-_t_run}", flush=True)
+            logger.info(f"[{datetime.now()}] [ENGINE] {name} 已设置loading, 耗时: {datetime.now()-_t_run}")
             strategy = get_strategy(name, top_n=self.top_n)
             total_codes = len(strategy._get_codes(stock_list))
-            print(f"[{datetime.now()}] [ENGINE] {name}: total_codes={total_codes}, 耗时: {datetime.now()-_t_run}", flush=True)
+            logger.info(f"[{datetime.now()}] [ENGINE] {name}: total_codes={total_codes}, 耗时: {datetime.now()-_t_run}")
 
             def _on_strategy_progress(phase: str, scanned: int, total_stocks: int):
                 if self._stop_requested():
@@ -335,9 +335,9 @@ class ScreenEngine:
                 )
 
             strategy.set_progress_callback(_on_strategy_progress)
-            print(f"[{datetime.now()}] [ENGINE] {name} 开始执行 strategy.screen(), 已耗时: {datetime.now()-_t_run}", flush=True)
+            logger.info(f"[{datetime.now()}] [ENGINE] {name} 开始执行 strategy.screen(), 已耗时: {datetime.now()-_t_run}")
             result = strategy.screen(stock_list, scanner=market_scanner)
-            print(f"[{datetime.now()}] [ENGINE] {name} strategy.screen() 完成, 耗时: {datetime.now()-_t_run}", flush=True)
+            logger.info(f"[{datetime.now()}] [ENGINE] {name} strategy.screen() 完成, 耗时: {datetime.now()-_t_run}")
             self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
             self._set_strategy_progress(name, "done", 100, len(result.signals), "done", total_stocks=total_codes)
             return name, result
@@ -558,13 +558,13 @@ class ScreenEngine:
             self._set_progress("prefetch", "使用缓存数据，跳过下载", 30, 100)
             if progress_callback:
                 progress_callback("prefetch", "使用缓存数据，跳过下载", 30, 100)
-        print(f"[{datetime.now()}] 阶段1完成, 耗时: {datetime.now()-_t0}", flush=True)
+        logger.info(f"[{datetime.now()}] 阶段1完成, 耗时: {datetime.now()-_t0}")
 
         # 阶段1.5：预计算指标（按需，非阻塞）
         stock_list = self._load_stock_list()
         _t1 = datetime.now()
         self._precalc(stock_list, progress_callback=progress_callback)
-        print(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}", flush=True)
+        logger.info(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}")
 
         # 阶段2：并行运行策略（流式回调）
         _t2 = datetime.now()
