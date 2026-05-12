@@ -87,43 +87,35 @@ class ScreenEngine:
         return min(int(scanned / total * 100), 99)
 
     def _calc_progress_with_running(self, completed: int, total: int) -> int:
-        """计算总体进度：已完成 + running 中策略按 50% 计算"""
+        """计算总体进度：已完成策略算 100%，running 中策略按各自内部进度计算"""
         if total <= 0:
             return 0
         with self._progress_lock:
-            running = self._running_count
-        raw = completed + running * 0.5
-        return min(int(raw / total * 100), 99)
+            strategies = self._progress["strategies"]
+        total_pct = completed * 100
+        for info in strategies.values():
+            if info.get("status") == "running":
+                total_pct += info.get("pct", 0)
+        return min(int(total_pct / total), 99)
 
     def get_progress(self) -> Dict:
         with self._progress_lock:
             return dict(self._progress)
 
-    def _load_stock_list(self, sample_ratio: float = 1.0) -> pd.DataFrame:
+    def _load_stock_list(self) -> pd.DataFrame:
         if self._stock_list is None:
             logger.info(f"加载股票列表")
             self._stock_list = get_stock_list()
-        if sample_ratio < 1.0 and not self._stock_list.empty:
-            n = max(1, int(len(self._stock_list) * sample_ratio))
-            logger.info(f"采样模式: {len(self._stock_list)} → {n} 只 (ratio={sample_ratio})")
-            return self._stock_list.sample(n=n, random_state=42)
         return self._stock_list
 
     def _precalc(self, stock_list: pd.DataFrame,
-                 progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
-                 sample_ratio: float = 1.0):
+                 progress_callback: Optional[Callable[[str, str, int, int], None]] = None):
         """预计算指标并缓存，避免各策略重复计算"""
         from ..utils.precalc import precalc_indicators
         code_col = "代码" if "代码" in stock_list.columns else "ts_code"
         if stock_list.empty or code_col not in stock_list.columns:
             return
         codes = stock_list[code_col].astype(str).tolist()
-        if sample_ratio < 1.0 and codes:
-            n = max(1, int(len(codes) * sample_ratio))
-            import random
-            random.seed(42)
-            codes = random.sample(codes, n)
-            logger.info(f"precalc 采样: {len(stock_list)} → {n} 只")
         if not codes:
             return
 
@@ -146,7 +138,6 @@ class ScreenEngine:
         self,
         force_refresh: bool = False,
         progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
-        sample_ratio: float = 1.0,
     ) -> dict:
         """
         阶段1：下载/更新K线数据到缓存。
@@ -156,11 +147,10 @@ class ScreenEngine:
             force_refresh: True=强制重新下载所有股票（忽略缓存）
                           False=只补充未缓存的股票
             progress_callback: 进度回调 (phase, message, current, total)
-            sample_ratio: 采样比例，1.0=全量，0.1=1/10
         Returns:
             {"status": "ok", "cached_count": int, "downloaded": int}
         """
-        stock_list = self._load_stock_list(sample_ratio=sample_ratio)
+        stock_list = self._load_stock_list()
         market_scanner.load()
 
         code_col = "代码" if "代码" in stock_list.columns else "ts_code"
@@ -252,6 +242,7 @@ class ScreenEngine:
             if progress_callback:
                 progress_callback("running", name, idx - 1, total)
 
+            total_codes = 0
             try:
                 strategy = get_strategy(name, top_n=self.top_n)
                 total_codes = len(strategy._get_codes(stock_list))
@@ -343,7 +334,7 @@ class ScreenEngine:
             strategy.set_progress_callback(_on_strategy_progress)
             result = strategy.screen(stock_list, scanner=market_scanner)
             self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
-            self._set_strategy_progress(name, "done", 100, len(result.signals), "done", total_stocks=total_codes)
+            self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done", total_stocks=total_codes)
             return name, result
 
         with ThreadPoolExecutor(max_workers=min(8, total)) as executor:
@@ -367,8 +358,9 @@ class ScreenEngine:
                     if progress_callback:
                         progress_callback("running", f"已完成 {current_completed}/{total}", current_completed, total)
                 except Exception as e:
-                    logger.error(f"策略执行失败: {e}")
-                    self._set_strategy_progress(name, "done", 100, 0, "done")
+                    failed_name = futures[future]
+                    logger.error(f"策略 {failed_name} 执行失败: {e}")
+                    self._set_strategy_progress(failed_name, "done", 100, 0, "done")
 
         # 强制将所有未完成的策略标记为 done，避免前端状态不一致
         with self._progress_lock:
@@ -546,12 +538,10 @@ class ScreenEngine:
         on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
         parallel: bool = True,
         skip_download: bool = False,
-        sample_ratio: float = 1.0,
     ) -> Dict:
         """
         一键获取推荐：执行策略 → 合并 → 排序
         默认并行执行策略，每个策略完成后立即回调 on_strategy_done。
-        sample_ratio: 采样比例，1.0=全量，0.1=1/10，用于测试
         """
         if strategies is None:
             strategies = [k for k in STRATEGY_REGISTRY if k != "limit_up_gene"]
@@ -559,8 +549,7 @@ class ScreenEngine:
         # 阶段1：预加载K线数据（可跳过）
         _t0 = datetime.now()
         if not skip_download:
-            self.download_data(force_refresh=force_refresh, progress_callback=progress_callback,
-                               sample_ratio=sample_ratio)
+            self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
         else:
             self._set_progress("prefetch", "使用缓存数据，跳过下载", 30, 100)
             if progress_callback:
@@ -572,10 +561,9 @@ class ScreenEngine:
         _orig_include = market_scanner._include_realtime
         market_scanner._include_realtime = False
         try:
-            stock_list = self._load_stock_list(sample_ratio=sample_ratio)
+            stock_list = self._load_stock_list()
             _t1 = datetime.now()
-            self._precalc(stock_list, progress_callback=progress_callback,
-                          sample_ratio=sample_ratio)
+            self._precalc(stock_list, progress_callback=progress_callback)
             logger.info(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}")
         finally:
             market_scanner._include_realtime = _orig_include

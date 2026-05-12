@@ -70,6 +70,7 @@ _PHASE_RANGES = {
     "precalc": (25, 40),
     "running": (40, 100),
     "merging": (99, 99),
+    "download_done": (100, 100),
     "done": (100, 100),
 }
 
@@ -156,8 +157,6 @@ def api_screen():
     top_n = int(body.get("top_n", 10))
     force_refresh = bool(body.get("force_refresh", False))
     skip_download = bool(body.get("skip_download", False))
-    sample_ratio = float(body.get("sample_ratio", 1.0))
-    sample_ratio = max(0.01, min(1.0, sample_ratio))  # 限制范围
 
     def run_task():
         global _last_result, _is_running, _partial_results, _current_strategies_run
@@ -219,7 +218,6 @@ def api_screen():
                 force_refresh=force_refresh,
                 on_strategy_done=_on_strategy_done,
                 skip_download=skip_download,
-                sample_ratio=sample_ratio,
             )
             _last_result = result
         except KeyboardInterrupt:
@@ -338,7 +336,14 @@ def api_download():
                     _screen_progress["current"] = current
                     _screen_progress["current_index"] = idx
                     _screen_progress["total"] = total
-                    _screen_progress["pct"] = int(idx / total * 100) if total > 0 else 0
+                    low, high = _PHASE_RANGES.get(phase, (0, 100))
+                    if total > 0:
+                        phase_pct = int(idx / total * 100)
+                    else:
+                        phase_pct = 0
+                    pct = low + int(phase_pct / 100 * (high - low))
+                    pct = min(pct, 99)
+                    _screen_progress["pct"] = pct
 
             engine = get_engine("主板")
             engine._stop_event = _stop_event
@@ -346,12 +351,15 @@ def api_download():
         except Exception as e:
             logger.error(f"数据下载失败: {e}")
             with _progress_lock:
-                _screen_progress["phase"] = "done"
+                _screen_progress["phase"] = "download_done"
                 _screen_progress["current"] = f"下载失败: {e}"
         finally:
             _is_running = False
             with _progress_lock:
-                _screen_progress["phase"] = "done"
+                if _screen_progress["phase"] != "download_done":
+                    _screen_progress["phase"] = "download_done"
+                    _screen_progress["current"] = "数据更新完成"
+                    _screen_progress["pct"] = 100
 
     t = threading.Thread(target=download_task, daemon=True)
     t.start()

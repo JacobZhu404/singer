@@ -22,6 +22,7 @@ import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
 from ..data.fetcher import market_scanner, get_latest_trade_date
+from ..utils.indicators import calc_volume_ratio
 
 logger = logging.getLogger(__name__)
 
