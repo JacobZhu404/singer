@@ -786,7 +786,7 @@ class ChanlunStrictStrategy(BaseStrategy):
                 analysis = _analyze(df)
                 score, signals, extra = _compute_score(analysis)
 
-                if score < 30:
+                if score < 40:
                     continue
 
                 # 实时行情

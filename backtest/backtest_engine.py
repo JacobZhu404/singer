@@ -217,7 +217,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if i > 0 and low.iloc[i] > high.iloc[i-1]:
                 signals.append("跳空缺口"); score += 20
             if dif.iloc[i] > 0: signals.append("MACD零轴以上"); score += 20
-            if score < 40: return 0, []
+            if score < 50: return 0, []
 
         elif strategy_name == "td_sequential":
             td = td_sequential_count(close, high=high, low=low)
@@ -318,7 +318,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             d = float(dif.iloc[i]) if not pd.isna(dif.iloc[i]) else 0
             if d > 0:
                 signals.append("MACD零轴上"); score += 10
-            if score < 40:
+            if score < 70:
                 return 0, []
 
         elif strategy_name == "chan20":
@@ -370,7 +370,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if today_pct >= 9.5: signals.append(f"今日涨停({today_pct:.1f}%)"); score += 40
             limit_days = sum(1 for j in range(max(0, i-30), i+1) if pct.iloc[j] >= 9.5)
             if limit_days >= 1: signals.append(f"近30日涨停{limit_days}次"); score += min(limit_days*10, 20)
-            if score < 30: return 0, []
+            if score < 40: return 0, []
 
         else:
             return 0, []

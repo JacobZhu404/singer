@@ -113,7 +113,7 @@ class LimitUpGeneStrategy(BaseStrategy):
                     signals.append("MACD零轴以上")
                     score += 10
 
-                if score < 30:
+                if score < 40:
                     continue
 
                 latest = float(close.iloc[i])

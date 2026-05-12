@@ -113,7 +113,7 @@ class GoldenCrossStrategy(BaseStrategy):
                     signals.append("MACD零轴上方")
                     score += 10
 
-                if score < 40:
+                if score < 70:
                     continue
 
                 quote = self._get_quote(scanner, code, c)
