@@ -254,10 +254,10 @@ class ScreenEngine:
                 logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
 
                 # 阶段3: 结果写入
-                self._set_strategy_progress(name, "running", 99, 0, "writing")
+                self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
 
                 # 阶段4: 执行完成
-                self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done")
+                self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done", total_stocks=total_codes)
                 if on_strategy_done:
                     on_strategy_done(name, result)
                 self._set_progress("running", name, idx, total)
@@ -265,7 +265,7 @@ class ScreenEngine:
                     progress_callback("running", name, idx, total)
             except Exception as e:
                 logger.error(f"策略 {name} 执行失败: {e}")
-                self._set_strategy_progress(name, "done", 100, 0, "done")
+                self._set_strategy_progress(name, "done", 100, 0, "done", total_stocks=total_codes)
 
         # 强制将所有未完成的策略标记为 done，避免前端状态不一致
         with self._progress_lock:
@@ -330,8 +330,8 @@ class ScreenEngine:
 
             strategy.set_progress_callback(_on_strategy_progress)
             result = strategy.screen(stock_list, scanner=market_scanner)
-            self._set_strategy_progress(name, "running", 99, 0, "writing")
-            self._set_strategy_progress(name, "done", 100, len(result.signals), "done")
+            self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
+            self._set_strategy_progress(name, "done", 100, len(result.signals), "done", total_stocks=total_codes)
             return name, result
 
         with ThreadPoolExecutor(max_workers=min(8, total)) as executor:
