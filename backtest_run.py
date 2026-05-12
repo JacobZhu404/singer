@@ -86,7 +86,7 @@ def check_signal(code, name, df_hist, strat):
                     signals.append('五连小阳'); score += 20
             if dif.iloc[i] > 0:
                 signals.append('MACD零轴'); score += 20
-            if score < 40:
+            if score < 50:
                 return None
 
         elif strat == 'td_sequential':
@@ -238,7 +238,7 @@ def check_signal(code, name, df_hist, strat):
             d = float(dif.iloc[i]) if not pd.isna(dif.iloc[i]) else 0
             if d > 0:
                 signals.append('MACD零轴上'); score += 10
-            if score < 40:
+            if score < 70:
                 return None
 
         elif strat == 'chanlun':
