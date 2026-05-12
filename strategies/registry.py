@@ -13,7 +13,6 @@ from .volume_breakout import VolumeBreakoutStrategy
 from .chanlun import ChanlunStrategy
 from .chanlun_strict import ChanlunStrictStrategy
 from .golden_cross import GoldenCrossStrategy
-from .chan20 import Chan20Strategy
 
 # 策略注册表
 # 排序说明：默认选中策略(8个)在前，未选中策略(3个)在后
@@ -95,13 +94,6 @@ STRATEGY_REGISTRY = {
         "description": "近期有涨停记录，涨停后未大幅回落，题材活跃",
         "tags": ["涨停", "短线"],
         "icon": "🔥",
-    },
-    "chan20": {
-        "cls": Chan20Strategy,
-        "name": "缠20",
-        "description": "MACD零轴下二次金叉+SKDJ低位共振，底部反转信号",
-        "tags": ["反转", "底部", "短线"],
-        "icon": "🌀",
     },
 }
 

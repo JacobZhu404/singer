@@ -137,7 +137,7 @@ class SinaDataSource(DataSource):
                         name = row.get("name", sym)
                         if sym and sym not in seen:
                             seen.add(sym)
-                            all_rows.append({"代码": sym, "名称": name})
+                            all_rows.append({"ts_code": sym, "name": name})
                 except Exception:
                     break
                 time.sleep(0.1)

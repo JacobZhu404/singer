@@ -776,7 +776,7 @@ class ChanlunStrictStrategy(BaseStrategy):
                     continue
 
                 scanned += 1
-                self._report_progress("executing", scanned, len(codes))
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
                 analysis = _analyze(df)
                 score, signals, extra = _compute_score(analysis)
 

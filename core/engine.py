@@ -267,6 +267,16 @@ class ScreenEngine:
                 logger.error(f"策略 {name} 执行失败: {e}")
                 self._set_strategy_progress(name, "done", 100, 0, "done")
 
+        # 强制将所有未完成的策略标记为 done，避免前端状态不一致
+        with self._progress_lock:
+            for name, info in self._progress["strategies"].items():
+                if info.get("status") != "done":
+                    self._progress["strategies"][name] = {
+                        **info,
+                        "status": "done",
+                        "phase": "done",
+                        "pct": 100,
+                    }
         self._set_progress("done", "筛选完成", total, total)
         if progress_callback:
             progress_callback("done", "筛选完成", total, total)
@@ -301,11 +311,14 @@ class ScreenEngine:
             progress_callback("running", "策略启动中...", 0, total)
 
         def run_one(name: str) -> tuple:
+            import sys
+            print(f"[ENGINE] run_one called for {name}", flush=True)
             if self._stop_requested():
                 raise RuntimeError("stopped")
             self._set_strategy_progress(name, "running", 0, 0, "loading")
             strategy = get_strategy(name, top_n=self.top_n)
             total_codes = len(strategy._get_codes(stock_list))
+            print(f"[ENGINE] {name}: total_codes={total_codes}, stock_list.cols={list(stock_list.columns)}", flush=True)
 
             def _on_strategy_progress(phase: str, scanned: int, total_stocks: int):
                 if self._stop_requested():
@@ -345,6 +358,16 @@ class ScreenEngine:
                     logger.error(f"策略执行失败: {e}")
                     self._set_strategy_progress(name, "done", 100, 0, "done")
 
+        # 强制将所有未完成的策略标记为 done，避免前端状态不一致
+        with self._progress_lock:
+            for name, info in self._progress["strategies"].items():
+                if info.get("status") != "done":
+                    self._progress["strategies"][name] = {
+                        **info,
+                        "status": "done",
+                        "phase": "done",
+                        "pct": 100,
+                    }
         self._set_progress("done", "筛选完成", total, total)
         if progress_callback:
             progress_callback("done", "筛选完成", total, total)
@@ -510,6 +533,7 @@ class ScreenEngine:
         force_refresh: bool = False,
         on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
         parallel: bool = True,
+        skip_download: bool = False,
     ) -> Dict:
         """
         一键获取推荐：执行策略 → 合并 → 排序
@@ -518,8 +542,13 @@ class ScreenEngine:
         if strategies is None:
             strategies = [k for k in STRATEGY_REGISTRY if k != "limit_up_gene"]
 
-        # 阶段1：预加载K线数据
-        self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
+        # 阶段1：预加载K线数据（可跳过）
+        if not skip_download:
+            self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
+        else:
+            self._set_progress("prefetch", "使用缓存数据，跳过下载", 30, 100)
+            if progress_callback:
+                progress_callback("prefetch", "使用缓存数据，跳过下载", 30, 100)
         # 阶段1.5：预计算指标（按需，非阻塞）
         stock_list = self._load_stock_list()
         self._precalc(stock_list, progress_callback=progress_callback)

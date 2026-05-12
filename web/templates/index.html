@@ -64,12 +64,14 @@
   .strategy-card.waiting .strategy-card-progress,
   .strategy-card.running .strategy-card-progress,
   .strategy-card.done .strategy-card-progress { display: block; }
-  .strategy-card-progress-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+  .strategy-card-progress-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
   .strategy-card-progress-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
   .strategy-card.waiting .strategy-card-progress-fill { background: rgba(255,183,77,0.4); width: 100%; animation: pulse-bar 1.5s ease-in-out infinite; }
   .strategy-card.running .strategy-card-progress-fill { background: var(--yellow); width: var(--pct, 50%); }
   .strategy-card.done .strategy-card-progress-fill { background: var(--green); width: 100%; }
-  .strategy-card-progress-label { font-size: 10px; color: var(--muted); margin-top: 2px; display: flex; justify-content: space-between; }
+  .strategy-card-progress-label { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; justify-content: space-between; align-items: center; }
+  .strategy-card-progress-label-text { font-size: 11px; }
+  .strategy-card-progress-count { font-size: 11px; color: var(--accent); font-weight: 600; }
   @keyframes pulse-bar { 0%,100%{opacity:.4} 50%{opacity:1} }
   .tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(88,166,255,0.15); color: var(--accent); }
   /* 持仓买入策略标签 */
@@ -144,8 +146,7 @@
   .btn-buy:hover { background: rgba(63,185,80,0.25); }
   .btn-dangerous { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); border-radius: 8px; }
   .btn-dangerous:hover { background: rgba(248,81,73,0.25); }
-  .btn-stop-inline { width: auto; padding: 6px 14px; font-size: 13px; flex: 1; background: rgba(248,81,73,0.12); border: 1px solid rgba(248,81,73,0.4); color: var(--red); }
-  .btn-stop-inline:hover { background: rgba(248,81,73,0.22); }
+  .btn-stop-inline { display:none; }
 
   /* ── Progress Bar ── */
   .progress-wrap { display: none; margin-bottom: 10px; }
@@ -313,9 +314,6 @@
   .result-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
   /* ── Modal ── */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 2000; display: none; }
-  .modal-overlay.show { display: flex; }
-  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 360px; max-width: 90vw; }
   .modal h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
   .modal-field { margin-bottom: 12px; }
   .modal-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -356,6 +354,7 @@
     align-items: center;
   }
   .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 360px; max-width: 90vw; }
   .modal-box {
     background: var(--surface);
     border: 1px solid rgba(88,166,255,0.4);
@@ -690,7 +689,6 @@
 let strategies = [];
 let selectedStrategies = new Set();
 let strategyNameMap = {};  // id → name 映射，供持仓页面使用
-let pollTimer = null;  // deprecated
 let currentTab = 'merged';
 let currentTopTab = 'screen';
 let lastResult = null;
@@ -781,19 +779,19 @@ async function checkStatus() {
       showProgress('prefetch', '📥 加载行情数据', prog.current || '');
       if (prog.total > 0) {
         document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
-        document.getElementById('progressFill').style.width = `${Math.min(prog.pct * 0.2, 20)}%`;
+        document.getElementById('progressFill').style.width = `${prog.pct}%`;
       }
     } else if (prog.phase === 'precalc') {
       showProgress('precalc', '⚙️ 指标预计算', prog.current || '');
       if (prog.total > 0) {
         document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
-        document.getElementById('progressFill').style.width = `${20 + Math.min(prog.pct * 0.2, 20)}%`;
+        document.getElementById('progressFill').style.width = `${prog.pct}%`;
       }
     } else if (prog.phase === 'running') {
       const overallPct = prog.pct || 0;
       showProgress('running', `📊 ${prog.current || '策略执行中...'}`, '');
       document.getElementById('progressPct').textContent = `${overallPct}%`;
-      document.getElementById('progressFill').style.width = `${40 + overallPct * 0.3}%`;
+      document.getElementById('progressFill').style.width = `${prog.pct}%`;
     }
   }
 }
@@ -1121,6 +1119,7 @@ function renderStrategyList() {
         </div>
         <div class="strategy-card-progress-label">
           <span class="strategy-card-progress-label-text"></span>
+          <span class="strategy-card-progress-count"></span>
         </div>
       </div>
     </div>
@@ -1184,8 +1183,8 @@ function updateDataStatusUI(data, isRunning) {
     txt.innerHTML = `<span class="cached-count">${count}</span> / ${totalStr} ⚠️ 数据较少，建议先更新`;
   }
   // 根据数据就绪状态启用/禁用快速筛选
-  const fastBtn = document.getElementById('fastBtn');
-  if (fastBtn) fastBtn.disabled = count < 10;
+  const onlyScreenBtn = document.getElementById('onlyScreenBtn');
+  if (onlyScreenBtn) onlyScreenBtn.disabled = count < 10;
 }
 
 // 页面加载时获取数据状态
@@ -1288,7 +1287,7 @@ async function startOnlyScreen() {
   if (selectedStrategies.size === 0) { notify('请先选择至少一个策略', 'error'); return; }
   const market = document.getElementById('marketSelect').value;
   const topN = parseInt(document.getElementById('topnSelect').value);
-  startScreenTask(market, topN, false);
+  startScreenTask(market, topN, false, true);
 }
 
 // 更新后筛选：先强制刷新，再筛选
@@ -1296,11 +1295,11 @@ async function startUpdateAndScreen() {
   if (selectedStrategies.size === 0) { notify('请先选择至少一个策略', 'error'); return; }
   const market = document.getElementById('marketSelect').value;
   const topN = parseInt(document.getElementById('topnSelect').value);
-  startScreenTask(market, topN, true);
+  startScreenTask(market, topN, true, false);
 }
 
 // 通用筛选入口：force_refresh=true 先下载最新数据
-async function startScreenTask(market, topN, forceRefresh) {
+async function startScreenTask(market, topN, forceRefresh, skipDownload = false) {
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('resultArea').style.display = 'none';
 
@@ -1318,6 +1317,7 @@ async function startScreenTask(market, topN, forceRefresh) {
       market,
       top_n: topN,
       force_refresh: forceRefresh,
+      skip_download: skipDownload,
     })
   });
   const j = await resp.json();
@@ -1417,40 +1417,34 @@ async function pollProgress() {
       document.getElementById('progressLabel').textContent = '📥 加载行情数据';
       if (p.total > 0) {
         document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
-        document.getElementById('progressFill').style.width = `${Math.min(p.pct * 0.2, 20)}%`;
+        document.getElementById('progressFill').style.width = `${p.pct}%`;
       }
-      _renderStrategyProgress(p.strategies || {});
-      // 所有已选中策略卡片显示"等待数据"
       _setAllCardsWaiting('prefetch');
     } else if (p.phase === 'precalc') {
       // 阶段1.5：指标预计算
       document.getElementById('progressLabel').textContent = '⚙️ 指标预计算';
       if (p.total > 0) {
         document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
-        document.getElementById('progressFill').style.width = `${20 + Math.min(p.pct * 0.2, 20)}%`;
+        document.getElementById('progressFill').style.width = `${p.pct}%`;
       }
-      _renderStrategyProgress(p.strategies || {});
       _setAllCardsWaiting('precalc');
     } else if (p.phase === 'running') {
       // 阶段2：执行策略（并行，显示整体进度）
       const overallPct = p.pct || 0;
       document.getElementById('progressLabel').textContent = `📊 ${p.current || '策略执行中...'}`;
       document.getElementById('progressPct').textContent = `${overallPct}%`;
-      document.getElementById('progressFill').style.width = `${40 + overallPct * 0.3}%`;
-      _renderStrategyProgress(p.strategies || {});
+      document.getElementById('progressFill').style.width = `${p.pct}%`;
       _updateSidebarCardProgress(p.strategies || {});
     } else if (p.phase === 'merging') {
       document.getElementById('progressLabel').textContent = '📦 结果合并中...';
       document.getElementById('progressPct').textContent = `${p.pct || 0}%`;
-      document.getElementById('progressFill').style.width = `${70 + (p.pct || 0) * 0.3}%`;
-      _renderStrategyProgress(p.strategies || {});
+      document.getElementById('progressFill').style.width = `${p.pct}%`;
       _updateSidebarCardProgress(p.strategies || {});
     } else if (p.phase === 'done') {
       document.getElementById('progressLabel').textContent = '✅ 筛选完成';
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
       clearInterval(_progressTimer);
-      _renderStrategyProgress(p.strategies || {});
       _updateSidebarCardProgress(p.strategies || {});
       // 清除仍处于 waiting 状态的卡片（未被执行到的策略）
       document.querySelectorAll('.strategy-card.waiting').forEach(card => {
@@ -1517,6 +1511,9 @@ function _updateSidebarCardProgress(strategies) {
         (card.querySelector('.strategy-card-progress-fill').style.width = '100%');
       card.querySelector('.strategy-card-progress-label-text') &&
         (card.querySelector('.strategy-card-progress-label-text').textContent = `${st.hits || 0}只命中`);
+      // 显示命中数标签
+      const countEl = card.querySelector('.strategy-card-progress-count');
+      if (countEl) countEl.textContent = `${st.hits || 0}只`;
     } else if (st.status === 'running') {
       card.classList.add('running');
       const phase = st.phase || 'executing';
@@ -1527,21 +1524,27 @@ function _updateSidebarCardProgress(strategies) {
         fill.style.setProperty('--pct', `${pct}%`);
       }
       const label = card.querySelector('.strategy-card-progress-label-text');
+      const countEl = card.querySelector('.strategy-card-progress-count');
       if (label) {
         if (phase === 'loading') {
           label.textContent = '📥 数据加载中...';
+          if (countEl) countEl.textContent = '';
         } else if (phase === 'executing') {
           const scanned = st.scanned || 0;
           const total = st.total_stocks || 0;
           if (total > 0) {
             label.textContent = `扫描中 ${scanned}/${total}`;
+            if (countEl) countEl.textContent = `${pct}%`;
           } else {
             label.textContent = '策略执行中...';
+            if (countEl) countEl.textContent = '';
           }
         } else if (phase === 'writing') {
           label.textContent = '💾 结果写入中...';
+          if (countEl) countEl.textContent = '';
         } else {
           label.textContent = '执行中...';
+          if (countEl) countEl.textContent = '';
         }
       }
     } else if (st.status === 'pending') {
@@ -1549,7 +1552,9 @@ function _updateSidebarCardProgress(strategies) {
       const fill = card.querySelector('.strategy-card-progress-fill');
       if (fill) fill.style.width = '100%';
       const label = card.querySelector('.strategy-card-progress-label-text');
+      const countEl = card.querySelector('.strategy-card-progress-count');
       if (label) label.textContent = '等待中...';
+      if (countEl) countEl.textContent = '';
     }
   });
 }

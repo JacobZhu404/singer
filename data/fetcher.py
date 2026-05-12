@@ -66,17 +66,40 @@ def get_stock_realtime(code: str) -> dict:
 
 
 def get_stock_list() -> pd.DataFrame:
-    """获取全市场股票列表（本地缓存优先）"""
+    """获取全市场股票列表（本地缓存优先），返回标准化列名 [ts_code, name]"""
     cache = _get_cache()
     manager = _get_manager()
 
     cached = cache.get_cached_stock_list()
     if not cached.empty:
+        # 标准化列名：支持中文列名或旧编码列名
+        rename = {}
+        for col in list(cached.columns):
+            if col in ("symbol", "code", "代码", "股票代码"):
+                rename[col] = "ts_code"
+            elif col in ("name", "名称", "股票名称"):
+                rename[col] = "name"
+        if rename:
+            cached = cached.rename(columns=rename)
+        # 兜底：如果列名仍是乱码，尝试用位置索引
+        if "ts_code" not in cached.columns and len(cached.columns) >= 1:
+            cached = cached.rename(columns={cached.columns[0]: "ts_code"})
+        if "name" not in cached.columns and len(cached.columns) >= 2:
+            cached = cached.rename(columns={cached.columns[1]: "name"})
         logger.info(f"股票列表(缓存): {len(cached)} 只")
         return cached
 
     df = manager.get_stock_list()
     if not df.empty:
+        # 标准化列名
+        rename = {}
+        for col in list(df.columns):
+            if col in ("symbol", "code", "代码", "股票代码"):
+                rename[col] = "ts_code"
+            elif col in ("name", "名称", "股票名称"):
+                rename[col] = "name"
+        if rename:
+            df = df.rename(columns=rename)
         cache.save_stock_list(df)
     return df
 
@@ -374,12 +397,12 @@ class MarketScanner:
         """
         return _get_manager().get_realtime_batch(codes)
 
-    def get_indicators(self, code: str, days: int = 60) -> Dict[str, Any]:
+    def get_indicators(self, code: str, days: int = 60, pure: bool = False) -> Dict[str, Any]:
         """
         获取预计算的常用技术指标（带内存缓存）
 
         策略层可直接复用，避免每个策略重复计算相同指标。
-        缓存以 (code, days) 为 key，按需过期。
+        缓存以 (code, days, pure) 为 key，按需过期。
 
         返回 dict 结构:
             kline   — DataFrame, K线数据
@@ -389,8 +412,9 @@ class MarketScanner:
             bollinger — dict: {upper, mid, lower}
             vol_ratio — Series
             td_count  — Series
+            skdj    — (sk Series, sd Series)
         """
-        cache_key = f"{code}_{days}"
+        cache_key = f"{code}_{days}_{pure}"
         with self._lock:
             if cache_key in self._indicator_cache:
                 return self._indicator_cache[cache_key]
@@ -398,7 +422,7 @@ class MarketScanner:
         # 延迟导入避免循环依赖
         from ..utils import indicators as ind
 
-        df = self.get_history(code, days)
+        df = self.get_history(code, days, pure=pure)
         if df.empty or len(df) < 20:
             return {}
 
@@ -414,6 +438,7 @@ class MarketScanner:
             high = df["high"] if "high" in df.columns else close
             low = df["low"] if "low" in df.columns else close
             td = ind.td_sequential_count(close, high=high, low=low)
+            sk, sd = ind.calc_skdj(close, high, low)
 
             result = {
                 "kline": df,
@@ -423,6 +448,7 @@ class MarketScanner:
                 "bollinger": bb,        # {upper, mid, lower}
                 "vol_ratio": vr,        # Series
                 "td_count": td,         # Series
+                "skdj": (sk, sd),       # (sk, sd)
             }
 
             with self._lock:

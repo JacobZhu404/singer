@@ -67,8 +67,8 @@ def calc_ma(close: pd.Series, periods: list = [5, 10, 20, 60]) -> dict:
 
 
 def calc_volume_ratio(vol: pd.Series, period: int = 5) -> pd.Series:
-    """量比：当日量 / 过去N日平均量"""
-    avg_vol = vol.rolling(period).mean().shift(1)
+    """量比：当日量 / 过去N日平均量（含当日，统一标准）"""
+    avg_vol = vol.rolling(period).mean()
     return vol / (avg_vol + 1e-8)
 
 
@@ -186,14 +186,11 @@ def calc_skdj(
     rsv = (close - ll) / (hh - ll) * 100
     rsv = rsv.fillna(50)
 
-    sk = pd.Series(index=close.index, dtype=float)
-    sd = pd.Series(index=close.index, dtype=float)
-
-    sk.iloc[0] = 50.0
-    sd.iloc[0] = 50.0
-    for i in range(1, len(close)):
-        sk.iloc[i] = (2 / 3) * sk.iloc[i - 1] + (1 / 3) * rsv.iloc[i]
-        sd.iloc[i] = (2 / 3) * sd.iloc[i - 1] + (1 / 3) * sk.iloc[i]
+    # 向量化 EMA：递推公式 sk[i] = (1-1/m)*sk[i-1] + (1/m)*rsv[i]
+    # pandas ewm(span) 中 alpha = 2/(span+1)，令 alpha = 1/m 得 span = 2*m - 1
+    span = 2 * m - 1
+    sk = rsv.ewm(span=span, adjust=False).mean()
+    sd = sk.ewm(span=span, adjust=False).mean()
 
     return sk, sd
 

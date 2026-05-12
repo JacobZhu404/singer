@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Callable
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,16 @@ class BaseStrategy(ABC):
 
     def __init__(self, top_n: int = 10):
         self.top_n = top_n
+        self._progress_callback: Optional[Callable[[str, int, int], None]] = None
+
+    def set_progress_callback(self, callback: Optional[Callable[[str, int, int], None]]):
+        """设置进度回调 (phase, scanned, total)"""
+        self._progress_callback = callback
+
+    def _report_progress(self, phase: str, scanned: int, total: int):
+        """子类在扫描循环中调用，报告当前进度"""
+        if self._progress_callback:
+            self._progress_callback(phase, scanned, total)
 
     @abstractmethod
     def screen(

@@ -17,7 +17,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_macd, calc_ma, calc_volume_ratio
+from ..utils.indicators import calc_macd, calc_ma
 from ..data.fetcher import market_scanner, get_latest_trade_date, get_limit_list
 
 logger = logging.getLogger(__name__)
@@ -58,11 +58,13 @@ class LimitUpGeneStrategy(BaseStrategy):
 
         for code in codes_to_scan[:200]:
             try:
-                df = scanner.get_history(code, days=40)
-                if df is None or len(df) < 10:
+                indicators = scanner.get_indicators(code, days=120)
+                if not indicators or len(indicators["kline"]) < 10:
                     continue
 
                 scanned += 1
+                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
                 high = df["high"]
                 vol = df["vol"]
@@ -100,13 +102,13 @@ class LimitUpGeneStrategy(BaseStrategy):
                             signals.append(f"涨停后回撤小({drawdown:.1f}%)")
                             score += 10
 
-                vol_ratio = calc_volume_ratio(vol, 5)
+                vol_ratio = indicators["vol_ratio"]
                 vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
                 if vr > 1.5:
                     signals.append(f"当日放量(量比{vr:.1f}x)")
                     score += 10
 
-                dif, dea, _ = calc_macd(close)
+                dif, dea, _ = indicators["macd"]
                 if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
                     signals.append("MACD零轴以上")
                     score += 10

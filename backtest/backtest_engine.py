@@ -335,9 +335,10 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
                     if dif.iloc[ci] < 0 and dea.iloc[ci] < 0:
                         crosses.append(ci)
 
-            if len(crosses) >= 2 and (i - crosses[-1]) <= 5:
+            # tightened
+            if len(crosses) >= 2 and (i - crosses[-1]) <= 3:
                 signals.append("MACD零轴下二次金叉"); score += 40
-            elif len(crosses) >= 1 and (i - crosses[-1]) <= 3:
+            elif len(crosses) >= 1 and (i - crosses[-1]) <= 2:
                 signals.append("MACD零轴下金叉"); score += 25
             else:
                 return 0, []
@@ -345,13 +346,13 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             skv, sdv = sk.iloc[i], sd.iloc[i]
             skp, sdp = sk.iloc[i - 1], sd.iloc[i - 1]
             if skp <= sdp and skv > sdv:
-                if skv < 30:
+                if skv < 25:
                     signals.append("SKDJ低位金叉"); score += 30
                 else:
                     signals.append("SKDJ金叉"); score += 15
             if skv < 20:
                 signals.append("SKDJ超卖"); score += 15
-            elif skv < 30:
+            elif skv < 25:
                 signals.append("SKDJ低位"); score += 10
 
             ma5 = mas["ma5"].iloc[i]
@@ -360,7 +361,7 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             vr = calc_volume_ratio(vol, 5).iloc[i]
             if vr > 1.2:
                 signals.append("温和放量"); score += 5
-            if score < 45:
+            if score < 55:
                 return 0, []
 
         elif strategy_name == "limit_up_gene":

@@ -29,6 +29,10 @@ def load_df(code):
     if not os.path.exists(p):
         return None
     df = pd.read_csv(p)
+    # 检查必要列是否存在
+    required = ['date', 'open', 'high', 'low', 'close', 'vol']
+    if not all(c in df.columns for c in required):
+        return None
     df['date_str'] = pd.to_datetime(df['date']).dt.strftime('%Y%m%d')
     df = df.sort_values('date').reset_index(drop=True)
     return df if len(df) >= 60 else None
@@ -172,22 +176,23 @@ def check_signal(code, name, df_hist, strat):
                 if dif.iloc[ci - 1] <= dea.iloc[ci - 1] and dif.iloc[ci] > dea.iloc[ci]:
                     if dif.iloc[ci] < 0 and dea.iloc[ci] < 0:
                         crosses.append(ci)
-            if len(crosses) >= 2 and (i - crosses[-1]) <= 5:
+            # tightened
+            if len(crosses) >= 2 and (i - crosses[-1]) <= 3:
                 signals.append('MACD零轴下二次金叉'); score += 40
-            elif len(crosses) >= 1 and (i - crosses[-1]) <= 3:
+            elif len(crosses) >= 1 and (i - crosses[-1]) <= 2:
                 signals.append('MACD零轴下金叉'); score += 25
             else:
                 return None
             skv, sdv = sk.iloc[i], sd.iloc[i]
             skp, sdp = sk.iloc[i - 1], sd.iloc[i - 1]
             if skp <= sdp and skv > sdv:
-                if skv < 30:
+                if skv < 25:
                     signals.append('SKDJ低位金叉'); score += 30
                 else:
                     signals.append('SKDJ金叉'); score += 15
             if skv < 20:
                 signals.append('SKDJ超卖'); score += 15
-            elif skv < 30:
+            elif skv < 25:
                 signals.append('SKDJ低位'); score += 10
             ma5 = mas['ma5'].iloc[i]
             if not pd.isna(ma5) and close.iloc[i] > ma5:
@@ -195,7 +200,7 @@ def check_signal(code, name, df_hist, strat):
             vr = calc_volume_ratio(vol, 5).iloc[i]
             if vr > 1.2:
                 signals.append('温和放量'); score += 5
-            if score < 45:
+            if score < 55:
                 return None
 
         elif strat == 'chanlun_strict':
@@ -308,6 +313,9 @@ def run_backtest():
     # 加载股票列表
     with open('/Users/jacob/personal/stock_screener/data/cache/stocks.json') as f:
         stock_map = {str(s['代码']): s['名称'] for s in json.load(f) if s.get('代码')}
+    # 快速回测：只取前200只
+    keys = list(stock_map.keys())[:200]
+    stock_map = {k: stock_map[k] for k in keys}
 
     # 加载所有K线到内存
     print(f'预加载K线 ({datetime.now().strftime("%H:%M:%S")})...')
