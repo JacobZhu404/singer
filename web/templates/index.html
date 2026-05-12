@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>歌者 — 智能选股系统</title>
+<title>歌者</title>
 
 <!-- Favicon — 多终端适配 -->
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
@@ -515,7 +515,7 @@
 
 <div class="header">
   <div class="status-dot" id="statusDot"></div>
-  <h1>🎯 歌者 <span>凝视资本市场的暗流</span></h1>
+  <h1>🎯 歌者</h1>
   <div style="margin-left:auto;font-size:13px;color:var(--muted)" id="headerInfo">加载中...</div>
 </div>
 
@@ -581,10 +581,6 @@
         <button class="btn btn-primary" id="updateAndScreenBtn" onclick="startUpdateAndScreen()" title="先强制刷新K线数据，再执行筛选（最完整）" style="flex:1">更新后筛选</button>
         <button class="btn btn-download" id="onlyUpdateBtn" onclick="startOnlyUpdate()" title="仅下载/更新K线数据，不执行筛选" style="flex:1">只更新</button>
         <button class="btn btn-fast" id="onlyScreenBtn" onclick="startOnlyScreen()" title="使用现有缓存数据直接筛选（最快）" style="flex:1">只筛选</button>
-        <label style="display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:4px;font-size:12px;white-space:nowrap" title="测试模式：仅用1/10数据快速验证功能">
-          <input type="checkbox" id="sampleToggle">
-          <span>1/10采样</span>
-        </label>
       </div>
 
       <!-- 停止按钮（执行中显示） -->
@@ -796,6 +792,10 @@ async function checkStatus() {
       showProgress('running', `📊 ${prog.current || '策略执行中...'}`, '');
       document.getElementById('progressPct').textContent = `${overallPct}%`;
       document.getElementById('progressFill').style.width = `${prog.pct}%`;
+    } else if (prog.phase === 'download_done') {
+      showProgress('download_done', '✅ 数据更新完成', '');
+      document.getElementById('progressPct').textContent = '100%';
+      document.getElementById('progressFill').style.width = '100%';
     }
   }
 }
@@ -1267,7 +1267,7 @@ async function startOnlyUpdate() {
     const pr = await fetch('/api/screen/progress');
     const pj = await pr.json();
     const prog = pj.data || {};
-    if (prog.phase === 'done') {
+    if (prog.phase === 'download_done') {
       clearInterval(_dataStatusTimer);
       await fetchDataStatus();
       resetActionUI();
@@ -1315,7 +1315,6 @@ async function startScreenTask(market, topN, forceRefresh, skipDownload = false)
       top_n: topN,
       force_refresh: forceRefresh,
       skip_download: skipDownload,
-      sample_ratio: document.getElementById('sampleToggle').checked ? 0.1 : 1.0,
     })
   });
   const j = await resp.json();
@@ -1432,6 +1431,11 @@ async function pollProgress() {
       document.getElementById('progressPct').textContent = `${p.pct || 0}%`;
       document.getElementById('progressFill').style.width = `${p.pct}%`;
       _updateSidebarCardProgress(p.strategies || {});
+    } else if (p.phase === 'download_done') {
+      document.getElementById('progressLabel').textContent = '✅ 数据更新完成';
+      document.getElementById('progressPct').textContent = '100%';
+      document.getElementById('progressFill').style.width = '100%';
+      clearInterval(_progressTimer);
     } else if (p.phase === 'done') {
       document.getElementById('progressLabel').textContent = '✅ 筛选完成';
       document.getElementById('progressPct').textContent = '100%';

@@ -20,7 +20,6 @@ from typing import List
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_ma, calc_rsi, calc_macd, calc_volume_ratio
 from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
@@ -50,22 +49,23 @@ class GoldenCrossStrategy(BaseStrategy):
             if code in self._cache:
                 continue
             try:
-                df = scanner.get_history(code, days=60)
-                if df is None or len(df) < 30:
+                indicators = scanner.get_indicators(code, days=60)
+                if not indicators or len(indicators["kline"]) < 30:
                     continue
 
                 scanned += 1
                 self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
+                df = indicators["kline"]
                 close = df["close"]
-                vol = df["vol"]
                 i = len(df) - 1
 
-                mas = calc_ma(close, [5, 10, 20])
+                mas = indicators["ma"]
                 ma5 = mas["ma5"]
                 ma10 = mas["ma10"]
                 ma20 = mas["ma20"]
-                rsi = calc_rsi(close, 14)
-                dif, dea, _ = calc_macd(close)
+                rsi = indicators["rsi"]
+                dif, dea, _ = indicators["macd"]
+                vol_ratio = indicators["vol_ratio"]
 
                 m5 = float(ma5.iloc[i])
                 m10 = float(ma10.iloc[i])
@@ -117,7 +117,7 @@ class GoldenCrossStrategy(BaseStrategy):
                     continue
 
                 quote = self._get_quote(scanner, code, c)
-                vr = float(vol_ratio_series.iloc[-1]) if not np.isnan(vol_ratio_series.iloc[-1]) else 1.0
+                vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
 
                 candidates.append(StockSignal(
                     ts_code=code,
@@ -143,5 +143,4 @@ class GoldenCrossStrategy(BaseStrategy):
             except Exception as e:
                 logger.debug(f"[金叉策略] {code} 计算失败: {e}")
 
-        return self._build_result(candidates, trade_date, scanned)
         return self._build_result(candidates, trade_date, scanned)
