@@ -66,9 +66,9 @@ _sse_queues_lock = threading.Lock()
 
 # 各阶段对应的进度条百分比范围 (low, high)
 _PHASE_RANGES = {
-    "prefetch": (0, 30),
-    "precalc": (30, 35),
-    "running": (35, 100),
+    "prefetch": (0, 25),
+    "precalc": (25, 40),
+    "running": (40, 100),
     "merging": (99, 99),
     "done": (100, 100),
 }

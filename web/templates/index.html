@@ -731,7 +731,7 @@ async function init() {
   const hasRestored = restoreUIState();
   if (!hasRestored) {
     // 首次访问：默认选中除涨停基因外的8个策略（含缠论）
-    selectDefaultStrategiesSilent();
+    selectDefaultStrategies(true);
   }
   await checkStatus();
   await restoreLastResult();
@@ -806,17 +806,15 @@ const DEFAULT_STRATEGIES = [
   'rsi_oversold', 'bollinger_bands', 'volume_breakout', 'chanlun_strict'
 ];
 
-function selectDefaultStrategiesSilent() {
+function selectDefaultStrategies(silent = false) {
   selectedStrategies.clear();
   DEFAULT_STRATEGIES.forEach(id => selectedStrategies.add(id));
   updateStrategyUI();
   updateDefaultBtnState();
-}
-
-function selectDefaultStrategies() {
-  selectDefaultStrategiesSilent();
-  saveUIState();
-  showNotification('已切换为默认策略组合（8个）', 'success');
+  if (!silent) {
+    saveUIState();
+    notify('已切换为默认策略组合（8个）', 'success');
+  }
 }
 
 function updateDefaultBtnState() {
@@ -1224,11 +1222,6 @@ function setActionButtonsState(mode, type) {
   }
 }
 
-// 旧兼容
-function setScreenButtonsState(running) {
-  setActionButtonsState(running ? 'running' : 'idle', 'screen');
-}
-
 // 显示统一进度条（兼容数据下载 + 策略执行两个阶段）
 function showProgress(phase, label, detail) {
   const wrap = document.getElementById('progressWrap');
@@ -1334,12 +1327,6 @@ async function startScreenTask(market, topN, forceRefresh, skipDownload = false)
     resetActionUI();
   }
 }
-
-// 兼容旧接口
-async function startScreen() { startUpdateAndScreen(); }
-async function startDownload() { startOnlyUpdate(); }
-async function startFastScreen() { startOnlyScreen(); }
-async function startFullScreen() { startUpdateAndScreen(); }
 
 let _progressTimer = null;
 let _resultTimer = null;
@@ -1463,43 +1450,6 @@ async function pollProgress() {
   } catch(e) {}
 }
 
-function _renderStrategyProgress(strategies) {
-  const container = document.getElementById('strategyProgressList');
-  const keys = Object.keys(strategies);
-  if (keys.length === 0) {
-    container.style.display = 'none';
-    return;
-  }
-  container.style.display = 'flex';
-  const strategyMap = (window._strategies || []).reduce((m, s) => { m[s.id] = s; return m; }, {});
-  container.innerHTML = keys.map(name => {
-    const st = strategies[name];
-    const meta = strategyMap[name] || {};
-    const displayName = meta.name || name;
-    const status = st.status || 'pending';
-    const hits = st.hits || 0;
-    const scanned = st.scanned || 0;
-    const total = st.total_stocks || 0;
-    let hitsText = '';
-    if (status === 'done') {
-      hitsText = `${hits}只`;
-    } else if (status === 'running' && st.phase === 'executing' && total > 0) {
-      hitsText = `${scanned}/${total}`;
-    } else if (status === 'running') {
-      hitsText = st.phase === 'loading' ? '加载中' : st.phase === 'writing' ? '写入中' : '执行中';
-    }
-    return `
-      <div class="strategy-progress-item">
-        <span class="strategy-progress-name" title="${displayName}">${displayName}</span>
-        <div class="strategy-progress-bar">
-          <div class="strategy-progress-fill ${status}"></div>
-        </div>
-        <span class="strategy-progress-hits">${hitsText}</span>
-      </div>
-    `;
-  }).join('');
-}
-
 // ── 侧边栏策略卡片内嵌进度条 ──
 function _updateSidebarCardProgress(strategies) {
   if (!strategies) return;
@@ -1610,7 +1560,7 @@ async function pollResult() {
   } else {
     notify(j.msg || '筛选出错', 'error');
   }
-  resetScreenUI();
+  resetActionUI();
 }
 
 function resetActionUI() {
@@ -1625,9 +1575,6 @@ function resetActionUI() {
   fetchDataStatus();
 }
 
-// 旧兼容
-function resetScreenUI() { resetActionUI(); }
-
 async function stopScreening() {
   clearInterval(_progressTimer);
   clearInterval(_resultTimer);
@@ -1635,7 +1582,7 @@ async function stopScreening() {
   const r = await fetch('/api/screen/stop', { method: 'POST' });
   const j = await r.json();
   notify(j.msg || '已停止', j.code === 0 ? 'warn' : 'error');
-  resetScreenUI();
+  resetActionUI();
 }
 
 // ── Stock Link Helper ──
@@ -1798,16 +1745,17 @@ function appendStrategyTab(id, detail) {
   const tab = document.createElement('div');
   tab.className = 'result-tab';
   tab.setAttribute('data-strategy', id);
-  tab.onclick = function(e) { switchResultTab(id); };
+  tab.onclick = function(e) { switchResultTab(id, e); };
   tab.innerHTML = `${meta.icon||''} ${meta.name||id} <span style="font-size:11px;color:var(--muted)">${detail.hit_count}</span>`;
   tabs.appendChild(tab);
   _renderedStrategyTabs.add(id);
 }
 
-function switchResultTab(tab) {
+function switchResultTab(tab, evt) {
   currentTab = tab;
   document.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
-  event.target.closest('.result-tab').classList.add('active');
+  const target = evt ? evt.target : document.querySelector(`.result-tab[data-strategy="${tab}"]`);
+  if (target) target.closest('.result-tab').classList.add('active');
   // 仅综合推荐 tab 显示风险过滤器
   const filterBar = document.getElementById('riskFilterBar');
   if (filterBar) filterBar.style.display = tab === 'merged' ? 'flex' : 'none';
@@ -2350,7 +2298,7 @@ function renderPortfolio(data) {
           const sig = signalMap[pos.code];
           const sellDiag = sig ? renderSellDiag(sig) : '<span style="color:var(--muted);font-size:12px">未分析</span>';
           const sellBtn = sig ? renderSellBtn(sig, pos) : `<button class="btn-sell" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">卖出</button>`;
-          const addBtn = `<button class="btn-add" onclick="addPosition('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
+          const addBtn = `<button class="btn-add" onclick="openBuyModal('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
           return `
             <tr>
               <td>${stockNameHtml(pos.code, pos.name)}</td>
@@ -2456,10 +2404,6 @@ function switchTopTab(tab) {
   saveUIState();
 }
 
-function addPosition(code, name, price) {
-  openBuyModal(code, name, price);
-}
-
 // ── Buy Modal ──
 function openBuyModal(code, name, price) {
   currentPrice = price;
@@ -2542,15 +2486,13 @@ function notify(msg, type = 'success') {
   el.className = `notification ${type} show`;
   setTimeout(() => el.className = 'notification', 3500);
 }
-function showNotification(msg, type) { notify(msg, type); }
 
 // ── 下拉框 change 事件持久化 ──
 document.getElementById('marketSelect').addEventListener('change', saveUIState);
 document.getElementById('topnSelect').addEventListener('change', saveUIState);
 
 // ── Boot ──
-window._strategies = [];
-init().then(() => { window._strategies = strategies; });
+init();
 </script>
 </body>
 </html>

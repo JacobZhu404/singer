@@ -321,23 +321,16 @@ class ScreenEngine:
             self._set_strategy_progress(name, "pending")
 
         # 先广播 running 阶段开始，让前端有时间渲染策略卡片状态
-        _t3 = datetime.now()
         self._set_progress("running", "策略启动中...", 0, total)
         if progress_callback:
             progress_callback("running", "策略启动中...", 0, total)
-        logger.info(f"[{datetime.now()}] 设置'策略启动中'完成, 耗时: {datetime.now()-_t3}")
 
         def run_one(name: str) -> tuple:
-            _t_run = datetime.now()
-            import sys
-            logger.info(f"[{datetime.now()}] [ENGINE] run_one 开始: {name}")
             if self._stop_requested():
                 raise RuntimeError("stopped")
             self._set_strategy_progress(name, "running", 0, 0, "loading")
-            logger.info(f"[{datetime.now()}] [ENGINE] {name} 已设置loading, 耗时: {datetime.now()-_t_run}")
             strategy = get_strategy(name, top_n=self.top_n)
             total_codes = len(strategy._get_codes(stock_list))
-            logger.info(f"[{datetime.now()}] [ENGINE] {name}: total_codes={total_codes}, 耗时: {datetime.now()-_t_run}")
 
             def _on_strategy_progress(phase: str, scanned: int, total_stocks: int):
                 if self._stop_requested():
@@ -348,9 +341,7 @@ class ScreenEngine:
                 )
 
             strategy.set_progress_callback(_on_strategy_progress)
-            logger.info(f"[{datetime.now()}] [ENGINE] {name} 开始执行 strategy.screen(), 已耗时: {datetime.now()-_t_run}")
             result = strategy.screen(stock_list, scanner=market_scanner)
-            logger.info(f"[{datetime.now()}] [ENGINE] {name} strategy.screen() 完成, 耗时: {datetime.now()-_t_run}")
             self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
             self._set_strategy_progress(name, "done", 100, len(result.signals), "done", total_stocks=total_codes)
             return name, result
