@@ -561,10 +561,16 @@ class ScreenEngine:
         logger.info(f"[{datetime.now()}] 阶段1完成, 耗时: {datetime.now()-_t0}")
 
         # 阶段1.5：预计算指标（按需，非阻塞）
-        stock_list = self._load_stock_list()
-        _t1 = datetime.now()
-        self._precalc(stock_list, progress_callback=progress_callback)
-        logger.info(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}")
+        # 强制关闭实时行情，只用本地缓存，避免 precalc 发起网络请求
+        _orig_include = market_scanner._include_realtime
+        market_scanner._include_realtime = False
+        try:
+            stock_list = self._load_stock_list()
+            _t1 = datetime.now()
+            self._precalc(stock_list, progress_callback=progress_callback)
+            logger.info(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}")
+        finally:
+            market_scanner._include_realtime = _orig_include
 
         # 阶段2：并行运行策略（流式回调）
         _t2 = datetime.now()
