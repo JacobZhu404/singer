@@ -433,7 +433,7 @@ class MarketScanner:
             macd = ind.calc_macd(close)
             rsi = ind.calc_rsi(close, 14)
             ma = ind.calc_ma(close, [5, 10, 20, 60])
-            bb = ind.calc_bollinger(close)
+            bb_upper, bb_mid, bb_lower = ind.calc_bollinger(close)
             vr = ind.calc_volume_ratio(vol, 5)
             high = df["high"] if "high" in df.columns else close
             low = df["low"] if "low" in df.columns else close
@@ -445,7 +445,7 @@ class MarketScanner:
                 "macd": macd,          # (dif, dea, bar)
                 "rsi": rsi,            # Series
                 "ma": ma,               # {ma5, ma10, ...}
-                "bollinger": bb,        # {upper, mid, lower}
+                "bollinger": {"upper": bb_upper, "mid": bb_mid, "lower": bb_lower},
                 "vol_ratio": vr,        # Series
                 "td_count": td,         # Series
                 "skdj": (sk, sd),       # (sk, sd)

@@ -74,9 +74,10 @@ class BollingerBandsStrategy(BaseStrategy):
                 if pd.isna(lower_band) or pd.isna(upper_band) or lower_band == 0:
                     continue
 
-                # 趋势过滤：避免在明显下跌趋势中抄底
-                ma20 = mid.iloc[-1]  # 布林带中轨即 20 日均线
-                if price < ma20 * 0.95:
+                # 趋势过滤：避免在极端下跌趋势中抄底
+                # 用MA60判断大趋势，而非MA20（MA20即布林中轨，触下轨时价格必然远低于MA20）
+                ma60 = indicators["ma"].get("ma60")
+                if ma60 is not None and not pd.isna(ma60.iloc[-1]) and price < ma60.iloc[-1] * 0.90:
                     continue
 
                 signals = []

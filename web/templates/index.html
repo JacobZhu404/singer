@@ -577,10 +577,14 @@
       </div>
 
       <!-- 第二行：执行操作 -->
-      <div id="actionRow" style="display:flex;gap:5px">
+      <div id="actionRow" style="display:flex;gap:5px;align-items:center">
         <button class="btn btn-primary" id="updateAndScreenBtn" onclick="startUpdateAndScreen()" title="先强制刷新K线数据，再执行筛选（最完整）" style="flex:1">更新后筛选</button>
         <button class="btn btn-download" id="onlyUpdateBtn" onclick="startOnlyUpdate()" title="仅下载/更新K线数据，不执行筛选" style="flex:1">只更新</button>
         <button class="btn btn-fast" id="onlyScreenBtn" onclick="startOnlyScreen()" title="使用现有缓存数据直接筛选（最快）" style="flex:1">只筛选</button>
+        <label style="display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:4px;font-size:12px;white-space:nowrap" title="测试模式：仅用1/10数据快速验证功能">
+          <input type="checkbox" id="sampleToggle">
+          <span>1/10采样</span>
+        </label>
       </div>
 
       <!-- 停止按钮（执行中显示） -->
@@ -1318,6 +1322,7 @@ async function startScreenTask(market, topN, forceRefresh, skipDownload = false)
       top_n: topN,
       force_refresh: forceRefresh,
       skip_download: skipDownload,
+      sample_ratio: document.getElementById('sampleToggle').checked ? 0.1 : 1.0,
     })
   });
   const j = await resp.json();

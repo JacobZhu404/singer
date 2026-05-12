@@ -254,33 +254,39 @@ def _build_strokes(fractals: List[Fractal], bars: List[KBar], min_bi_len: int = 
     笔构建：顶底交替 + 至少5根非包含K线
 
     算法：
-    1. 从左到右遍历分型
-    2. 找到相邻的底-顶（构成上涨笔）或顶-底（构成下跌笔）
+    1. 先对分型做合并：连续同向分型取极值（连续顶取最高，连续底取最低）
+    2. 从合并后的分型序列中构建笔（顶底交替）
     3. 两分型之间的K线数量 >= min_bi_len 才确认为一笔
-    4. 保证顶底交替（不允许连续两个同向分型）
     """
     if len(fractals) < 2:
         return []
 
+    # ── 合并连续同向分型：取极值 ──
+    merged: List[Fractal] = [fractals[0]]
+    for fx in fractals[1:]:
+        last = merged[-1]
+        if fx.type == last.type:
+            # 同向：顶取最高，底取最低
+            if fx.is_top and fx.price > last.price:
+                merged[-1] = fx
+            elif fx.is_bottom and fx.price < last.price:
+                merged[-1] = fx
+        else:
+            merged.append(fx)
+
     strokes: List[Stroke] = []
-    last_dir: Optional[str] = None  # "up" | "down"
 
     i = 0
-    while i < len(fractals) - 1:
-        fx1 = fractals[i]
-        fx2 = fractals[i + 1]
+    while i < len(merged) - 1:
+        fx1 = merged[i]
+        fx2 = merged[i + 1]
 
-        # 判断方向
+        # 判断方向（合并后必然交替）
         if fx1.is_bottom and fx2.is_top:
             direction = "up"
         elif fx1.is_top and fx2.is_bottom:
             direction = "down"
         else:
-            i += 1
-            continue
-
-        # 检查顶底交替（不允许连续同向）
-        if last_dir == direction:
             i += 1
             continue
 
@@ -320,7 +326,6 @@ def _build_strokes(fractals: List[Fractal], bars: List[KBar], min_bi_len: int = 
             high=high,
         )
         strokes.append(stroke)
-        last_dir = direction
         i += 1
 
     return strokes
@@ -780,7 +785,7 @@ class ChanlunStrictStrategy(BaseStrategy):
                 analysis = _analyze(df)
                 score, signals, extra = _compute_score(analysis)
 
-                if score < 40:
+                if score < 30:
                     continue
 
                 # 实时行情
