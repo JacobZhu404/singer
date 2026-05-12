@@ -156,6 +156,8 @@ def api_screen():
     top_n = int(body.get("top_n", 10))
     force_refresh = bool(body.get("force_refresh", False))
     skip_download = bool(body.get("skip_download", False))
+    sample_ratio = float(body.get("sample_ratio", 1.0))
+    sample_ratio = max(0.01, min(1.0, sample_ratio))  # 限制范围
 
     def run_task():
         global _last_result, _is_running, _partial_results, _current_strategies_run
@@ -217,6 +219,7 @@ def api_screen():
                 force_refresh=force_refresh,
                 on_strategy_done=_on_strategy_done,
                 skip_download=skip_download,
+                sample_ratio=sample_ratio,
             )
             _last_result = result
         except KeyboardInterrupt:
