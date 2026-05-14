@@ -1,17 +1,24 @@
 """
-均线金叉策略（宽松模式）
-注意：本策略是 macd_bull 的宽松子集，门槛更低，选股范围更大。
-      macd_bull 要求 MA5>MA10>MA20>MA60 四线多头 + MACD柱放大 + DIF>DEA金叉，
-      本策略仅要求 MA5>MA10>MA20 三线 + RSI 50~65 + DIF>0。
-      满足 macd_bull 的股票几乎必然满足 golden_cross，反之不成立。
+均线金叉策略（趋势启动初期）
 
-原理：MA5 从下穿越 MA10，形成黄金交叉，视为短期趋势转多信号。
-条件：
-  1. MA5 上穿 MA10（金叉当天）
-  2. MA5 > MA10 > MA20（多头排列，不含MA60）
-  3. 股价站上 MA5（顺势确认）
-  4. RSI 在 50~65（趋势确认但未超买）
-适用：趋势启动初期、短线波段（比 macd_bull 更早入场，但假信号更多）
+定位：趋势启动初期，适合短线波段
+与 macd_bull 的区别：
+  - golden_cross: 趋势启动（金叉当天，最早信号）
+  - macd_bull: 趋势确认（金叉后+均线多头，已确立）
+
+核心逻辑：
+  1. MA5 上穿 MA10（金叉当天，核心信号）
+  2. MA5 > MA10 > MA20（三线多头排列）
+  3. 成交量确认（量比 > 1.5，避免假突破）
+  4. RSI 未超买（45~65，趋势确认但未过热）
+
+信号评分：
+  - MA5上穿MA10金叉：+40（核心信号）
+  - 三线多头排列：+25
+  - 成交量放大（量比>1.5）：+15
+  - 价格站上MA5：+10
+  - RSI趋势确认（45~65）：+10
+适用：趋势启动初期、短线波段（比 macd_bull 更早入场）
 """
 
 import pandas as pd
@@ -25,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 class GoldenCrossStrategy(BaseStrategy):
-    """均线金叉策略（macd_bull宽松模式：少MA60/MACD柱放大/RSI硬过滤）"""
+    """均线金叉策略（趋势启动初期：金叉+量能确认）"""
     name = "golden_cross"
-    description = "均线金叉(macd_bull宽松版) - 仅3线多头+RSI确认，适合趋势初期"
-    base_win_rate = 0.55
+    description = "MA5上穿MA10金叉+三线多头+量能确认，趋势启动信号"
+    base_win_rate = 0.52  # 比 macd_bull 低（更早入场，假信号更多）
 
     def __init__(self, top_n: int = 10):
         super().__init__(top_n=top_n)
@@ -47,7 +54,6 @@ class GoldenCrossStrategy(BaseStrategy):
         ma10 = mas["ma10"]
         ma20 = mas["ma20"]
         rsi = indicators["rsi"]
-        dif, dea, _ = indicators["macd"]
         vol_ratio = indicators["vol_ratio"]
 
         m5 = float(ma5.iloc[i])
@@ -62,45 +68,52 @@ class GoldenCrossStrategy(BaseStrategy):
         signals = []
         score = 0
 
-        # 条件1：MA5 上穿 MA10（金叉当天）
+        # ── 核心条件1：MA5 上穿 MA10（金叉当天）──
         if m5 > m10 and m5_prev <= m10_prev:
             signals.append("MA5上穿MA10金叉")
             score += 40
-        elif m5 > m10:
-            signals.append("MA5在MA10上方")
-            score += 20
+        else:
+            # 非金叉当天，不是"趋势启动"，直接过滤
+            return None
 
-        # 条件2：多头排列（MA5 > MA10 > MA20）
+        # ── 条件2：三线多头排列（MA5 > MA10 > MA20）──
         if m5 > m10 > m20:
-            signals.append("均线多头排列")
+            signals.append("三线多头排列")
             score += 25
 
-        # 条件3：股价站上 MA5
+        # ── 条件3：成交量确认（量比 > 1.5）──
+        vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
+        if vr > 1.5:
+            signals.append(f"放量({vr:.1f}倍)")
+            score += 15
+        else:
+            # 量能不足，可能是假突破
+            signals.append(f"量能不足({vr:.1f}倍)")
+            score -= 10
+
+        # ── 条件4：价格站上MA5 ──
         c = float(close.iloc[i])
         if c > m5:
-            signals.append("股价站上MA5")
-            score += 15
+            signals.append("价格站上MA5")
+            score += 10
 
-        # 条件4：RSI 确认
+        # ── 条件5：RSI 确认（未超买）──
         r = float(rsi.iloc[i]) if not np.isnan(rsi.iloc[i]) else 50
-        if 50 <= r <= 65:
+        if 45 <= r <= 65:
             signals.append(f"RSI趋势确认({r:.0f})")
             score += 10
-        elif r < 50:
+        elif r > 70:
+            signals.append(f"RSI超买({r:.0f})")
+            score -= 15
+        elif r < 45:
             signals.append(f"RSI偏弱({r:.0f})")
             score -= 10
 
-        # MACD 在零轴上方加分
-        d = float(dif.iloc[i]) if not np.isnan(dif.iloc[i]) else 0
-        if d > 0:
-            signals.append("MACD零轴上方")
-            score += 10
-
-        if score < 70:
+        # 阈值检查（比 macd_bull 低，捕捉更早信号）
+        if score < 60:
             return None
 
         quote = self._get_quote(scanner, code, c)
-        vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
 
         return StockSignal(
             ts_code=code,
@@ -119,5 +132,6 @@ class GoldenCrossStrategy(BaseStrategy):
                 "ma10": round(m10, 2),
                 "ma20": round(m20, 2),
                 "rsi14": round(r, 1),
+                "volume_ratio": round(vr, 2),
             },
         )

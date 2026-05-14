@@ -14,6 +14,8 @@ from ..strategies.base import ScreenResult, StockSignal
 from ..strategies.registry import get_strategy, list_strategies, STRATEGY_REGISTRY
 from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
 from ..utils.indicators import calc_macd, calc_rsi, calc_bollinger, calc_ma, calc_risk_flags
+from ..utils.market_trend import get_market_trend, get_market_trend_strength
+from ..utils.sell_signals import detect_sell_signals, assess_buy_risk
 
 from datetime import datetime
 
@@ -300,9 +302,11 @@ class ScreenEngine:
         top_n: int = 10,
         min_single_score: int = 30,
         min_weighted_score: int = 45,
+        market_trend: Optional[str] = None,
+        market_strength: Optional[float] = None,
     ) -> List[Dict]:
         """
-        多策略结果合并（加权评分 + 质量门槛）：
+        多策略结果合并（加权评分 + 质量门槛 + 大盘趋势过滤）：
         同一只股票在多策略中命中 → 加权评分累加 → 胜率取最高值并叠加加成
 
         Args:
@@ -310,7 +314,26 @@ class ScreenEngine:
             top_n: 返回前 N 只
             min_single_score: 单策略原始分最低门槛（低于此分的命中不计入）
             min_weighted_score: 加权总分最低门槛（低于此分的股票被过滤）
+            market_trend: 大盘趋势（"bull" | "bear" | "neutral"），由调用方传入
+            market_strength: 大盘趋势强度（-1.0 到 1.0），由调用方传入
         """
+        # ── 根据大盘趋势调整门槛 ──
+        adjusted_min_single = min_single_score
+        adjusted_min_weighted = min_weighted_score
+        
+        if market_trend == "bear":
+            # 熊市：提高门槛，只保留最强信号
+            adjusted_min_single = int(min_single_score * 1.3)
+            adjusted_min_weighted = int(min_weighted_score * 1.3)
+            logger.info(f"[大盘过滤器] 熊市模式：提高门槛至 single={adjusted_min_single}, weighted={adjusted_min_weighted}")
+        elif market_trend == "bull":
+            # 牛市：适当放宽门槛
+            adjusted_min_single = int(min_single_score * 0.9)
+            adjusted_min_weighted = int(min_weighted_score * 0.9)
+            logger.info(f"[大盘过滤器] 牛市模式：降低门槛至 single={adjusted_min_single}, weighted={adjusted_min_weighted}")
+        else:
+            logger.info(f"[大盘过滤器] 中性模式：使用默认门槛 single={min_single_score}, weighted={min_weighted_score}")
+        
         # ── 预计算每个策略内部排名 ──
         strategy_rank_info = {}
         for strategy_name, result in results.items():
@@ -332,8 +355,8 @@ class ScreenEngine:
             base_win_rate = getattr(strategy_cls, "base_win_rate", 0.5) if strategy_cls else 0.5
 
             for sig in result.all_signals:
-                # ── 质量门槛1：单策略原始分过滤 ──
-                if sig.score < min_single_score:
+                # ── 质量门槛1：单策略原始分过滤（使用大盘调整后的门槛）──
+                if sig.score < adjusted_min_single:
                     continue
 
                 code = sig.ts_code
@@ -391,8 +414,8 @@ class ScreenEngine:
         for code, entry in merged.items():
             n_strategies = len(entry["strategies_hit"])
 
-            # ── 质量门槛2：加权总分过滤 ──
-            if entry["weighted_score"] < min_weighted_score:
+            # ── 质量门槛2：加权总分过滤（使用大盘调整后的门槛）──
+            if entry["weighted_score"] < adjusted_min_weighted:
                 continue
 
             overlap_bonus = min((n_strategies - 1) * 0.05, 0.15)
@@ -400,6 +423,12 @@ class ScreenEngine:
 
             # ── 轻量风险扫描（利用已缓存K线，不发新请求）────────────
             risk_tag, risk_reasons, risk_score, calc_flags = self._quick_risk_scan(code)
+
+            # ── 卖出信号扫描 ──
+            sell_info = self._quick_sell_scan(code)
+            
+            # ── 买入风险评估（基于卖出信号）──
+            buy_risk_info = self._quick_buy_risk_assess(code)
 
             # 合并策略计算的 risk_flags 和 K线计算的
             all_flags = entry.pop("_risk_flags", [])
@@ -417,6 +446,10 @@ class ScreenEngine:
                 (1 - avg_rank_pct) * 30 +
                 n_strategies * 5
             )
+            
+            # ── 根据买入风险调整综合评分 ──
+            composite_score += buy_risk_info["adjustment"]
+            composite_score = max(composite_score, 0)  # 不低于0
 
             final_list.append({
                 **entry,
@@ -429,6 +462,15 @@ class ScreenEngine:
                 "risk_reasons": risk_reasons,
                 "risk_score": risk_score,
                 "risk_flags": all_flags,
+                # 卖出信号信息
+                "sell_signals": sell_info["sell_signals"],
+                "sell_score": sell_info["sell_score"],
+                "stop_loss_price": sell_info["stop_loss_price"],
+                "take_profit_price": sell_info["take_profit_price"],
+                "sell_risk_level": sell_info["risk_level"],
+                # 买入风险评估
+                "buy_risk": buy_risk_info["buy_risk"],
+                "buy_risk_reasons": buy_risk_info["risk_reasons"],
                 # 新增排序因子
                 "composite_score": round(composite_score, 2),
                 "avg_rank_pct": round(avg_rank_pct, 3),
@@ -484,6 +526,66 @@ class ScreenEngine:
         except Exception as e:
             logger.debug(f"风险扫描 {code} 失败: {e}")
             return "unknown", [], 0, []
+
+    def _quick_sell_scan(self, code: str) -> dict:
+        """
+        卖出信号快速扫描：利用已缓存的K线检测卖出信号
+        不发任何新网络请求——仅读取内存缓存
+        
+        Returns:
+            dict: detect_sell_signals() 的返回值
+        """
+        try:
+            df = market_scanner.get_history(code, days=60)
+            if df is None or df.empty or len(df) < 20:
+                return {
+                    "has_sell_signal": False,
+                    "sell_signals": [],
+                    "sell_score": 0,
+                    "stop_loss_price": None,
+                    "take_profit_price": None,
+                    "risk_level": "unknown",
+                }
+            
+            sell_info = detect_sell_signals(df)
+            return sell_info
+            
+        except Exception as e:
+            logger.debug(f"卖出信号扫描 {code} 失败: {e}")
+            return {
+                "has_sell_signal": False,
+                "sell_signals": [],
+                "sell_score": 0,
+                "stop_loss_price": None,
+                "take_profit_price": None,
+                "risk_level": "unknown",
+            }
+
+    def _quick_buy_risk_assess(self, code: str) -> dict:
+        """
+        买入风险评估：基于卖出信号评估买入风险
+        
+        Returns:
+            dict: assess_buy_risk() 的返回值
+        """
+        try:
+            df = market_scanner.get_history(code, days=60)
+            if df is None or df.empty or len(df) < 20:
+                return {
+                    "buy_risk": "unknown",
+                    "risk_reasons": [],
+                    "adjustment": 0,
+                }
+            
+            return assess_buy_risk(df)
+            
+        except Exception as e:
+            logger.debug(f"买入风险评估 {code} 失败: {e}")
+            return {
+                "buy_risk": "unknown",
+                "risk_reasons": [],
+                "adjustment": 0,
+            }
 
     def get_recommendation(
         self,
@@ -541,7 +643,19 @@ class ScreenEngine:
         self._set_progress("merging", "正在合并结果...", 0, 100)
         if progress_callback:
             progress_callback("merging", "正在合并结果...", 0, 100)
-        merged = self.merge_results(results, top_n=top_n)
+        
+        # 获取大盘趋势
+        logger.info("[大盘过滤器] 正在判断大盘趋势...")
+        market_trend = get_market_trend(market_scanner)
+        market_strength = get_market_trend_strength(market_scanner)
+        logger.info(f"[大盘过滤器] 大盘趋势: {market_trend}, 强度: {market_strength:.2f}")
+        
+        merged = self.merge_results(
+            results, 
+            top_n=top_n,
+            market_trend=market_trend,
+            market_strength=market_strength
+        )
         self._set_progress("merging", "结果合并完成", 100, 100)
         if progress_callback:
             progress_callback("merging", "结果合并完成", 100, 100)
