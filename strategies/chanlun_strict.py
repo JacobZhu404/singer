@@ -664,7 +664,7 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
         recent_fx = analysis.fractals[-1]
         if recent_fx.is_bottom:
             signals.append(f"底分型(强度{recent_fx.strength:.0%})")
-            score += 10
+            score += 15
         elif recent_fx.is_top:
             signals.append(f"顶分型(强度{recent_fx.strength:.0%})")
 
@@ -682,11 +682,14 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
         signals.append(f"中枢{latest_pivot.zd:.2f}~{latest_pivot.zg:.2f}")
         extra["pivot"] = {"zd": latest_pivot.zd, "zg": latest_pivot.zg, "width": latest_pivot.width}
 
-        # 价格在中枢中的位置 —— 只有触及下沿支撑才给分，在中枢内太宽松不给分
+        # 价格在中枢中的位置
         price = analysis.current_price
         if latest_pivot.zd * 1.02 >= price:
             signals.append("价格触及中枢下沿支撑")
             score += 15
+        elif price < latest_pivot.zg:
+            signals.append("价格在中枢内")
+            score += 8
 
     # ── 背驰评分 ──
     for div in analysis.divergences:
@@ -696,20 +699,20 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
             extra["divergence"] = "bull"
             break
 
-    # ── 买点评分（提高分值，强调核心信号）──
+    # ── 买点评分 ──
     buy_type_map = {}
     for bp in analysis.buy_points:
         if bp.type == "一买":
             signals.append(f"一买({bp.price:.2f})")
-            score += 30
+            score += 25
             buy_type_map["一买"] = bp
         elif bp.type == "二买":
             signals.append(f"二买({bp.price:.2f})")
-            score += 25
+            score += 20
             buy_type_map["二买"] = bp
         elif bp.type == "三买":
             signals.append(f"三买({bp.price:.2f})")
-            score += 20
+            score += 15
             buy_type_map["三买"] = bp
 
     if buy_type_map:
@@ -783,13 +786,7 @@ class ChanlunStrictStrategy(BaseStrategy):
                 analysis = _analyze(df)
                 score, signals, extra = _compute_score(analysis)
 
-                # 核心约束：必须有买点或背驰（避免无意义的中枢/分型入选）
-                has_buy_point = extra.get("buy_type") is not None
-                has_divergence = extra.get("divergence") == "bull"
-                if not (has_buy_point or has_divergence):
-                    continue
-
-                if score < 55:
+                if score < 45:
                     continue
 
                 # 实时行情
