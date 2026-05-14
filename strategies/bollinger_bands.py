@@ -9,12 +9,10 @@
 
 import pandas as pd
 import numpy as np
-from typing import List
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import calc_bollinger, calc_volume_ratio
-from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -25,109 +23,78 @@ class BollingerBandsStrategy(BaseStrategy):
     description = "价格触及布林带下轨+反弹，暗示均值回归。适用于震荡市低位埋伏。"
     base_win_rate = 0.55
 
-    def __init__(self, top_n: int = 10):
-        super().__init__(top_n=top_n)
-        self._cache: set = set()
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        try:
+            indicators = scanner.get_indicators(code, days=120)
+            if not indicators or len(indicators["kline"]) < 30:
+                raise self._SkipStock()
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
+            kline = indicators["kline"]
+            close = kline["close"]
+            bb = indicators["bollinger"]
+            upper = bb["upper"]
+            mid = bb["mid"]
+            lower = bb["lower"]
+            vol_ratio_series = indicators["vol_ratio"]
+            price = close.iloc[-1]
+            prev_price = close.iloc[-2]
+            lower_band = lower.iloc[-1]
+            upper_band = upper.iloc[-1]
 
-        # 清空缓存，避免上次运行结果影响本次
-        self._cache.clear()
+            if pd.isna(lower_band) or pd.isna(upper_band) or lower_band == 0:
+                raise self._SkipStock()
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+            # 趋势过滤：避免在极端下跌趋势中抄底
+            # 用MA60判断大趋势，而非MA20（MA20即布林中轨，触下轨时价格必然远低于MA20）
+            ma60 = indicators["ma"].get("ma60")
+            if ma60 is not None and not pd.isna(ma60.iloc[-1]) and price < ma60.iloc[-1] * 0.90:
+                return None
 
-        # 获取股票代码列表
-        codes = self._get_codes(stock_list)
-        total = len(codes)
+            signals = []
+            score = 0
+            lower_touch_pct = (price - lower_band) / lower_band * 100
 
-        # 先报告一次总进度，确保 total_stocks 被正确设置
-        self._report_progress("executing", 0, total)
+            if lower_touch_pct <= 3:
+                signals.append(f"触及布林下轨({lower_touch_pct:.1f}%)")
+                score += 40
+            if prev_price <= lower_band * 1.02 and price > prev_price:
+                signals.append("布林下轨反弹")
+                score += 30
 
-        for code in codes:
-            if code in self._cache:
-                continue
-            try:
-                indicators = scanner.get_indicators(code, days=120)
-                if not indicators or len(indicators["kline"]) < 30:
-                    continue
+            prev_lower_touch = (close.iloc[-2] - lower.iloc[-2]) / lower.iloc[-2] * 100
+            if prev_lower_touch <= 1 and lower_touch_pct > 3:
+                signals.append("昨触布林下轨反弹")
+                score += 20
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                kline = indicators["kline"]
-                close = kline["close"]
-                bb = indicators["bollinger"]
-                upper = bb["upper"]
-                mid = bb["mid"]
-                lower = bb["lower"]
-                vol_ratio_series = indicators["vol_ratio"]
-                price = close.iloc[-1]
-                prev_price = close.iloc[-2]
-                lower_band = lower.iloc[-1]
-                upper_band = upper.iloc[-1]
+            vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+            if vol_ratio_val < 0.6:
+                signals.append("缩量止跌")
+                score += 10
 
-                if pd.isna(lower_band) or pd.isna(upper_band) or lower_band == 0:
-                    continue
+            if score < 45:
+                return None
 
-                # 趋势过滤：避免在极端下跌趋势中抄底
-                # 用MA60判断大趋势，而非MA20（MA20即布林中轨，触下轨时价格必然远低于MA20）
-                ma60 = indicators["ma"].get("ma60")
-                if ma60 is not None and not pd.isna(ma60.iloc[-1]) and price < ma60.iloc[-1] * 0.90:
-                    continue
+            quote = self._get_quote(scanner, code, float(price))
 
-                signals = []
-                score = 0
-                lower_touch_pct = (price - lower_band) / lower_band * 100
+            return StockSignal(
+                ts_code=code,
+                name=name_map.get(code, code),
+                strategy=self.name,
+                score=min(score, 100),
+                win_rate=self._calc_win_rate(score, signals),
+                signals=signals,
+                latest_price=float(quote.get("最新价", price)),
+                pct_chg=float(quote.get("涨跌幅", 0.0)),
+                volume_ratio=round(vol_ratio_val, 2),
+                risk_flags=_compute_risk_flags(kline),
+                trade_date=trade_date,
+                extra={
+                    "lower_band": round(float(lower_band), 2),
+                    "upper_band": round(float(upper_band), 2),
+                    "bollinger_width": round(float(upper_band - lower_band), 2),
+                    "price": round(float(price), 2),
+                },
+            )
 
-                if lower_touch_pct <= 3:
-                    signals.append(f"触及布林下轨({lower_touch_pct:.1f}%)")
-                    score += 40
-                if prev_price <= lower_band * 1.02 and price > prev_price:
-                    signals.append("布林下轨反弹")
-                    score += 30
-
-                prev_lower_touch = (close.iloc[-2] - lower.iloc[-2]) / lower.iloc[-2] * 100
-                if prev_lower_touch <= 1 and lower_touch_pct > 3:
-                    signals.append("昨触布林下轨反弹")
-                    score += 20
-
-                vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
-                if vol_ratio_val < 0.6:
-                    signals.append("缩量止跌")
-                    score += 10
-
-                if score < 45:
-                    continue
-
-                quote = self._get_quote(scanner, code, float(price))
-
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=min(score, 100),
-                    win_rate=self._calc_win_rate(score, signals),
-                    signals=signals,
-                    latest_price=float(quote.get("最新价", price)),
-                    pct_chg=float(quote.get("涨跌幅", 0.0)),
-                    volume_ratio=round(vol_ratio_val, 2),
-                    risk_flags=_compute_risk_flags(kline),
-                    trade_date=trade_date,
-                    extra={
-                        "lower_band": round(float(lower_band), 2),
-                        "upper_band": round(float(upper_band), 2),
-                        "bollinger_width": round(float(upper_band - lower_band), 2),
-                        "price": round(float(price), 2),
-                    },
-                ))
-                self._cache.add(code)
-
-            except Exception as e:
-                logger.debug(f"[布林策略] {code} 计算失败: {e}")
-
-        return self._build_result(candidates, trade_date, scanned)
+        except Exception as e:
+            logger.debug(f"[布林策略] {code} 计算失败: {e}")

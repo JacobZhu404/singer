@@ -1,11 +1,14 @@
 """
 策略基类定义
 所有选股策略继承自 BaseStrategy
+采用模板方法模式：子类只需实现 _evaluate_single_stock()，
+基类提供通用 screen() 实现（内部20线程并行遍历）。
 """
 
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Callable
 import logging
@@ -43,8 +46,9 @@ class ScreenResult:
 
 class BaseStrategy(ABC):
     """
-    选股策略基类
-    子类需要实现 screen() 方法
+    选股策略基类（模板方法模式）
+    子类需要实现 _evaluate_single_stock() 方法
+    基类提供通用的 screen() 并行遍历实现
     """
 
     name: str = "base"
@@ -60,25 +64,92 @@ class BaseStrategy(ABC):
         self._progress_callback = callback
 
     def _report_progress(self, phase: str, scanned: int, total: int):
-        """子类在扫描循环中调用，报告当前进度"""
+        """报告当前进度"""
         if self._progress_callback:
             self._progress_callback(phase, scanned, total)
 
+    class _SkipStock(Exception):
+        """数据不足或其他原因跳过该股票，不计入 scanned"""
+        pass
+
     @abstractmethod
+    def _evaluate_single_stock(
+        self,
+        code: str,
+        scanner,
+        name_map: Dict[str, str],
+        trade_date: str,
+    ) -> Optional[StockSignal]:
+        """
+        评估单只股票，子类只需关注评分逻辑。
+
+        Args:
+            code: 股票代码
+            scanner: MarketScanner 实例
+            name_map: 代码→名称映射
+            trade_date: 交易日期字符串
+
+        Returns:
+            StockSignal 如果命中，None 如果不命中但评估正常完成
+
+        Raises:
+            self._SkipStock: 数据不足时应抛出，该股票不计入 scanned
+        """
+        pass
+
     def screen(
         self,
         stock_list: pd.DataFrame,
-        scanner=None
+        scanner=None,
+        max_workers: int = 20,
     ) -> ScreenResult:
         """
-        筛选股票
+        通用并行筛选模板。
+        使用线程池并行遍历股票，子类通过 _evaluate_single_stock() 实现评分逻辑。
+
         Args:
-            stock_list: 股票列表 DataFrame (ts_code, name, ...)
+            stock_list: 股票列表 DataFrame
             scanner: MarketScanner 实例
+            max_workers: 并行线程数（默认20）
+
         Returns:
             ScreenResult
         """
-        pass
+        from ..data.fetcher import market_scanner, get_latest_trade_date
+
+        if scanner is None:
+            scanner = market_scanner
+        scanner.load()
+        trade_date = get_latest_trade_date()
+        name_map = self._get_name_map(stock_list)
+        codes = self._get_codes(stock_list)
+        total = len(codes)
+
+        candidates: List[StockSignal] = []
+        scanned = 0
+
+        def _eval_one(code: str) -> tuple:
+            """评估单只，返回 (signal_or_none, evaluated_flag)"""
+            try:
+                sig = self._evaluate_single_stock(code, scanner, name_map, trade_date)
+                return sig, True
+            except self._SkipStock:
+                return None, False
+            except Exception as e:
+                logger.debug(f"[{self.name}] {code} 计算失败: {e}")
+                return None, False
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_eval_one, c): c for c in codes}
+            for idx, future in enumerate(as_completed(futures), 1):
+                sig, evaluated = future.result()
+                if evaluated:
+                    scanned += 1
+                if sig is not None:
+                    candidates.append(sig)
+                self._report_progress("executing", idx, total)
+
+        return self._build_result(candidates, trade_date, scanned)
 
     def _calc_win_rate(self, score: float, signals: List[str]) -> float:
         """根据评分和信号数量估算胜率"""

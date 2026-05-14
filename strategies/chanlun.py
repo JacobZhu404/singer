@@ -19,9 +19,8 @@ import numpy as np
 from typing import List, Tuple, Optional
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import calc_macd, calc_volume_ratio
-from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -501,73 +500,39 @@ class ChanlunStrategy(BaseStrategy):
     description = "缠论(启发式近似版) - 无笔构建，中枢非标准，推荐用chanlun_strict"
     base_win_rate = 0.58
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        scanner.load()
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        kline = scanner.get_history(code, days=120)
+        if kline is None or len(kline) < 30:
+            raise self._SkipStock()
 
-        name_map = self._get_name_map(stock_list)
-        trade_date = get_latest_trade_date()
+        score, signals, extra = _chanlun_score(kline)
 
-        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
-        if stock_list.empty or code_col not in stock_list.columns:
-            codes = []
-        else:
-            codes = stock_list[code_col].astype(str).tolist()
+        if score < 40:
+            return None
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+        # 实时行情
+        quote = scanner.get_realtime(code)
+        pct = quote.get("涨跌幅", 0.0) or 0.0
+        # 统一使用 calc_volume_ratio（含当日，period=5）
+        vol = kline["vol"]
+        vol_ratio_series = calc_volume_ratio(vol, 5)
+        vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+        price = quote.get("最新价", quote.get("close", kline["close"].iloc[-1])) or kline["close"].iloc[-1]
 
-        for code in codes:
-            try:
-                kline = scanner.get_history(code, days=120)
-                if kline is None or len(kline) < 30:
-                    continue
+        win_rate = self._calc_win_rate(score, signals)
+        risk_flags = _compute_risk_flags(kline)
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                score, signals, extra = _chanlun_score(kline)
-
-                if score < 40:
-                    continue
-
-                # 实时行情
-                quote = scanner.get_realtime(code)
-                pct = quote.get("涨跌幅", 0.0) or 0.0
-                # 统一使用 calc_volume_ratio（含当日，period=5）
-                vol = kline["vol"]
-                vol_ratio_series = calc_volume_ratio(vol, 5)
-                vol_ratio_val = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
-                price = quote.get("最新价", quote.get("close", kline["close"].iloc[-1])) or kline["close"].iloc[-1]
-
-                win_rate = self._calc_win_rate(score, signals)
-                risk_flags = _compute_risk_flags(kline)
-
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=min(score, 100),
-                    win_rate=win_rate,
-                    signals=signals,
-                    latest_price=float(price),
-                    pct_chg=float(pct),
-                    volume_ratio=vol_ratio_val,
-                    risk_flags=risk_flags,
-                    trade_date=trade_date,
-                    extra=extra,
-                ))
-
-            except Exception as e:
-                logger.debug(f"[缠论策略] {code} 计算失败: {e}")
-
-        candidates.sort(key=lambda x: x.score, reverse=True)
-        top = candidates[:self.top_n]
-        return ScreenResult(
-            strategy_name=self.name,
-            strategy_desc=self.description,
-            signals=top,
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=min(score, 100),
+            win_rate=win_rate,
+            signals=signals,
+            latest_price=float(price),
+            pct_chg=float(pct),
+            volume_ratio=vol_ratio_val,
+            risk_flags=risk_flags,
             trade_date=trade_date,
-            total_scanned=scanned,
-            all_signals=candidates[:],
+            extra=extra,
         )

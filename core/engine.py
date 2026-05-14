@@ -5,7 +5,6 @@
 import json
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from typing import List, Optional, Dict, Callable
 
@@ -24,8 +23,8 @@ logger = logging.getLogger(__name__)
 class ScreenEngine:
     """
     选股引擎：
-    - 支持单策略 / 多策略并行执行
-    - 多策略结果合并：同一只股票被多策略命中则评分叠加
+    - 单策略执行（策略内部已并行）
+    - 多策略串行调度，结果合并：同一只股票被多策略命中则评分叠加
     - 统一胜率输出
     """
 
@@ -44,7 +43,6 @@ class ScreenEngine:
             "strategies": {},  # name -> {status, phase, pct, hits, scanned, total_stocks}
         }
         self._progress_lock = threading.Lock()
-        self._running_count = 0  # 当前正在运行的策略数（并行用）
 
     def _stop_requested(self) -> bool:
         if self._stop_event is None:
@@ -63,14 +61,8 @@ class ScreenEngine:
 
     def _set_strategy_progress(self, name: str, status: str, pct: int = 0, hits: int = 0,
                                 phase: str = "", scanned: int = 0, total_stocks: int = 0):
-        """更新单个策略的进度状态，并同步跟踪 running 策略数量"""
+        """更新单个策略的进度状态"""
         with self._progress_lock:
-            old = self._progress["strategies"].get(name, {})
-            old_status = old.get("status")
-            if old_status != "running" and status == "running":
-                self._running_count += 1
-            elif old_status == "running" and status != "running":
-                self._running_count = max(0, self._running_count - 1)
             self._progress["strategies"][name] = {
                 "status": status,
                 "phase": phase or status,
@@ -85,18 +77,6 @@ class ScreenEngine:
         if total <= 0:
             return 0
         return min(int(scanned / total * 100), 99)
-
-    def _calc_progress_with_running(self, completed: int, total: int) -> int:
-        """计算总体进度：已完成策略算 100%，running 中策略按各自内部进度计算"""
-        if total <= 0:
-            return 0
-        with self._progress_lock:
-            strategies = self._progress["strategies"]
-        total_pct = completed * 100
-        for info in strategies.values():
-            if info.get("status") == "running":
-                total_pct += info.get("pct", 0)
-        return min(int(total_pct / total), 99)
 
     def get_progress(self) -> Dict:
         with self._progress_lock:
@@ -288,94 +268,6 @@ class ScreenEngine:
             progress_callback("done", "筛选完成", total, total)
 
         return {"status": "ok", "results": results}
-
-    def screen_strategies_parallel(
-        self,
-        strategy_names: List[str],
-        progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
-        on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
-    ) -> Dict[str, ScreenResult]:
-        """
-        并行运行策略，每个策略完成后立即回调 on_strategy_done。
-        所有策略共享同一份已缓存的K线数据，读取操作线程安全。
-        """
-        stock_list = self._load_stock_list()
-        market_scanner.load()
-
-        total = len(strategy_names)
-        completed = 0
-        results = {}
-        completed_lock = threading.Lock()
-
-        # 初始化各策略状态为 pending（前端会显示"等待中"）
-        for name in strategy_names:
-            self._set_strategy_progress(name, "pending")
-
-        # 先广播 running 阶段开始，让前端有时间渲染策略卡片状态
-        self._set_progress("running", "策略启动中...", 0, total)
-        if progress_callback:
-            progress_callback("running", "策略启动中...", 0, total)
-
-        def run_one(name: str) -> tuple:
-            if self._stop_requested():
-                raise RuntimeError("stopped")
-            self._set_strategy_progress(name, "running", 0, 0, "loading")
-            strategy = get_strategy(name, top_n=self.top_n)
-            total_codes = len(strategy._get_codes(stock_list))
-
-            def _on_strategy_progress(phase: str, scanned: int, total_stocks: int):
-                if self._stop_requested():
-                    raise RuntimeError("stopped")
-                pct = self._calc_strategy_pct(scanned, total_stocks)
-                self._set_strategy_progress(
-                    name, "running", pct, 0, "executing", scanned, total_stocks
-                )
-
-            strategy.set_progress_callback(_on_strategy_progress)
-            result = strategy.screen(stock_list, scanner=market_scanner)
-            self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
-            self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done", total_stocks=total_codes)
-            return name, result
-
-        with ThreadPoolExecutor(max_workers=min(8, total)) as executor:
-            futures = {executor.submit(run_one, name): name for name in strategy_names}
-            for future in as_completed(futures):
-                if self._stop_requested():
-                    for f in futures:
-                        f.cancel()
-                    break
-                try:
-                    name, result = future.result()
-                    with completed_lock:
-                        results[name] = result
-                        completed += 1
-                        current_completed = completed
-                    logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
-                    if on_strategy_done:
-                        on_strategy_done(name, result)
-                    overall_pct = self._calc_progress_with_running(current_completed, total)
-                    self._set_progress("running", f"已完成 {current_completed}/{total}", current_completed, total, pct=overall_pct)
-                    if progress_callback:
-                        progress_callback("running", f"已完成 {current_completed}/{total}", current_completed, total)
-                except Exception as e:
-                    failed_name = futures[future]
-                    logger.error(f"策略 {failed_name} 执行失败: {e}")
-                    self._set_strategy_progress(failed_name, "done", 100, 0, "done")
-
-        # 强制将所有未完成的策略标记为 done，避免前端状态不一致
-        with self._progress_lock:
-            for name, info in self._progress["strategies"].items():
-                if info.get("status") != "done":
-                    self._progress["strategies"][name] = {
-                        **info,
-                        "status": "done",
-                        "phase": "done",
-                        "pct": 100,
-                    }
-        self._set_progress("done", "筛选完成", total, total)
-        if progress_callback:
-            progress_callback("done", "筛选完成", total, total)
-        return results
 
     def run_multi(
         self,
@@ -600,12 +492,11 @@ class ScreenEngine:
         progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
         force_refresh: bool = False,
         on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
-        parallel: bool = True,
         skip_download: bool = False,
     ) -> Dict:
         """
         一键获取推荐：执行策略 → 合并 → 排序
-        默认并行执行策略，每个策略完成后立即回调 on_strategy_done。
+        策略内部已并行（BaseStrategy 模板方法），Engine 层串行调度即可。
         """
         if strategies is None:
             strategies = [k for k in STRATEGY_REGISTRY if k != "limit_up_gene"]
@@ -632,20 +523,13 @@ class ScreenEngine:
         finally:
             market_scanner._include_realtime = _orig_include
 
-        # 阶段2：并行运行策略（流式回调）
+        # 阶段2：串行运行策略（每个策略内部已并行）
         _t2 = datetime.now()
-        if parallel:
-            results = self.screen_strategies_parallel(
-                strategies,
-                progress_callback=progress_callback,
-                on_strategy_done=on_strategy_done,
-            )
-        else:
-            results = self.screen_strategies(
-                strategies,
-                progress_callback=progress_callback,
-                on_strategy_done=on_strategy_done,
-            )["results"]
+        results = self.screen_strategies(
+            strategies,
+            progress_callback=progress_callback,
+            on_strategy_done=on_strategy_done,
+        )["results"]
 
         # 阶段3: 结果合并中
         self._set_progress("merging", "正在合并结果...", 0, 100)
