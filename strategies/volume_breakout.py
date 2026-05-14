@@ -10,12 +10,10 @@
 
 import pandas as pd
 import numpy as np
-from typing import List
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import calc_volume_ratio
-from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -26,104 +24,110 @@ class VolumeBreakoutStrategy(BaseStrategy):
     description = "量比>2倍 + 价格突破近期高点，视为有效突破信号。"
     base_win_rate = 0.56
 
-    def __init__(self, top_n: int = 10):
-        super().__init__(top_n=top_n)
-        self._cache: set = set()
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        try:
+            indicators = scanner.get_indicators(code, days=120)
+            if not indicators or len(indicators["kline"]) < 30:
+                raise self._SkipStock()
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
+            kline = indicators["kline"]
+            close = kline["close"]
+            high = kline["high"]
+            vol = kline["vol"]
+            vol_ratio_series = indicators["vol_ratio"]
+            # 用今日最高价（而非收盘价）判断是否突破
+            today_high = float(high.iloc[-1])
+            price = float(close.iloc[-1])       # 收盘价用于收阳判断
+            prev_price = float(close.iloc[-2])
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+            vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+            vol_ratio_prev = float(vol_ratio_series.iloc[-2]) if len(vol_ratio_series) >= 2 and not pd.isna(vol_ratio_series.iloc[-2]) else 1.0
+            if pd.isna(vol_ratio) or vol_ratio <= 0:
+                raise self._SkipStock()
+            # 保留 20 日均量供 extra 展示
+            vol_ma20 = vol.rolling(20).mean().iloc[-1]
+            # 突破判断用最高价，而非收盘价
+            high_30 = high.iloc[-31:-1].max() if len(high) >= 31 else high.iloc[:-1].max()
+            high_5 = high.iloc[-6:-1].max() if len(high) >= 6 else high.iloc[:-1].max()
 
-        for code in self._get_codes(stock_list):
-            if code in self._cache:
-                continue
-            try:
-                indicators = scanner.get_indicators(code, days=120)
-                if not indicators or len(indicators["kline"]) < 30:
-                    continue
+            signals = []
+            score = 0
+            has_volume = False
+            has_breakout = False
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                kline = indicators["kline"]
-                close = kline["close"]
-                high = kline["high"]
-                vol = kline["vol"]
-                vol_ratio_series = indicators["vol_ratio"]
-                # 用今日最高价（而非收盘价）判断是否突破
-                today_high = float(high.iloc[-1])
-                price = float(close.iloc[-1])       # 收盘价用于收阳判断
-                prev_price = float(close.iloc[-2])
+            # 1. 放量（提高量比要求，增强区分度）
+            if vol_ratio >= 2.5:
+                signals.append(f"量比{vol_ratio:.1f}倍放量")
+                score += 35
+                has_volume = True
+            elif vol_ratio >= 2.0:
+                signals.append(f"明显放量{vol_ratio:.1f}倍")
+                score += 25
+                has_volume = True
+            elif vol_ratio >= 1.5:
+                signals.append(f"温和放量{vol_ratio:.1f}倍")
+                score += 10
 
-                vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
-                vol_ratio_prev = float(vol_ratio_series.iloc[-2]) if len(vol_ratio_series) >= 2 and not pd.isna(vol_ratio_series.iloc[-2]) else 1.0
-                if pd.isna(vol_ratio) or vol_ratio <= 0:
-                    continue
-                # 保留 20 日均量供 extra 展示
-                vol_ma20 = vol.rolling(20).mean().iloc[-1]
-                # 突破判断用最高价，而非收盘价
-                high_30 = high.iloc[-31:-1].max() if len(high) >= 31 else high.iloc[:-1].max()
-                high_5 = high.iloc[-6:-1].max() if len(high) >= 6 else high.iloc[:-1].max()
+            # 2. 突破（提高长期突破权重）
+            if today_high > high_30:
+                signals.append(f"突破30日高点({round(high_30, 2)})")
+                score += 20
+                has_breakout = True
+                if today_high > high_5:
+                    signals.append("突破近期新高")
+                    score += 10
 
-                signals = []
-                score = 0
-
-                if vol_ratio >= 2.0:
-                    signals.append(f"量比{vol_ratio:.1f}倍放量")
-                    score += 35
-                elif vol_ratio >= 1.5:
-                    signals.append(f"温和放量{vol_ratio:.1f}倍")
-                    score += 20
-
-                if today_high > high_30:
-                    signals.append(f"突破30日高点({round(high_30, 2)})")
+            # 突破60日高点给更高分
+            if len(high) >= 61:
+                high_60 = high.iloc[-61:-1].max()
+                if today_high > high_60:
+                    signals.append(f"突破60日高点({round(high_60, 2)})")
                     score += 30
-                    if today_high > high_5:
-                        signals.append("突破近期新高")
-                        score += 15
+                    has_breakout = True
 
-                if price > prev_price:
-                    signals.append("今日收阳")
-                    score += 10
+            if price > prev_price:
+                signals.append("今日收阳")
+                score += 10
 
-                price_pct_chg = (price - prev_price) / prev_price * 100
-                if vol_ratio >= 1.5 and price_pct_chg > 2:
-                    signals.append("放量上涨共振")
-                    score += 15
-                if vol_ratio >= 1.5 and vol_ratio_prev >= 1.3:
-                    signals.append("量能持续放大")
-                    score += 10
+            # 3. 放量上涨共振（提高要求）
+            price_pct_chg = (price - prev_price) / prev_price * 100
+            if vol_ratio >= 2.0 and price_pct_chg > 3:
+                signals.append("放量上涨共振")
+                score += 20
+            elif vol_ratio >= 1.5 and price_pct_chg > 2:
+                signals.append("放量上涨")
+                score += 10
 
-                if score < 45:
-                    continue
+            if vol_ratio >= 1.5 and vol_ratio_prev >= 1.3:
+                signals.append("量能持续放大")
+                score += 10
 
-                quote = self._get_quote(scanner, code, price)
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=min(score, 100),
-                    win_rate=self._calc_win_rate(score, signals),
-                    signals=signals,
-                    latest_price=float(quote.get("最新价", price)),
-                    pct_chg=float(quote.get("涨跌幅", 0.0)),
-                    volume_ratio=float(vol_ratio),
-                    risk_flags=_compute_risk_flags(kline),
-                    trade_date=trade_date,
-                    extra={
-                        "vol_ratio": round(float(vol_ratio), 2),
-                        "vol_ma20": round(float(vol_ma20), 0),
-                        "high_30": round(float(high_30), 2),
-                    },
-                ))
-                self._cache.add(code)
+            # 必须同时满足放量(>=2.0) + 突破
+            if not (has_volume and has_breakout):
+                return None
 
-            except Exception as e:
-                logger.debug(f"[量价突破] {code} 计算失败: {e}")
+            if score < 55:
+                return None
 
-        return self._build_result(candidates, trade_date, scanned)
+            quote = self._get_quote(scanner, code, price)
+            return StockSignal(
+                ts_code=code,
+                name=name_map.get(code, code),
+                strategy=self.name,
+                score=min(score, 100),
+                win_rate=self._calc_win_rate(score, signals),
+                signals=signals,
+                latest_price=float(quote.get("最新价", price)),
+                pct_chg=float(quote.get("涨跌幅", 0.0)),
+                volume_ratio=float(vol_ratio),
+                risk_flags=_compute_risk_flags(kline),
+                trade_date=trade_date,
+                extra={
+                    "vol_ratio": round(float(vol_ratio), 2),
+                    "vol_ma20": round(float(vol_ma20), 0),
+                    "high_30": round(float(high_30), 2),
+                },
+            )
+
+        except Exception as e:
+            logger.debug(f"[量价突破] {code} 计算失败: {e}")
