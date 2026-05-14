@@ -21,7 +21,6 @@ from dataclasses import dataclass
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..data.fetcher import market_scanner, get_latest_trade_date
 from ..utils.indicators import calc_volume_ratio
 
 logger = logging.getLogger(__name__)
@@ -664,7 +663,7 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
         recent_fx = analysis.fractals[-1]
         if recent_fx.is_bottom:
             signals.append(f"底分型(强度{recent_fx.strength:.0%})")
-            score += 15
+            score += 10
         elif recent_fx.is_top:
             signals.append(f"顶分型(强度{recent_fx.strength:.0%})")
 
@@ -682,14 +681,11 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
         signals.append(f"中枢{latest_pivot.zd:.2f}~{latest_pivot.zg:.2f}")
         extra["pivot"] = {"zd": latest_pivot.zd, "zg": latest_pivot.zg, "width": latest_pivot.width}
 
-        # 价格在中枢中的位置
-        price = analysis.current_price
-        if latest_pivot.zd * 1.02 >= price:
-            signals.append("价格触及中枢下沿支撑")
-            score += 15
-        elif price < latest_pivot.zg:
-            signals.append("价格在中枢内")
-            score += 8
+    # 价格在中枢中的位置
+    price = analysis.current_price
+    if latest_pivot.zd * 1.02 >= price:
+        signals.append("价格触及中枢下沿支撑")
+        score += 15
 
     # ── 背驰评分 ──
     for div in analysis.divergences:
@@ -704,7 +700,7 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
     for bp in analysis.buy_points:
         if bp.type == "一买":
             signals.append(f"一买({bp.price:.2f})")
-            score += 25
+            score += 30
             buy_type_map["一买"] = bp
         elif bp.type == "二买":
             signals.append(f"二买({bp.price:.2f})")
@@ -712,7 +708,7 @@ def _compute_score(analysis: ChanlunAnalysis) -> Tuple[int, List[str], dict]:
             buy_type_map["二买"] = bp
         elif bp.type == "三买":
             signals.append(f"三买({bp.price:.2f})")
-            score += 15
+            score += 20
             buy_type_map["三买"] = bp
 
     if buy_type_map:
@@ -758,80 +754,60 @@ class ChanlunStrictStrategy(BaseStrategy):
     description = "严格缠论（均衡版）：包含处理→分型→笔→中枢→背驰→三类买点"
     base_win_rate = 0.58
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        scanner.load()
+    def _evaluate_single_stock(
+        self,
+        code: str,
+        scanner,
+        name_map: dict,
+        trade_date: str,
+    ) -> Optional[StockSignal]:
+        """评估单只股票，返回StockSignal或None（并行架构）"""
+        df = scanner.get_history(code, days=120)
+        if df is None or len(df) < 30:
+            raise self._SkipStock()
 
-        name_map = self._get_name_map(stock_list)
-        trade_date = get_latest_trade_date()
+        analysis = _analyze(df)
+        score, signals, extra = _compute_score(analysis)
 
-        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
-        if stock_list.empty or code_col not in stock_list.columns:
-            codes = []
-        else:
-            codes = stock_list[code_col].astype(str).tolist()
+        # 优化：必须有买点 或 牛背驰
+        has_buy_point = extra.get("buy_type") is not None
+        has_divergence = extra.get("divergence") == "bull"
+        if not (has_buy_point or has_divergence):
+            return None
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+        # 优化：阈值提高至55
+        if score < 55:
+            return None
 
-        for code in codes:
-            try:
-                df = scanner.get_history(code, days=120)
-                if df is None or len(df) < 30:
-                    continue
+        # 实时行情
+        quote = scanner.get_realtime(code)
+        pct = float(quote.get("涨跌幅", 0.0) or 0.0)
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                analysis = _analyze(df)
-                score, signals, extra = _compute_score(analysis)
+        # 统一使用 calc_volume_ratio（含当日，period=5）
+        vol = df["vol"]
+        vol_ratio_series = calc_volume_ratio(vol, 5)
+        vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
 
-                if score < 45:
-                    continue
+        price = quote.get("最新价", quote.get("close", df["close"].iloc[-1])) or df["close"].iloc[-1]
+        price = float(price)
 
-                # 实时行情
-                quote = scanner.get_realtime(code)
-                pct = float(quote.get("涨跌幅", 0.0) or 0.0)
+        if analysis:
+            analysis.current_pct = pct
 
-                # 统一使用 calc_volume_ratio（含当日，period=5）
-                vol = df["vol"]
-                vol_ratio_series = calc_volume_ratio(vol, 5)
-                vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
+        win_rate = self._calc_win_rate(score, signals)
+        risk_flags = _compute_risk_flags(df)
 
-                price = quote.get("最新价", quote.get("close", df["close"].iloc[-1])) or df["close"].iloc[-1]
-                price = float(price)
-
-                if analysis:
-                    analysis.current_pct = pct
-
-                win_rate = self._calc_win_rate(score, signals)
-                risk_flags = _compute_risk_flags(df)
-
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=min(score, 100),
-                    win_rate=win_rate,
-                    signals=signals,
-                    latest_price=round(price, 2),
-                    pct_chg=round(pct, 2),
-                    volume_ratio=round(vol_ratio, 2),
-                    risk_flags=risk_flags,
-                    trade_date=trade_date,
-                    extra=extra,
-                ))
-
-            except Exception as e:
-                logger.debug(f"[严格缠论策略] {code} 计算失败: {e}")
-
-        candidates.sort(key=lambda x: x.score, reverse=True)
-        top = candidates[:self.top_n]
-        return ScreenResult(
-            strategy_name=self.name,
-            strategy_desc=self.description,
-            signals=top,
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=min(score, 100),
+            win_rate=win_rate,
+            signals=signals,
+            latest_price=round(price, 2),
+            pct_chg=round(pct, 2),
+            volume_ratio=round(vol_ratio, 2),
+            risk_flags=risk_flags,
             trade_date=trade_date,
-            total_scanned=scanned,
-            all_signals=candidates[:],
+            extra=extra,
         )
