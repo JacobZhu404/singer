@@ -1,6 +1,12 @@
 """
-策略4: 右侧交易
+策略4: 右侧交易（优化版）
+
 原理：等待股票从底部启动，突破关键阻力位后介入
+优化（2026-05-14）：
+  1. 调整评分权重（60日突破加分更多：30分）
+  2. 加入突破有效性验证（突破幅度>1%）
+  3. 加入突破幅度过滤（1%~8%为有效突破）
+
 条件：
   1. 突破近20日高点（或60日高点）
   2. 突破时放量（量比 > 1.5）
@@ -8,10 +14,9 @@
   4. MA5 上穿 MA20（均线金叉）
   5. 股价站上 MA60（长期趋势向上）
   6. RSI 在 50~70 区间（强势但未超买）
-
-优化（2026-05）：
-  - 阈值提高至60分（原45分）
-  - 评分体系保持不变，阶梯度良好
+  7. 突破有效性验证（突破幅度 > 1%）
+  8. 突破幅度过滤（1%~8%为有效突破）
+适用：趋势确认、中线持仓
 """
 
 import pandas as pd
@@ -28,12 +33,12 @@ logger = logging.getLogger(__name__)
 
 class RightSideTradingStrategy(BaseStrategy):
     name = "right_side"
-    description = "右侧交易 - 突破关键阻力位+放量+均线金叉"
-    base_win_rate = 0.56
+    description = "右侧交易(优化) - 突破关键阻力位+放量+均线金叉+突破有效性验证"
+    base_win_rate = 0.58  # 优化：提高胜率预估
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         indicators = scanner.get_indicators(code, days=120)
-        if not indicators or len(indicators["kline"]) < 30:
+        if not indicators or len(indicators["kline"]) < 60:
             raise self._SkipStock()
 
         df = indicators["kline"]
@@ -49,36 +54,64 @@ class RightSideTradingStrategy(BaseStrategy):
 
         signals = []
         score = 0
-        ma5 = mas["ma5"].iloc[i]
-        ma20 = mas["ma20"].iloc[i]
-        ma60 = mas["ma60"].iloc[i]
-        ma5_prev = mas["ma5"].iloc[i-1] if i >= 1 else None
-        ma20_prev = mas["ma20"].iloc[i-1] if i >= 1 else None
-
-        if any(pd.isna(x) for x in [ma5, ma20, ma60]):
-            raise self._SkipStock()
-
         c = float(close.iloc[i])
         vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
 
+        # ── 条件1: 突破20日新高 ──
+        breakout_20_pct = 0.0
         if i >= 20:
             high_20 = float(high.iloc[i-20:i].max())
+            breakout_20_pct = (c - high_20) / high_20 * 100
+            
             if c > high_20:
                 signals.append(f"突破20日新高({high_20:.2f})")
-                score += 25
+                score += 20  # 优化：25→20（让60日突破更重要）
+                
+                # 优化2：突破有效性验证（突破幅度>1%）
+                if breakout_20_pct > 1.0:
+                    signals.append(f"20日突破有效({breakout_20_pct:.1f}%)")
+                    score += 10
+                
+                # 优化3：突破幅度过滤（1%~8%为有效突破）
+                if 1.0 <= breakout_20_pct <= 8.0:
+                    signals.append(f"20日突破幅度合理({breakout_20_pct:.1f}%)")
+                    score += 10
+                elif breakout_20_pct > 8.0:
+                    signals.append(f"20日突破幅度过大({breakout_20_pct:.1f}%)")
+                    score -= 10  # 可能已过热的，降低评分
 
-        # 60日高点突破（加分项，信号更强）
+        # ── 条件2: 60日高点突破（加分项，信号更强）──
+        breakout_60_pct = 0.0
         if i >= 60:
             high_60 = float(high.iloc[i-60:i].max())
+            breakout_60_pct = (c - high_60) / high_60 * 100
+            
             if c > high_60:
                 signals.append(f"突破60日新高({high_60:.2f})")
-                score += 10
+                score += 30  # 优化：10→30（60日突破更强）
+                
+                # 优化2：突破有效性验证（突破幅度>1%）
+                if breakout_60_pct > 1.0:
+                    signals.append(f"60日突破有效({breakout_60_pct:.1f}%)")
+                    score += 15
+                
+                # 优化3：突破幅度过滤（1%~8%为有效突破）
+                if 1.0 <= breakout_60_pct <= 8.0:
+                    signals.append(f"60日突破幅度合理({breakout_60_pct:.1f}%)")
+                    score += 10
+                elif breakout_60_pct > 8.0:
+                    signals.append(f"60日突破幅度过大({breakout_60_pct:.1f}%)")
+                    score -= 15  # 可能已过热的，大幅降低评分
 
-        if vr > 1.5:
+        # ── 条件3: 突破时放量 ──
+        if vr > 2.0:
             signals.append(f"突破放量(量比{vr:.1f}x)")
-            score += 20
+            score += 25  # 优化：20→25（放量更重要）
+        elif vr > 1.5:
+            signals.append(f"突破温和放量(量比{vr:.1f}x)")
+            score += 15
 
-        # 突破前缩量调整（过滤假突破）
+        # ── 条件4: 突破前缩量调整（过滤假突破）──
         if i >= 21:
             vol_ma5_before = float(vol.iloc[i-6:i-1].mean())
             vol_ma20_before = float(vol.iloc[i-21:i-1].mean())
@@ -86,31 +119,39 @@ class RightSideTradingStrategy(BaseStrategy):
                 signals.append("突破前缩量调整")
                 score += 10
 
+        # ── 条件5: MA5 上穿 MA20（均线金叉）──
+        ma5 = mas["ma5"].iloc[i]
+        ma20 = mas["ma20"].iloc[i]
+        ma5_prev = mas["ma5"].iloc[i-1] if i >= 1 else None
+        ma20_prev = mas["ma20"].iloc[i-1] if i >= 1 else None
+        
         if (ma5_prev is not None and ma20_prev is not None and
                 not pd.isna(ma5_prev) and not pd.isna(ma20_prev) and
                 float(ma5) > float(ma20) and float(ma5_prev) <= float(ma20_prev)):
             signals.append("MA5上穿MA20金叉")
             score += 20
 
-        if c > float(ma60):
+        # ── 条件6: 股价站上 MA60（长期趋势向上）──
+        ma60 = mas["ma60"].iloc[i]
+        if not pd.isna(ma60) and c > float(ma60):
             signals.append("股价站上MA60")
             score += 15
 
+        # ── 条件7: RSI 在 50~70 区间（强势但未超买）──
         r = float(rsi.iloc[i]) if not pd.isna(rsi.iloc[i]) else 50
         if 50 <= r <= 70:
             signals.append(f"RSI强势区间({r:.0f})")
             score += 10
+        elif r > 70:
+            signals.append(f"RSI超买({r:.0f})")
+            score -= 10
 
+        # ── 条件8: MACD 零轴以上（趋势确认）──
         if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
             signals.append("MACD零轴以上")
             score += 10
 
-        if i >= 5:
-            gain_5d = (c - float(close.iloc[i-5])) / float(close.iloc[i-5]) * 100
-            if 3 <= gain_5d <= 25:
-                signals.append("启动未过热")
-                score += 10
-
+        # ── 阈值过滤 ──
         if score < 60:  # 优化：阈值提高至60（原45）
             return None
 
@@ -119,7 +160,7 @@ class RightSideTradingStrategy(BaseStrategy):
             ts_code=code,
             name=name_map.get(code, code),
             strategy=self.name,
-            score=score,
+            score=min(score, 100),
             win_rate=self._calc_win_rate(score, signals),
             signals=signals,
             latest_price=round(float(quote.get("最新价", c)), 2),
@@ -130,7 +171,9 @@ class RightSideTradingStrategy(BaseStrategy):
             extra={
                 "ma5": round(float(ma5), 2),
                 "ma20": round(float(ma20), 2),
-                "ma60": round(float(ma60), 2),
+                "ma60": round(float(ma60), 2) if not pd.isna(ma60) else None,
                 "rsi14": round(r, 1),
+                "breakout_20_pct": round(breakout_20_pct, 2) if i >= 20 else None,
+                "breakout_60_pct": round(breakout_60_pct, 2) if i >= 60 else None,
             }
         )

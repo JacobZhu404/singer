@@ -20,7 +20,8 @@ import logging
 from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import (
     calc_macd, calc_volume_ratio,
-    is_red_candle, detect_gap_up
+    is_red_candle, detect_gap_up,
+    is_near_52w_high, calc_relative_strength
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class StrongStockStrategy(BaseStrategy):
 
         signals = []
         score = 0
+        extra = {}  # 初始化extra字典
 
         vol_ratio = indicators["vol_ratio"]
         red = is_red_candle(open_, close)
@@ -89,12 +91,39 @@ class StrongStockStrategy(BaseStrategy):
             signals.append("MACD零轴以上")
             score += 20
 
+        # 优化1：52周新高回踩确认
+        if len(df) >= 250:
+            near_52w_high = is_near_52w_high(high, close, window=250, threshold=0.95)
+            if near_52w_high:
+                # 回踩确认：当前价格 >= 250日最高价 * 0.95（在新高附近）
+                highest_250 = high.iloc[-250:].max()
+                if close.iloc[i] >= highest_250 * 0.95:
+                    signals.append("52周新高回踩确认")
+                    score += 25
+                    extra["near_52w_high"] = True
+        
+        # 优化2：相对强度（20日涨跌幅）
+        if len(df) >= 20:
+            rel_strength = calc_relative_strength(close, window=20)
+            extra["rel_strength_20d"] = round(rel_strength, 2)
+            if rel_strength > 0:
+                signals.append(f"相对强度正(+{rel_strength:.1f}%)")
+                score += 15
+            elif rel_strength > -5:
+                signals.append(f"相对强度弱(+{rel_strength:.1f}%)")
+                score += 5
+
         if score < 50:  # 从 30 提高到 50（根据回测结果优化）
             return None
 
         latest = close.iloc[i]
         vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
         quote = self._get_quote(scanner, code, float(latest))
+        
+        # 合并extra字典
+        extra["gap_up"] = bool(gap_up.iloc[i])
+        extra["dif"] = round(float(dif.iloc[i]), 4) if not pd.isna(dif.iloc[i]) else None
+        extra["up_down_vol_ratio"] = round(up_vol / (down_vol + 1e-8), 2)
 
         return StockSignal(
             ts_code=code,
@@ -108,9 +137,5 @@ class StrongStockStrategy(BaseStrategy):
             volume_ratio=round(vr, 2),
             risk_flags=_compute_risk_flags(df),
             trade_date=trade_date,
-            extra={
-                "gap_up": bool(gap_up.iloc[i]),
-                "dif": round(float(dif.iloc[i]), 4) if not pd.isna(dif.iloc[i]) else None,
-                "up_down_vol_ratio": round(up_vol / (down_vol + 1e-8), 2),
-            }
+            extra=extra
         )

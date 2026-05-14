@@ -382,3 +382,50 @@ def calc_risk_flags(
         })
 
     return flags
+
+
+def is_near_52w_high(high: pd.Series, close: pd.Series, window: int = 250, threshold: float = 0.95) -> bool:
+    """
+    判断是否接近52周新高（250个交易日）
+    
+    Args:
+        high: 最高价序列
+        close: 收盘价序列
+        window: 窗口大小（默认250个交易日）
+        threshold: 阈值（当前价格 >= 窗口内最高价 * threshold 视为接近新高）
+    
+    Returns:
+        bool: 是否接近52周新高
+    """
+    if len(high) < window:
+        return False
+    
+    highest = high.iloc[-window:].max()
+    current_close = float(close.iloc[-1])
+    
+    return current_close >= highest * threshold
+
+
+def calc_relative_strength(close: pd.Series, benchmark_close: pd.Series = None, window: int = 20) -> float:
+    """
+    计算相对强度（个股涨跌幅 - 基准涨跌幅）
+    
+    Args:
+        close: 个股收盘价序列
+        benchmark_close: 基准指数收盘价序列（如沪深300），如果为None则用0作为基准
+        window: 计算窗口（默认20日）
+    
+    Returns:
+        float: 相对强度（正数表示跑赢基准）
+    """
+    if len(close) < window:
+        return 0.0
+    
+    stock_return = (close.iloc[-1] / close.iloc[-window] - 1) * 100
+    
+    if benchmark_close is not None and len(benchmark_close) >= window:
+        benchmark_return = (benchmark_close.iloc[-1] / benchmark_close.iloc[-window] - 1) * 100
+        return stock_return - benchmark_return
+    
+    # 如果没有基准数据，返回个股涨跌幅
+    return stock_return

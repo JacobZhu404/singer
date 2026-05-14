@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class TDSequentialStrategy(BaseStrategy):
     name = "td_sequential"
     description = "神奇九转 - TD Sequential 买入九转信号（9计数完成+确认）"
-    base_win_rate = 0.60
+    base_win_rate = 0.58  # 优化：提前预警count=8，降低胜率预期
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         try:
@@ -41,12 +41,16 @@ class TDSequentialStrategy(BaseStrategy):
             # 当前策略只关注买入九转（正数）；卖出序列（负数）跳过
             if current_count <= 0:
                 return None
+            
+            # 优化1：在count=8时提前预警（不等到count=9）
             if current_count == 9:
                 signals, score = ["买入九转完成(count=9)"], 50
+            elif current_count == 8:
+                # 提前预警：count=8时发出预警信号（第9根可能完成）
+                signals, score = ["买入九转进行中(count=8)"], 30  # 降低分数，作为预警
             # 标准TD Sequential仅在 Setup 完成（count=9）时产生信号
-            # count=7/8 为"九转进行中"，属于提前押注，胜率低于标注的60%
-            # 为避免假信号，仅在 count==9 时进入候选，7/8 仅作观察跳过
-            elif current_count in (7, 8):
+            # count=7 为"九转启动"，信号太弱跳过
+            elif current_count == 7:
                 return None
             else:
                 return None
@@ -54,6 +58,14 @@ class TDSequentialStrategy(BaseStrategy):
             if i >= 2 and float(close.iloc[i]) > max(float(close.iloc[i-1]), float(close.iloc[i-2])):
                 signals.append("价格上穿确认")
                 score += 20
+
+            # 优化2：趋势过滤（价格在MA20以上才算有效信号）
+            if not pd.isna(mas["ma20"].iloc[i]) and float(close.iloc[i]) >= float(mas["ma20"].iloc[i]) * 0.98:
+                signals.append("趋势过滤通过(MA20)")
+                score += 10
+            elif current_count == 9:  # 仅在count=9时放宽（作为警示）
+                signals.append("趋势偏弱(低于MA20)")
+                score -= 10
 
             if i >= 5 and not pd.isna(vol_ratio_series.iloc[i]) and float(vol_ratio_series.iloc[i]) > 1.2:
                 signals.append("成交量确认放大")

@@ -10,12 +10,12 @@ from .limit_up_gene import LimitUpGeneStrategy
 from .rsi_oversold import RSIOversoldStrategy
 from .bollinger_bands import BollingerBandsStrategy
 from .volume_breakout import VolumeBreakoutStrategy
-from .chanlun import ChanlunStrategy
 from .chanlun_strict import ChanlunStrictStrategy
 from .golden_cross import GoldenCrossStrategy
+from .momentum import MomentumStrategy
 
 # 策略注册表
-# 排序说明：默认选中策略(8个)在前，未选中策略(3个)在后
+# 排序说明：默认选中策略在前，未选中策略在后
 STRATEGY_REGISTRY = {
     "macd_bull": {
         "cls": MACDBullStrategy,
@@ -78,17 +78,17 @@ STRATEGY_REGISTRY = {
         "name": "缠论严格版",
         "description": "包含处理→分型(5K)→笔→中枢→背驰→三类买点（推荐）",
         "tags": ["缠论", "严格", "中枢", "背驰"],
-        "icon": "🔱",
+        "icon": "🀱",
         "weight": 1.1,
     },
     # ── 以下为未选中策略，按需手动启用 ──
-    "chanlun": {
-        "cls": ChanlunStrategy,
-        "name": "缠论(启发式近似)",
-        "description": "⚠️近似版：无笔/中枢非标准，推荐用严格版",
-        "tags": ["缠论", "近似", "备选"],
-        "icon": "⚠️",
-        "weight": 0.8,
+    "momentum": {
+        "cls": MomentumStrategy,
+        "name": "动量策略",
+        "description": "价格动量排名前10%+量能确认，捕捉趋势延续",
+        "tags": ["动量", "趋势", "强势"],
+        "icon": "🚀",
+        "weight": 1.1,
     },
     "golden_cross": {
         "cls": GoldenCrossStrategy,
