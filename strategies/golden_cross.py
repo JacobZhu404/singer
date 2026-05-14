@@ -19,8 +19,7 @@ import numpy as np
 from typing import List
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..data.fetcher import market_scanner, get_latest_trade_date
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 
 logger = logging.getLogger(__name__)
 
@@ -33,114 +32,92 @@ class GoldenCrossStrategy(BaseStrategy):
 
     def __init__(self, top_n: int = 10):
         super().__init__(top_n=top_n)
-        self._cache: set = set()
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        indicators = scanner.get_indicators(code, days=60)
+        if not indicators or len(indicators["kline"]) < 30:
+            raise self._SkipStock()
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+        df = indicators["kline"]
+        close = df["close"]
+        i = len(df) - 1
 
-        for code in self._get_codes(stock_list):
-            if code in self._cache:
-                continue
-            try:
-                indicators = scanner.get_indicators(code, days=60)
-                if not indicators or len(indicators["kline"]) < 30:
-                    continue
+        mas = indicators["ma"]
+        ma5 = mas["ma5"]
+        ma10 = mas["ma10"]
+        ma20 = mas["ma20"]
+        rsi = indicators["rsi"]
+        dif, dea, _ = indicators["macd"]
+        vol_ratio = indicators["vol_ratio"]
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                df = indicators["kline"]
-                close = df["close"]
-                i = len(df) - 1
+        m5 = float(ma5.iloc[i])
+        m10 = float(ma10.iloc[i])
+        m20 = float(ma20.iloc[i])
+        m5_prev = float(ma5.iloc[i-1]) if i >= 1 else m5
+        m10_prev = float(ma10.iloc[i-1]) if i >= 1 else m10
 
-                mas = indicators["ma"]
-                ma5 = mas["ma5"]
-                ma10 = mas["ma10"]
-                ma20 = mas["ma20"]
-                rsi = indicators["rsi"]
-                dif, dea, _ = indicators["macd"]
-                vol_ratio = indicators["vol_ratio"]
+        if any(np.isnan(x) for x in [m5, m10, m20]):
+            raise self._SkipStock()
 
-                m5 = float(ma5.iloc[i])
-                m10 = float(ma10.iloc[i])
-                m20 = float(ma20.iloc[i])
-                m5_prev = float(ma5.iloc[i-1]) if i >= 1 else m5
-                m10_prev = float(ma10.iloc[i-1]) if i >= 1 else m10
+        signals = []
+        score = 0
 
-                if any(np.isnan(x) for x in [m5, m10, m20]):
-                    continue
+        # 条件1：MA5 上穿 MA10（金叉当天）
+        if m5 > m10 and m5_prev <= m10_prev:
+            signals.append("MA5上穿MA10金叉")
+            score += 40
+        elif m5 > m10:
+            signals.append("MA5在MA10上方")
+            score += 20
 
-                signals = []
-                score = 0
+        # 条件2：多头排列（MA5 > MA10 > MA20）
+        if m5 > m10 > m20:
+            signals.append("均线多头排列")
+            score += 25
 
-                # 条件1：MA5 上穿 MA10（金叉当天）
-                if m5 > m10 and m5_prev <= m10_prev:
-                    signals.append("MA5上穿MA10金叉")
-                    score += 40
-                elif m5 > m10:
-                    signals.append("MA5在MA10上方")
-                    score += 20
+        # 条件3：股价站上 MA5
+        c = float(close.iloc[i])
+        if c > m5:
+            signals.append("股价站上MA5")
+            score += 15
 
-                # 条件2：多头排列（MA5 > MA10 > MA20）
-                if m5 > m10 > m20:
-                    signals.append("均线多头排列")
-                    score += 25
+        # 条件4：RSI 确认
+        r = float(rsi.iloc[i]) if not np.isnan(rsi.iloc[i]) else 50
+        if 50 <= r <= 65:
+            signals.append(f"RSI趋势确认({r:.0f})")
+            score += 10
+        elif r < 50:
+            signals.append(f"RSI偏弱({r:.0f})")
+            score -= 10
 
-                # 条件3：股价站上 MA5
-                c = float(close.iloc[i])
-                if c > m5:
-                    signals.append("股价站上MA5")
-                    score += 15
+        # MACD 在零轴上方加分
+        d = float(dif.iloc[i]) if not np.isnan(dif.iloc[i]) else 0
+        if d > 0:
+            signals.append("MACD零轴上方")
+            score += 10
 
-                # 条件4：RSI 确认
-                r = float(rsi.iloc[i]) if not np.isnan(rsi.iloc[i]) else 50
-                if 50 <= r <= 65:
-                    signals.append(f"RSI趋势确认({r:.0f})")
-                    score += 10
-                elif r < 50:
-                    signals.append(f"RSI偏弱({r:.0f})")
-                    score -= 10
+        if score < 70:
+            return None
 
-                # MACD 在零轴上方加分
-                d = float(dif.iloc[i]) if not np.isnan(dif.iloc[i]) else 0
-                if d > 0:
-                    signals.append("MACD零轴上方")
-                    score += 10
+        quote = self._get_quote(scanner, code, c)
+        vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
 
-                if score < 70:
-                    continue
-
-                quote = self._get_quote(scanner, code, c)
-                vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
-
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=min(max(score, 0), 100),
-                    win_rate=self._calc_win_rate(score, signals),
-                    signals=signals,
-                    latest_price=float(quote.get("最新价", c)),
-                    pct_chg=float(quote.get("涨跌幅", 0.0)),
-                    volume_ratio=round(vr, 2),
-                    risk_flags=_compute_risk_flags(df),
-                    trade_date=trade_date,
-                    extra={
-                        "ma5": round(m5, 2),
-                        "ma10": round(m10, 2),
-                        "ma20": round(m20, 2),
-                        "rsi14": round(r, 1),
-                    },
-                ))
-                self._cache.add(code)
-
-            except Exception as e:
-                logger.debug(f"[金叉策略] {code} 计算失败: {e}")
-
-        return self._build_result(candidates, trade_date, scanned)
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=min(max(score, 0), 100),
+            win_rate=self._calc_win_rate(score, signals),
+            signals=signals,
+            latest_price=float(quote.get("最新价", c)),
+            pct_chg=float(quote.get("涨跌幅", 0.0)),
+            volume_ratio=round(vr, 2),
+            risk_flags=_compute_risk_flags(df),
+            trade_date=trade_date,
+            extra={
+                "ma5": round(m5, 2),
+                "ma10": round(m10, 2),
+                "ma20": round(m20, 2),
+                "rsi14": round(r, 1),
+            },
+        )

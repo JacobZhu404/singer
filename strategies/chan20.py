@@ -21,9 +21,8 @@ import numpy as np
 from typing import List
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import calc_macd, calc_skdj, calc_ma
-from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -57,128 +56,109 @@ class Chan20Strategy(BaseStrategy):
     description = "MACD零轴下二次金叉+SKDJ低位共振，底部反转信号"
     base_win_rate = 0.55
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
-        codes = self._get_codes(stock_list)
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        indicators = scanner.get_indicators(code, days=120)
+        if not indicators or len(indicators["kline"]) < 60:
+            raise self._SkipStock()
 
-        candidates: List[StockSignal] = []
-        scanned = 0
+        df = indicators["kline"]
+        close = df["close"]
+        high = df["high"]
+        low = df["low"]
 
-        for code in codes:
-            try:
-                indicators = scanner.get_indicators(code, days=120)
-                if not indicators or len(indicators["kline"]) < 60:
-                    continue
+        i = len(df) - 1
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                df = indicators["kline"]
-                close = df["close"]
-                high = df["high"]
-                low = df["low"]
+        # 查表获取预计算指标
+        dif, dea, macd_bar = indicators["macd"]
+        sk, sd = indicators["skdj"]
+        mas = indicators["ma"]
+        vol_ratio = indicators["vol_ratio"]
 
-                i = len(df) - 1
+        if pd.isna(dif.iloc[i]) or pd.isna(dea.iloc[i]) or pd.isna(sk.iloc[i]) or pd.isna(sd.iloc[i]):
+            raise self._SkipStock()
 
-                # 查表获取预计算指标
-                dif, dea, macd_bar = indicators["macd"]
-                sk, sd = indicators["skdj"]
-                mas = indicators["ma"]
-                vol_ratio = indicators["vol_ratio"]
+        signals = []
+        score = 0
 
-                if pd.isna(dif.iloc[i]) or pd.isna(dea.iloc[i]) or pd.isna(sk.iloc[i]) or pd.isna(sd.iloc[i]):
-                    continue
+        # ── 核心条件1: MACD零轴下二次金叉 ──
+        zero_crosses = _detect_macd_crosses_below_zero(dif, dea)
+        # tightened: 二次金叉要求最近一次在3日内，单次金叉在2日内
+        if len(zero_crosses) >= 2 and (i - zero_crosses[-1]) <= 3:
+            signals.append("MACD零轴下二次金叉")
+            score += 40
+        elif len(zero_crosses) >= 1 and (i - zero_crosses[-1]) <= 2:
+            signals.append("MACD零轴下金叉")
+            score += 25
+        else:
+            return None  # 不满足核心条件，跳过
 
-                signals = []
-                score = 0
+        # ── 核心条件2: SKDJ共振 ──
+        sk_val = sk.iloc[i]
+        sd_val = sd.iloc[i]
+        sk_prev = sk.iloc[i - 1]
+        sd_prev = sd.iloc[i - 1]
 
-                # ── 核心条件1: MACD零轴下二次金叉 ──
-                zero_crosses = _detect_macd_crosses_below_zero(dif, dea)
-                # tightened: 二次金叉要求最近一次在3日内，单次金叉在2日内
-                if len(zero_crosses) >= 2 and (i - zero_crosses[-1]) <= 3:
-                    signals.append("MACD零轴下二次金叉")
-                    score += 40
-                elif len(zero_crosses) >= 1 and (i - zero_crosses[-1]) <= 2:
-                    signals.append("MACD零轴下金叉")
-                    score += 25
-                else:
-                    continue  # 不满足核心条件，跳过
+        # SKDJ金叉（tightened: SK<25）
+        if sk_prev <= sd_prev and sk_val > sd_val:
+            if sk_val < 25:
+                signals.append("SKDJ低位金叉")
+                score += 30
+            else:
+                signals.append("SKDJ金叉")
+                score += 15
 
-                # ── 核心条件2: SKDJ共振 ──
-                sk_val = sk.iloc[i]
-                sd_val = sd.iloc[i]
-                sk_prev = sk.iloc[i - 1]
-                sd_prev = sd.iloc[i - 1]
+        # SKDJ超卖区（tightened: 低位阈值<25）
+        if sk_val < 20:
+            signals.append("SKDJ超卖")
+            score += 15
+        elif sk_val < 25:
+            signals.append("SKDJ低位")
+            score += 10
 
-                # SKDJ金叉（tightened: SK<25）
-                if sk_prev <= sd_prev and sk_val > sd_val:
-                    if sk_val < 25:
-                        signals.append("SKDJ低位金叉")
-                        score += 30
-                    else:
-                        signals.append("SKDJ金叉")
-                        score += 15
+        # ── 辅助条件: 价格站上5日均线 ──
+        ma5 = mas["ma5"].iloc[i]
+        ma10 = mas["ma10"].iloc[i]
+        if not pd.isna(ma5) and close.iloc[i] > ma5:
+            signals.append("站上5日线")
+            score += 10
+            if not pd.isna(ma10) and ma5 > ma10:
+                signals.append("MA5>MA10")
+                score += 5
 
-                # SKDJ超卖区（tightened: 低位阈值<25）
-                if sk_val < 20:
-                    signals.append("SKDJ超卖")
-                    score += 15
-                elif sk_val < 25:
-                    signals.append("SKDJ低位")
-                    score += 10
+        # ── 辅助条件: 温和放量 ──
+        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        if vr > 1.2:
+            signals.append("温和放量")
+            score += 5
 
-                # ── 辅助条件: 价格站上5日均线 ──
-                ma5 = mas["ma5"].iloc[i]
-                ma10 = mas["ma10"].iloc[i]
-                if not pd.isna(ma5) and close.iloc[i] > ma5:
-                    signals.append("站上5日线")
-                    score += 10
-                    if not pd.isna(ma10) and ma5 > ma10:
-                        signals.append("MA5>MA10")
-                        score += 5
+        # 阈值过滤（tightened: 最低分从45提高到55）
+        if score < 55:
+            return None
 
-                # ── 辅助条件: 温和放量 ──
-                vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
-                if vr > 1.2:
-                    signals.append("温和放量")
-                    score += 5
+        latest = close.iloc[i]
+        quote = self._get_quote(scanner, code, float(latest))
+        pct = quote.get("涨跌幅", 0.0) or 0.0
 
-                # 阈值过滤（tightened: 最低分从45提高到55）
-                if score < 55:
-                    continue
-
-                latest = close.iloc[i]
-                quote = self._get_quote(scanner, code, float(latest))
-                pct = quote.get("涨跌幅", 0.0) or 0.0
-
-                win_rate = self._calc_win_rate(score, signals)
-                risk_flags = _compute_risk_flags(df)
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=score,
-                    win_rate=win_rate,
-                    signals=signals,
-                    latest_price=round(float(latest), 2),
-                    pct_chg=round(float(pct), 2),
-                    volume_ratio=round(vr, 2),
-                    risk_flags=risk_flags,
-                    trade_date=trade_date,
-                    extra={
-                        "dif": round(float(dif.iloc[i]), 4),
-                        "dea": round(float(dea.iloc[i]), 4),
-                        "sk": round(float(sk_val), 2),
-                        "sd": round(float(sd_val), 2),
-                        "ma5": round(float(ma5), 2) if not pd.isna(ma5) else None,
-                        "macd_crosses": len(zero_crosses),
-                    }
-                ))
-
-            except Exception as e:
-                logger.debug(f"[缠20策略] {code} 计算失败: {e}")
-
-        return self._build_result(candidates, trade_date, scanned)
+        win_rate = self._calc_win_rate(score, signals)
+        risk_flags = _compute_risk_flags(df)
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=score,
+            win_rate=win_rate,
+            signals=signals,
+            latest_price=round(float(latest), 2),
+            pct_chg=round(float(pct), 2),
+            volume_ratio=round(vr, 2),
+            risk_flags=risk_flags,
+            trade_date=trade_date,
+            extra={
+                "dif": round(float(dif.iloc[i]), 4),
+                "dea": round(float(dea.iloc[i]), 4),
+                "sk": round(float(sk_val), 2),
+                "sd": round(float(sd_val), 2),
+                "ma5": round(float(ma5), 2) if not pd.isna(ma5) else None,
+                "macd_crosses": len(zero_crosses),
+            }
+        )

@@ -1232,10 +1232,8 @@ function showProgress(phase, label, detail) {
 
   // 进度条宽度随 phase 变化
   const fill = document.getElementById('progressFill');
-  if (phase === 'prefetch') {
-    // prefetch 阶段进度由 pollProgress 的 pct 控制
-  } else if (phase === 'running') {
-    // 策略阶段：假设 prefetch 已满，根据当前策略进度推算
+  if (phase === 'prefetch' || phase === 'precalc' || phase === 'running' || phase === 'merging') {
+    // 这些阶段进度由 pollProgress 的 pct 精细控制
   } else {
     fill.style.width = '100%';
   }
@@ -1436,11 +1434,13 @@ async function pollProgress() {
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
       clearInterval(_progressTimer);
+      closeSSE();
     } else if (p.phase === 'done') {
       document.getElementById('progressLabel').textContent = '✅ 筛选完成';
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
       clearInterval(_progressTimer);
+      closeSSE();
       _updateSidebarCardProgress(p.strategies || {});
       // 清除仍处于 waiting 状态的卡片（未被执行到的策略）
       document.querySelectorAll('.strategy-card.waiting').forEach(card => {
@@ -2595,4 +2595,6 @@ document.getElementById('topnSelect').addEventListener('change', saveUIState);
 init();
 </script>
 </body>
+</html>
+</html>
 </html>

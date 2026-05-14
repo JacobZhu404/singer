@@ -180,7 +180,9 @@ def api_screen():
                     else:
                         phase_pct = 0
                     pct = low + int(phase_pct / 100 * (high - low))
-                    pct = min(pct, 99)
+                    # merging 阶段允许到达100%，其他阶段最高99%（done阶段单独处理）
+                    if phase != "merging":
+                        pct = min(pct, 99)
                 _screen_progress["pct"] = pct
                 # 同步引擎内部的策略子进度
                 _screen_progress["strategies"] = dict(engine.get_progress().get("strategies", {}))

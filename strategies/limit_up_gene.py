@@ -13,12 +13,11 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timedelta
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import calc_macd, calc_ma
-from ..data.fetcher import market_scanner, get_latest_trade_date, get_limit_list
 
 logger = logging.getLogger(__name__)
 
@@ -28,116 +27,93 @@ class LimitUpGeneStrategy(BaseStrategy):
     description = "涨停基因 - 近期有涨停记录+题材活跃+再次启动"
     base_win_rate = 0.65
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
+    def _get_codes(self, stock_list: pd.DataFrame) -> List[str]:
+        from ..data.fetcher import get_limit_list, get_latest_trade_date
         trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
-
-        # 直接调用 get_limit_list() 获取涨停股列表
-        # get_quotes() 方法不存在：修复见 P0-1
         limit_df = get_limit_list(trade_date)
+        if limit_df.empty:
+            return []
+        code_col = next((c for c in ["symbol", "code", "代码", "ts_code"] if c in limit_df.columns), None)
+        if code_col:
+            limit_df = limit_df.copy()
+            limit_df["ts_code"] = limit_df[code_col].astype(str).str.zfill(6)
+            return limit_df["ts_code"].tolist()[:200]
+        return []
 
-        candidates = []
-        scanned = 0
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        indicators = scanner.get_indicators(code, days=120)
+        if not indicators or len(indicators["kline"]) < 10:
+            raise self._SkipStock()
 
-        codes_to_scan = []
+        df = indicators["kline"]
+        close = df["close"]
+        high = df["high"]
+        vol = df["vol"]
+        pct_chg_series = close.pct_change() * 100
+        i = len(df) - 1
+        signals = []
+        score = 0
 
-        if not limit_df.empty:
-            # 标准化列名：支持 symbol/code/代码/ts_code 多种命名
-            code_col = next(
-                (c for c in ["symbol", "code", "代码", "ts_code"] if c in limit_df.columns),
-                None
-            )
-            if code_col:
-                limit_df = limit_df.copy()
-                limit_df["ts_code"] = limit_df[code_col].astype(str).str.zfill(6)
-                limit_df = limit_df.rename(columns={"ts_code": "code"})
-            codes_to_scan = limit_df["code"].tolist() if "code" in limit_df.columns else []
+        today_pct = float(pct_chg_series.iloc[i]) if i >= 0 else 0
+        if today_pct >= 9.5:
+            signals.append(f"今日涨停({today_pct:.1f}%)")
+            score += 40
+        elif today_pct >= 8:
+            signals.append(f"接近涨停({today_pct:.1f}%)")
+            score += 25
 
-        for code in codes_to_scan[:200]:
-            try:
-                indicators = scanner.get_indicators(code, days=120)
-                if not indicators or len(indicators["kline"]) < 10:
-                    continue
+        limit_days = sum(1 for j in range(max(0, i - 30), i + 1) if pct_chg_series.iloc[j] >= 9.5)
+        if limit_days >= 1:
+            signals.append(f"近30日涨停{limit_days}次")
+            score += min(limit_days * 10, 20)
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                df = indicators["kline"]
-                close = df["close"]
-                high = df["high"]
-                vol = df["vol"]
-                pct_chg_series = close.pct_change() * 100
-                i = len(df) - 1
-                signals = []
-                score = 0
+        consecutive = 0
+        if i >= 2:
+            consecutive = sum(1 for j in range(i - 2, i + 1) if pct_chg_series.iloc[j] >= 5)
+            if consecutive >= 3:
+                signals.append(f"三连阳({consecutive}天)")
+                score += 15
 
-                today_pct = float(pct_chg_series.iloc[i]) if i >= 0 else 0
-                if today_pct >= 9.5:
-                    signals.append(f"今日涨停({today_pct:.1f}%)")
-                    score += 40
-                elif today_pct >= 8:
-                    signals.append(f"接近涨停({today_pct:.1f}%)")
-                    score += 25
-
-                limit_days = sum(1 for j in range(max(0, i - 30), i + 1) if pct_chg_series.iloc[j] >= 9.5)
-                if limit_days >= 1:
-                    signals.append(f"近30日涨停{limit_days}次")
-                    score += min(limit_days * 10, 20)
-
-                consecutive = 0
-                if i >= 2:
-                    consecutive = sum(1 for j in range(i - 2, i + 1) if pct_chg_series.iloc[j] >= 5)
-                    if consecutive >= 3:
-                        signals.append(f"三连阳({consecutive}天)")
-                        score += 15
-
-                if i >= 1:
-                    recent_high = float(high.iloc[max(0, i-5):i+1].max())
-                    current_close = float(close.iloc[i])
-                    if recent_high > 0:
-                        drawdown = (recent_high - current_close) / recent_high * 100
-                        if drawdown < 15:
-                            signals.append(f"涨停后回撤小({drawdown:.1f}%)")
-                            score += 10
-
-                vol_ratio = indicators["vol_ratio"]
-                vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
-                if vr > 1.5:
-                    signals.append(f"当日放量(量比{vr:.1f}x)")
+        if i >= 1:
+            recent_high = float(high.iloc[max(0, i-5):i+1].max())
+            current_close = float(close.iloc[i])
+            if recent_high > 0:
+                drawdown = (recent_high - current_close) / recent_high * 100
+                if drawdown < 15:
+                    signals.append(f"涨停后回撤小({drawdown:.1f}%)")
                     score += 10
 
-                dif, dea, _ = indicators["macd"]
-                if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
-                    signals.append("MACD零轴以上")
-                    score += 10
+        vol_ratio = indicators["vol_ratio"]
+        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        if vr > 1.5:
+            signals.append(f"当日放量(量比{vr:.1f}x)")
+            score += 10
 
-                if score < 40:
-                    continue
+        dif, dea, _ = indicators["macd"]
+        if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
+            signals.append("MACD零轴以上")
+            score += 10
 
-                latest = float(close.iloc[i])
-                quote = self._get_quote(scanner, code, latest)
+        if score < 40:
+            return None
 
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=score,
-                    win_rate=self._calc_win_rate(score, signals),
-                    signals=signals,
-                    latest_price=round(float(quote.get("最新价", latest)), 2),
-                    pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),
-                    volume_ratio=round(vr, 2),
-                    risk_flags=_compute_risk_flags(df),
-                    trade_date=trade_date,
-                    extra={
-                        "limit_count": limit_days,
-                        "consecutive_days": consecutive,
-                    }
-                ))
+        latest = float(close.iloc[i])
+        quote = self._get_quote(scanner, code, latest)
 
-            except Exception as e:
-                logger.debug(f"[涨停基因策略] {code} 计算失败: {e}")
-
-        return self._build_result(candidates, trade_date, scanned, sort_key=lambda x: (x.score, x.pct_chg))
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=score,
+            win_rate=self._calc_win_rate(score, signals),
+            signals=signals,
+            latest_price=round(float(quote.get("最新价", latest)), 2),
+            pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),
+            volume_ratio=round(vr, 2),
+            risk_flags=_compute_risk_flags(df),
+            trade_date=trade_date,
+            extra={
+                "limit_count": limit_days,
+                "consecutive_days": consecutive,
+            }
+        )

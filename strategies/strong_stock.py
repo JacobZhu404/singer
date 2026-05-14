@@ -17,12 +17,11 @@ import pandas as pd
 import numpy as np
 import logging
 
-from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags
 from ..utils.indicators import (
     calc_macd, calc_volume_ratio,
     is_red_candle, detect_gap_up
 )
-from ..data.fetcher import market_scanner, get_latest_trade_date
 
 logger = logging.getLogger(__name__)
 
@@ -32,104 +31,86 @@ class StrongStockStrategy(BaseStrategy):
     description = "强势股 - 放量红肥绿瘦+小阳/缺口(互斥)+MACD零轴(v2优化)"
     base_win_rate = 0.62
 
-    def screen(self, stock_list: pd.DataFrame, scanner=None) -> ScreenResult:
-        if scanner is None:
-            scanner = market_scanner
-        trade_date = get_latest_trade_date()
-        scanner.load()
-        name_map = self._get_name_map(stock_list)
+    def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
+        indicators = scanner.get_indicators(code, days=120)
+        if not indicators or len(indicators["kline"]) < 10:
+            raise self._SkipStock()
 
-        candidates = []
-        scanned = 0
+        df = indicators["kline"]
+        close = df["close"]
+        open_ = df["open"]
+        high = df["high"]
+        low = df["low"]
+        vol = df["vol"]
+        pct_chg = close.pct_change() * 100
 
-        for code in self._get_codes(stock_list):
-            try:
-                indicators = scanner.get_indicators(code, days=120)
-                if not indicators or len(indicators["kline"]) < 10:
-                    continue
+        signals = []
+        score = 0
 
-                scanned += 1
-                self._report_progress("executing", scanned, len(self._get_codes(stock_list)))
-                df = indicators["kline"]
-                close = df["close"]
-                open_ = df["open"]
-                high = df["high"]
-                low = df["low"]
-                vol = df["vol"]
-                pct_chg = close.pct_change() * 100
+        vol_ratio = indicators["vol_ratio"]
+        red = is_red_candle(open_, close)
+        dif, dea, macd_bar = indicators["macd"]
+        gap_up = detect_gap_up(high, low, open_, close)
+        i = len(df) - 1
 
-                signals = []
-                score = 0
+        if not pd.isna(vol_ratio.iloc[i]) and vol_ratio.iloc[i] > 1.5 and red.iloc[i]:
+            signals.append(f"放量上涨(量比{vol_ratio.iloc[i]:.1f}x)")
+            score += 20
 
-                vol_ratio = indicators["vol_ratio"]
-                red = is_red_candle(open_, close)
-                dif, dea, macd_bar = indicators["macd"]
-                gap_up = detect_gap_up(high, low, open_, close)
-                i = len(df) - 1
+        n = min(10, i + 1)
+        up_vol = down_vol = 0.0
+        for j in range(max(0, i - n + 1), i + 1):
+            if pd.isna(red.iloc[j]):
+                continue
+            v = float(vol.iloc[j])
+            if red.iloc[j]:
+                up_vol += v
+            else:
+                down_vol += v
+        if down_vol > 0 and up_vol / (down_vol + 1e-8) > 2.0:  # 从 1.5 提高到 2.0
+            signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
+            score += 20
 
-                if not pd.isna(vol_ratio.iloc[i]) and vol_ratio.iloc[i] > 1.5 and red.iloc[i]:
-                    signals.append(f"放量上涨(量比{vol_ratio.iloc[i]:.1f}x)")
-                    score += 20
+        if i >= 4 and all(red.iloc[i - k] for k in range(5)) and \
+           all(not pd.isna(pct_chg.iloc[i - k]) and
+               abs(float(pct_chg.iloc[i - k])) <= 3.0
+               for k in range(5)):
+            # 增加累计涨幅限制（防止追高）
+            cumulative_gain = (close.iloc[i] / close.iloc[i-4] - 1) * 100
+            if cumulative_gain < 12.0:  # 累计涨幅 < 12%
+                signals.append("五连小阳")
+                score += 20
+        elif gap_up.iloc[i]:
+            # 与五连小阳互斥：跳空高开会破坏小阳线节奏
+            signals.append("跳空缺口(今低>昨高)")
+            score += 20
 
-                n = min(10, i + 1)
-                up_vol = down_vol = 0.0
-                for j in range(max(0, i - n + 1), i + 1):
-                    if pd.isna(red.iloc[j]):
-                        continue
-                    v = float(vol.iloc[j])
-                    if red.iloc[j]:
-                        up_vol += v
-                    else:
-                        down_vol += v
-                if down_vol > 0 and up_vol / (down_vol + 1e-8) > 2.0:  # 从 1.5 提高到 2.0
-                    signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
-                    score += 20
+        if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
+            signals.append("MACD零轴以上")
+            score += 20
 
-                if i >= 4 and all(red.iloc[i - k] for k in range(5)) and \
-                   all(not pd.isna(pct_chg.iloc[i - k]) and
-                       abs(float(pct_chg.iloc[i - k])) <= 3.0
-                       for k in range(5)):
-                    # 增加累计涨幅限制（防止追高）
-                    cumulative_gain = (close.iloc[i] / close.iloc[i-4] - 1) * 100
-                    if cumulative_gain < 12.0:  # 累计涨幅 < 12%
-                        signals.append("五连小阳")
-                        score += 20
-                elif gap_up.iloc[i]:
-                    # 与五连小阳互斥：跳空高开会破坏小阳线节奏
-                    signals.append("跳空缺口(今低>昨高)")
-                    score += 20
+        if score < 50:  # 从 30 提高到 50（根据回测结果优化）
+            return None
 
-                if not pd.isna(dif.iloc[i]) and dif.iloc[i] > 0:
-                    signals.append("MACD零轴以上")
-                    score += 20
+        latest = close.iloc[i]
+        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        quote = self._get_quote(scanner, code, float(latest))
 
-                if score < 50:  # 从 30 提高到 50（根据回测结果优化）
-                    continue
-
-                latest = close.iloc[i]
-                vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
-                quote = self._get_quote(scanner, code, float(latest))
-
-                candidates.append(StockSignal(
-                    ts_code=code,
-                    name=name_map.get(code, code),
-                    strategy=self.name,
-                    score=score,
-                    win_rate=self._calc_win_rate(score, signals),
-                    signals=signals,
-                    latest_price=round(float(quote.get("最新价", latest)), 2),
-                    pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),
-                    volume_ratio=round(vr, 2),
-                    risk_flags=_compute_risk_flags(df),
-                    trade_date=trade_date,
-                    extra={
-                        "gap_up": bool(gap_up.iloc[i]),
-                        "dif": round(float(dif.iloc[i]), 4) if not pd.isna(dif.iloc[i]) else None,
-                        "up_down_vol_ratio": round(up_vol / (down_vol + 1e-8), 2),
-                    }
-                ))
-
-            except Exception as e:
-                logger.debug(f"[强势股策略] {code} 计算失败: {e}")
-
-        return self._build_result(candidates, trade_date, scanned)
+        return StockSignal(
+            ts_code=code,
+            name=name_map.get(code, code),
+            strategy=self.name,
+            score=score,
+            win_rate=self._calc_win_rate(score, signals),
+            signals=signals,
+            latest_price=round(float(quote.get("最新价", latest)), 2),
+            pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),
+            volume_ratio=round(vr, 2),
+            risk_flags=_compute_risk_flags(df),
+            trade_date=trade_date,
+            extra={
+                "gap_up": bool(gap_up.iloc[i]),
+                "dif": round(float(dif.iloc[i]), 4) if not pd.isna(dif.iloc[i]) else None,
+                "up_down_vol_ratio": round(up_vol / (down_vol + 1e-8), 2),
+            }
+        )
