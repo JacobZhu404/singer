@@ -419,17 +419,35 @@ class ScreenEngine:
             min_single_score: 单策略原始分最低门槛（低于此分的命中不计入）
             min_weighted_score: 加权总分最低门槛（低于此分的股票被过滤）
         """
+        # ── 预计算每个策略内部排名 ──
+        strategy_rank_info = {}
+        for strategy_name, result in results.items():
+            all_signals = result.all_signals
+            total = len(all_signals)
+            for rank, sig in enumerate(all_signals, 1):
+                strategy_rank_info[(strategy_name, sig.ts_code)] = {
+                    "rank": rank,
+                    "rank_pct": rank / total if total > 0 else 1.0,
+                }
+
         merged: Dict[str, Dict] = {}
 
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
             weight = meta.get("weight", 1.0)
+            # 从策略类获取基础胜率用于加权
+            strategy_cls = meta.get("cls")
+            base_win_rate = getattr(strategy_cls, "base_win_rate", 0.5) if strategy_cls else 0.5
+
             for sig in result.all_signals:
                 # ── 质量门槛1：单策略原始分过滤 ──
                 if sig.score < min_single_score:
                     continue
 
                 code = sig.ts_code
+                rank_info = strategy_rank_info.get((strategy_name, code), {})
+                rank_pct = rank_info.get("rank_pct", 1.0)
+
                 if code not in merged:
                     merged[code] = {
                         "ts_code": code,
@@ -443,6 +461,8 @@ class ScreenEngine:
                         "weighted_score": 0.0,
                         "max_win_rate": 0,
                         "all_signals": [],
+                        "strategy_rank_sum": 0,
+                        "strategy_count": 0,
                     }
                 entry = merged[code]
                 entry["strategies_hit"].append({
@@ -453,10 +473,20 @@ class ScreenEngine:
                     "weight": weight,
                     "signals": sig.signals,
                 })
+
+                # 策略内部排名加成：排名越靠前，加成越高
+                rank_bonus = (1 - rank_pct) * 15  # 第1名得15分，最后1名得0分
+
+                # 胜率加权：高胜率策略的命中贡献更大
+                win_rate_weight = 1.0 + (base_win_rate - 0.5) * 0.8  # 0.6胜率→1.08倍
+
                 entry["total_score"] += sig.score
-                entry["weighted_score"] += sig.score * weight
+                entry["weighted_score"] += sig.score * weight * win_rate_weight + rank_bonus
                 entry["max_win_rate"] = max(entry["max_win_rate"], sig.win_rate)
                 entry["all_signals"].extend(sig.signals)
+                entry["strategy_rank_sum"] += rank_pct
+                entry["strategy_count"] += 1
+
                 # 收集风险标签（各策略可能返回相同flag，去重）
                 if sig.risk_flags:
                     existing = {f["type"] for f in entry.get("_risk_flags", [])}
@@ -486,6 +516,16 @@ class ScreenEngine:
                 if f["type"] not in existing_types:
                     all_flags.append(f)
 
+            # 计算平均排名百分比（越低越好）
+            avg_rank_pct = entry["strategy_rank_sum"] / entry["strategy_count"] if entry["strategy_count"] > 0 else 1.0
+
+            # 综合评分 = 加权得分60% + 排名加成30% + 多策略共识10%
+            composite_score = (
+                entry["weighted_score"] * 0.6 +
+                (1 - avg_rank_pct) * 30 +
+                n_strategies * 5
+            )
+
             final_list.append({
                 **entry,
                 "n_strategies": n_strategies,
@@ -496,11 +536,14 @@ class ScreenEngine:
                 "risk_tag": risk_tag,
                 "risk_reasons": risk_reasons,
                 "risk_score": risk_score,
-                "risk_flags": all_flags,   # [{type, label, level, desc}, ...]
+                "risk_flags": all_flags,
+                # 新增排序因子
+                "composite_score": round(composite_score, 2),
+                "avg_rank_pct": round(avg_rank_pct, 3),
             })
 
-        # 按 (命中策略数, 加权评分) 降序排序
-        final_list.sort(key=lambda x: (x["n_strategies"], x["weighted_score"]), reverse=True)
+        # 新排序：优先命中策略数，其次综合评分（加权得分+排名加成+胜率加权）
+        final_list.sort(key=lambda x: (x["n_strategies"], x["composite_score"]), reverse=True)
         return final_list[:top_n]
 
     def _quick_risk_scan(self, code: str):
