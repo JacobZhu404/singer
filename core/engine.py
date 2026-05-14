@@ -525,16 +525,29 @@ class ScreenEngine:
 
         # 阶段2：串行运行策略（每个策略内部已并行）
         _t2 = datetime.now()
+        # 包装回调：screen_strategies 内部的 done 不代表整个流程完成
+        _wrapped_cb = None
+        if progress_callback:
+            def _wrapped_cb(phase, current, idx, total):
+                if phase != "done":
+                    progress_callback(phase, current, idx, total)
         results = self.screen_strategies(
             strategies,
-            progress_callback=progress_callback,
+            progress_callback=_wrapped_cb,
             on_strategy_done=on_strategy_done,
         )["results"]
 
         # 阶段3: 结果合并中
         self._set_progress("merging", "正在合并结果...", 0, 100)
+        if progress_callback:
+            progress_callback("merging", "正在合并结果...", 0, 100)
         merged = self.merge_results(results, top_n=top_n)
         self._set_progress("merging", "结果合并完成", 100, 100)
+        if progress_callback:
+            progress_callback("merging", "结果合并完成", 100, 100)
+        # 最终 done：整个流程真正完成
+        if progress_callback:
+            progress_callback("done", "筛选完成", len(strategies), len(strategies))
 
         strategy_summaries = {}
         for name, result in results.items():
