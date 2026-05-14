@@ -242,20 +242,20 @@ def calc_risk_flags(
     ma10 = float(ma10_s.iloc[-1]) if ma10_s is not None and len(ma10_s) > 0 else 0.0
     ma20 = float(ma20_s.iloc[-1]) if ma20_s is not None and len(ma20_s) > 0 else 0.0
 
-    # ── RSI 超买/超卖 ──────────────────────────────────────
-    if rsi_latest >= 80:
+    # ── RSI 超买/超卖（阈值与卖出分析器统一）─────────────────────
+    if rsi_latest >= 75:
         flags.append({
             "type": "rsi_overbought",
             "label": "RSI超买",
             "level": "danger",
-            "desc": f"RSI(14)={rsi_latest:.0f}，处于极热区域，回调风险大",
+            "desc": f"RSI(14)={rsi_latest:.0f}，严重超买，注意止盈/回调风险",
         })
-    elif rsi_latest >= 70:
+    elif rsi_latest >= 65:
         flags.append({
             "type": "rsi_warm",
             "label": "RSI偏热",
             "level": "warn",
-            "desc": f"RSI(14)={rsi_latest:.0f}，进入超买区域",
+            "desc": f"RSI(14)={rsi_latest:.0f}，偏热区域，警惕反转",
         })
     elif rsi_latest <= 20:
         flags.append({
@@ -286,7 +286,31 @@ def calc_risk_flags(
                 "desc": "价格创新高但MACD未跟随，动能衰竭预警",
             })
 
-    # ── 布林带 ─────────────────────────────────────────
+    # ── RSI 顶背离（卖出分析器同逻辑）────────────────────────
+    if len(rsi) >= 20:
+        rsi_high = float(rsi.iloc[-20:].max())
+        price_high = float(close.iloc[-20:].max())
+        if rsi_latest < rsi_high * 0.95 and latest >= price_high * 0.99:
+            flags.append({
+                "type": "rsi_divergence",
+                "label": "RSI顶背离",
+                "level": "danger",
+                "desc": "价格新高但RSI未跟随，上涨动能减弱",
+            })
+
+    # ── 高位滞涨（止盈信号）─────────────────────────────────
+    if len(pct_chg) >= 15:
+        recent_5pct = float(pct_chg.iloc[-5:].sum())
+        prev_10pct = float(pct_chg.iloc[-15:-5].sum())
+        if recent_5pct < 2 and prev_10pct > 10:
+            flags.append({
+                "type": "stagnation_high",
+                "label": "高位滞涨",
+                "level": "warn",
+                "desc": f"高位滞涨：近5日仅涨{recent_5pct:.1f}%，前期大涨{prev_10pct:.1f}%，建议止盈",
+            })
+
+    # ── 布林带（接近阈值与卖出分析器统一为-5%）─────────────────
     if upper_latest > 0:
         upper_pct = (latest - upper_latest) / upper_latest * 100
         if upper_pct >= 0:
@@ -294,9 +318,9 @@ def calc_risk_flags(
                 "type": "bollinger_upper",
                 "label": "布林上轨",
                 "level": "danger",
-                "desc": "触及布林上轨，均值回归概率大",
+                "desc": "触及布林上轨，均值回归概率大，建议止盈",
             })
-        elif upper_pct >= -3:
+        elif upper_pct >= -5:
             flags.append({
                 "type": "bollinger_near",
                 "label": "接近布林上轨",

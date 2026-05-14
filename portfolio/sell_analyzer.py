@@ -11,7 +11,8 @@ from typing import List, Dict, Optional
 
 from ..utils.indicators import (
     calc_macd, calc_rsi, calc_bollinger,
-    calc_ma, calc_volume_ratio, td_sequential_count
+    calc_ma, calc_volume_ratio, td_sequential_count,
+    calc_risk_flags
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,10 @@ class SellSignal:
     macd_state: str = ""  # "金叉"/"死叉"/"零轴上死叉"/"零轴下金叉"
     bollinger_pos: str = ""  # "上轨"/"中轨"/"下轨"
     trend: str = ""      # "多头"/"空头"/"震荡"
+    # 风险扫描（复用 calc_risk_flags）
+    risk_tag: str = "safe"       # safe | watch | conflict | high_risk
+    risk_score: int = 0          # 0-100
+    risk_flags: List[Dict] = field(default_factory=list)  # [{type, label, level, desc}]
 
 
 class SellAnalyzer:
@@ -178,7 +183,7 @@ class SellAnalyzer:
         pnl_pct = signal.pnl_pct
 
         # ══════════════════════════════════════════════════════════════
-        # 维度1：止损检查（权重最高）
+        # 维度1：止损检查（权重最高，持仓特有）
         # ══════════════════════════════════════════════════════════════
         if pnl_pct <= -10:
             score += self.WEIGHTS["stop_loss_big"]
@@ -199,78 +204,52 @@ class SellAnalyzer:
             watch_signals.append("均线空头排列（MA5<MA10）")
 
         # ══════════════════════════════════════════════════════════════
-        # 维度2：止盈检查
+        # 维度2&3：复用 calc_risk_flags 的警示/止盈信号
         # ══════════════════════════════════════════════════════════════
-        if rsi_latest >= 75:
-            score += self.WEIGHTS["rsi_overbought"]
-            watch_signals.append(f"RSI(14)={rsi_latest:.0f}，严重超买，注意回调风险")
-        elif rsi_latest >= 65:
-            score += self.WEIGHTS["rsi_warm"]
-            watch_signals.append(f"RSI(14)={rsi_latest:.0f}，偏热区域")
+        risk_flags = calc_risk_flags(close, high, low, vol, pct_chg)
+        # calc_risk_flags 的 type -> 卖出分析器权重映射
+        RISK_WEIGHT_MAP = {
+            "rsi_overbought": 25,
+            "rsi_warm": 12,
+            "macd_death_cross": 15,
+            "macd_top_div": 20,
+            "rsi_divergence": 15,
+            "bollinger_upper": 20,
+            "bollinger_near": 10,
+            "stagnation_high": 15,
+            "td_sell": 18,
+            "td_sell_early": 10,
+            "volume_div": 12,
+            # 以下在止损维度已覆盖，跳过避免重复计分
+            # "ma_empty": 0,
+            # "below_ma5": 0,
+        }
+        for f in risk_flags:
+            w = RISK_WEIGHT_MAP.get(f["type"], 0)
+            if w == 0:
+                continue
+            score += w
+            if f["level"] == "danger":
+                urgent_signals.append(f["desc"])
+            else:
+                watch_signals.append(f["desc"])
 
-        # 布林上轨
-        upper_pct = (latest - upper_latest) / upper_latest * 100 if upper_latest > 0 else 0
-        if upper_pct >= 0:
-            score += self.WEIGHTS["bollinger_upper"]
-            watch_signals.append("触及布林上轨，均值回归概率大")
-        elif upper_pct >= -5:
-            score += self.WEIGHTS["bollinger_near"]
-            watch_signals.append("接近布林上轨，注意压力")
-
-        # 高位滞涨检测（近5日涨幅小，但之前有大涨）
-        recent_5pct = pct_chg.iloc[-5:].sum()
-        prev_10pct = pct_chg.iloc[-15:-5].sum()
-        if recent_5pct < 2 and prev_10pct > 10:
-            score += self.WEIGHTS["stagnation_high"]
-            watch_signals.append("高位滞涨：近5日仅涨 {:.1f}%，前期大涨 {:.1f}%".format(recent_5pct, prev_10pct))
-
-        # ══════════════════════════════════════════════════════════════
-        # 维度3：警示信号
-        # ══════════════════════════════════════════════════════════════
-        # MACD 死叉
-        prev_dif = dif.iloc[-2]
-        prev_dea = dea.iloc[-2]
-        if (prev_dif > prev_dea and dif_latest < dea_latest) or (dif_latest < 0 and dea_latest < 0 and prev_dif > prev_dea):
-            score += self.WEIGHTS["macd_death_cross"]
-            watch_signals.append("MACD 死叉，快线向下穿越慢线")
-
-        # MACD 顶背离（价格创新高，但MACD没有）
-        if len(close) >= 20:
-            recent_high = high.iloc[-20:].max()
-            macd_high = dif.iloc[-20:].max()
-            price_new_high = latest >= recent_high * 0.99
-            macd_not_new_high = dif_latest < macd_high * 0.95
-            if price_new_high and macd_not_new_high:
-                score += self.WEIGHTS["macd_top_div"]
-                urgent_signals.append("MACD 顶背离：价格新高但动能未跟上，强烈警示")
-
-        # 量价背离
-        avg_vol_5 = vol.iloc[-6:-1].mean()
-        today_vol = vol.iloc[-1]
-        if avg_vol_5 > 0 and pct_chg.iloc[-1] > 1 and today_vol < avg_vol_5 * 0.7:
-            score += self.WEIGHTS["volume_price_div"]
-            watch_signals.append("量价背离：上涨但缩量，上涨动力不足")
-
-        # TD 九转卖出计数
-        td_count = td_sequential_count(close, high, low)
-        td_latest = td_count.iloc[-1]
-        if td_latest <= -9:
-            score += self.WEIGHTS["td_sell_count"]
-            urgent_signals.append(f"TD九转卖出计数={abs(td_latest)}，强烈卖出信号")
-        elif td_latest <= -6:
-            score += int(self.WEIGHTS["td_sell_count"] * 0.6)
-            watch_signals.append(f"TD九转卖出计数={abs(td_latest)}，接近成熟")
-
-        # RSI 顶背离
-        if len(rsi) >= 20:
-            rsi_high = rsi.iloc[-20:].max()
-            price_high = close.iloc[-20:].max()
-            if rsi_latest < rsi_high * 0.95 and latest >= price_high * 0.99:
-                score += self.WEIGHTS["rsi_divergence"]
-                urgent_signals.append("RSI 顶背离：价格新高但RSI未跟随")
+        # 同步计算风险标签（与选股系统一致）
+        signal.risk_flags = risk_flags
+        risk_score = sum(25 if f["level"] == "danger" else 12 for f in risk_flags)
+        risk_score = min(risk_score, 100)
+        signal.risk_score = risk_score
+        if risk_score >= 50:
+            signal.risk_tag = "high_risk"
+        elif risk_score >= 28:
+            signal.risk_tag = "conflict"
+        elif risk_score >= 12:
+            signal.risk_tag = "watch"
+        else:
+            signal.risk_tag = "safe"
 
         # ══════════════════════════════════════════════════════════════
-        # 维度4：持仓时长
+        # 维度4：持仓时长（持仓特有）
         # ══════════════════════════════════════════════════════════════
         if hold_days > 20 and pnl_pct > 5:
             score += self.WEIGHTS["hold_long_win"]

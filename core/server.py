@@ -556,13 +556,14 @@ def api_buy():
 
 @app.route("/api/portfolio/sell", methods=["POST"])
 def api_sell():
-    """虚拟卖出
-    Body: { code, price, shares }
+    """虚拟卖出（减仓/清仓）
+    Body: { code, price, shares, note }
     """
     body = request.get_json() or {}
     code = body.get("code", "")
     price = float(body.get("price", 0))
     shares = body.get("shares")
+    note = body.get("note", "")
 
     if not code:
         return jsonify({"code": 1, "msg": "股票代码不能为空"})
@@ -575,7 +576,7 @@ def api_sell():
             return jsonify({"code": 1, "msg": "无法获取当前价格，请稍后重试"})
 
     pf = get_portfolio()
-    result = pf.sell(code, price, shares)
+    result = pf.sell(code, price, shares, note)
     return jsonify({"code": 0 if result["success"] else 1, "data": result})
 
 
@@ -657,6 +658,9 @@ def api_portfolio_signals():
                 "macd_state": sig.macd_state,
                 "bollinger_pos": sig.bollinger_pos,
                 "trend": sig.trend,
+                "risk_tag": sig.risk_tag,
+                "risk_score": sig.risk_score,
+                "risk_flags": sig.risk_flags,
             })
 
             if sig.sell_level == "URGENT":
@@ -752,4 +756,5 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
 
 def run_server(host: str = "0.0.0.0", port: int = 5188, debug: bool = False):
     logger.info(f"启动股票筛选工具服务: http://{host}:{port}")
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
     app.run(host=host, port=port, debug=debug, use_reloader=False)

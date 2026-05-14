@@ -405,17 +405,30 @@ class ScreenEngine:
     def merge_results(
         self,
         results: Dict[str, ScreenResult],
-        top_n: int = 10
+        top_n: int = 10,
+        min_single_score: int = 30,
+        min_weighted_score: int = 45,
     ) -> List[Dict]:
         """
-        多策略结果合并：
-        同一只股票在多策略中命中 → 综合评分累加 → 胜率取最高值并叠加加成
+        多策略结果合并（加权评分 + 质量门槛）：
+        同一只股票在多策略中命中 → 加权评分累加 → 胜率取最高值并叠加加成
+
+        Args:
+            results: 各策略筛选结果
+            top_n: 返回前 N 只
+            min_single_score: 单策略原始分最低门槛（低于此分的命中不计入）
+            min_weighted_score: 加权总分最低门槛（低于此分的股票被过滤）
         """
         merged: Dict[str, Dict] = {}
 
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
+            weight = meta.get("weight", 1.0)
             for sig in result.all_signals:
+                # ── 质量门槛1：单策略原始分过滤 ──
+                if sig.score < min_single_score:
+                    continue
+
                 code = sig.ts_code
                 if code not in merged:
                     merged[code] = {
@@ -427,6 +440,7 @@ class ScreenEngine:
                         "trade_date": sig.trade_date,
                         "strategies_hit": [],
                         "total_score": 0,
+                        "weighted_score": 0.0,
                         "max_win_rate": 0,
                         "all_signals": [],
                     }
@@ -436,9 +450,11 @@ class ScreenEngine:
                     "name": meta.get("name", strategy_name),
                     "icon": meta.get("icon", ""),
                     "score": sig.score,
+                    "weight": weight,
                     "signals": sig.signals,
                 })
                 entry["total_score"] += sig.score
+                entry["weighted_score"] += sig.score * weight
                 entry["max_win_rate"] = max(entry["max_win_rate"], sig.win_rate)
                 entry["all_signals"].extend(sig.signals)
                 # 收集风险标签（各策略可能返回相同flag，去重）
@@ -452,6 +468,11 @@ class ScreenEngine:
         final_list = []
         for code, entry in merged.items():
             n_strategies = len(entry["strategies_hit"])
+
+            # ── 质量门槛2：加权总分过滤 ──
+            if entry["weighted_score"] < min_weighted_score:
+                continue
+
             overlap_bonus = min((n_strategies - 1) * 0.05, 0.15)
             final_win_rate = min(entry["max_win_rate"] + overlap_bonus, 0.90)
 
@@ -478,8 +499,8 @@ class ScreenEngine:
                 "risk_flags": all_flags,   # [{type, label, level, desc}, ...]
             })
 
-        # 按综合评分排序
-        final_list.sort(key=lambda x: (x["n_strategies"], x["total_score"]), reverse=True)
+        # 按 (命中策略数, 加权评分) 降序排序
+        final_list.sort(key=lambda x: (x["n_strategies"], x["weighted_score"]), reverse=True)
         return final_list[:top_n]
 
     def _quick_risk_scan(self, code: str):

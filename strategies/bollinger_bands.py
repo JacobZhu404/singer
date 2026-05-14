@@ -101,7 +101,7 @@ class BollingerBandsStrategy(BaseStrategy):
                     signals.append("缩量止跌")
                     score += 10
 
-                if score < 40:
+                if score < 45:
                     continue
 
                 quote = self._get_quote(scanner, code, float(price))
