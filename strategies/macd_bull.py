@@ -74,7 +74,6 @@ class MACDBullStrategy(BaseStrategy):
 
                 signals = []
                 score = 0
-                has_core_signal = False  # 必须满足至少一个核心信号
 
                 # ── 条件1: MA5 上穿 MA10（当日金叉，最强信号）──
                 ma5 = mas["ma5"].iloc[i]
@@ -88,7 +87,6 @@ class MACDBullStrategy(BaseStrategy):
                     if ma5_prev <= ma10_prev and ma5 > ma10:
                         signals.append("MA5上穿MA10金叉")
                         score += 25
-                        has_core_signal = True
                     elif ma5 > ma10:
                         signals.append("MA5>MA10多头")
                         score += 15
@@ -101,37 +99,35 @@ class MACDBullStrategy(BaseStrategy):
                     # ── 条件3: MA20>MA60 中期趋势 ──
                     if ma20 > ma60:
                         signals.append("MA20>MA60中期多头")
-                        score += 10
+                        score += 15
 
-                    # ── 条件4: 价格站上MA5（短期趋势确认）──
+                # ── 条件4: 价格站上MA5（短期趋势确认）──
                     if close.iloc[i] > ma5:
                         signals.append("价格站上MA5")
                         score += 10
 
                 # ── 条件5: MACD 零轴判断 ──
-                # 零轴上方金叉（最强核心信号）：DIF>0 且 DEA>0 且 DIF>DEA
+                # 零轴上方金叉（最强）：DIF>0 且 DEA>0 且 DIF>DEA
                 if dif.iloc[i] > 0 and dea.iloc[i] > 0 and dif.iloc[i] > dea.iloc[i]:
                     signals.append("MACD零轴金叉")
-                    score += 30
-                    has_core_signal = True
+                    score += 25
                 # 零轴下方金叉（较弱）：DIF>DEA 但零线以下
                 elif dif.iloc[i] > dea.iloc[i]:
                     signals.append("MACD金叉（零轴下）")
                     score += 15
-                # DIF零轴以上但尚未金叉 — 不再给分（信号太弱，无区分度）
+                # DIF零轴以上但尚未金叉
+                elif dif.iloc[i] > 0:
+                    signals.append("DIF零轴以上")
+                    score += 10
 
-                # ── 条件6: MACD 柱放大（近3日连续） ──
+                # ── 条件7: MACD 柱放大（近3日连续） ──
                 if i >= 2 and not pd.isna(macd_bar.iloc[i - 2]):
                     if macd_bar.iloc[i] > 0:
                         if macd_bar.iloc[i] > macd_bar.iloc[i - 1] > macd_bar.iloc[i - 2]:
                             signals.append("MACD柱放大")
                             score += 15
 
-                # 必须满足至少一个核心信号（MACD金叉 或 MA5金叉）
-                if not has_core_signal:
-                    continue
-
-                if score < 65:
+                if score < 50:
                     continue
 
                 latest = close.iloc[i]
