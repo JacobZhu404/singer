@@ -8,6 +8,10 @@
   4. MA5 上穿 MA20（均线金叉）
   5. 股价站上 MA60（长期趋势向上）
   6. RSI 在 50~70 区间（强势但未超买）
+
+优化（2026-05）：
+  - 阈值提高至60分（原45分）
+  - 评分体系保持不变，阶梯度良好
 """
 
 import pandas as pd
@@ -107,7 +111,7 @@ class RightSideTradingStrategy(BaseStrategy):
                 signals.append("启动未过热")
                 score += 10
 
-        if score < 45:
+        if score < 60:  # 优化：阈值提高至60（原45）
             return None
 
         quote = self._get_quote(scanner, code, c)

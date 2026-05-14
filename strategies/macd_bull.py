@@ -9,18 +9,20 @@
   - MA5上穿MA10当日金叉：+25（最强信号，核心信号）
   - MACD零轴金叉（DIF>0且DEA>0且DIF>DEA）：+30（核心信号）
   - MACD零轴下金叉：+15
-  - MA5>MA10>MA20>MA60均线多头：+20
+  - MA5>MA10>MA20>MA60均线多头：+15
   - MA20>MA60中期多头：+10
   - MACD柱放大（近3日连续）：+15
-  - 价格站上MA5（短期趋势确认）：+10
+  - 价格站上MA5（短期趋势确认）：+5
 适用：趋势确认、中线持仓
 
 优化（2026-05）：
-  - 阈值提高至65分（原50分）
+  - 阈值提高至75分（原65分）
   - 必须有核心信号（MA5金叉 或 MACD零轴金叉）
   - 移除DIF零轴以上（非金叉）的弱信号
   - MACD零轴金叉加分提高至30（原25）
+  - 均线多头排列加分降低至15（原20）
   - MA20>MA60加分降低至10（原15）
+  - 价格站上MA5加分降低至5（原10）
 """
 
 import pandas as pd
@@ -90,7 +92,7 @@ class MACDBullStrategy(BaseStrategy):
             # ── 条件2: 均线多头排列 ──
             if ma5 > ma10 > ma20 > ma60:
                 signals.append("均线多头排列")
-                score += 20
+                score += 15  # 优化：20→15
 
             # ── 条件3: MA20>MA60 中期趋势 ──
             if ma20 > ma60:
@@ -100,7 +102,7 @@ class MACDBullStrategy(BaseStrategy):
             # ── 条件4: 价格站上MA5（短期趋势确认）──
             if close.iloc[i] > ma5:
                 signals.append("价格站上MA5")
-                score += 10
+                score += 5  # 优化：10→5
 
         # ── 条件5: MACD 零轴判断 ──
         # 零轴上方金叉（最强）：DIF>0 且 DEA>0 且 DIF>DEA
@@ -125,8 +127,8 @@ class MACDBullStrategy(BaseStrategy):
         if not has_core_signal:
             return None
 
-        # 优化：阈值提高至65
-        if score < 65:
+        # 优化：阈值提高至75
+        if score < 75:
             return None
 
         # ── 构建返回结果 ──
