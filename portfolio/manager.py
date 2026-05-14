@@ -102,6 +102,7 @@ class Portfolio:
             "initial_cash": self.initial_cash,
             "cash": round(cash, 2),
             "position_value": round(position_value, 2),
+            "position_pnl": round(position_pnl, 2),
             "total_value": round(total_value, 2),
             "total_pnl": round(total_pnl, 2),
             "total_pnl_pct": total_pnl_pct,
@@ -183,8 +184,8 @@ class Portfolio:
 
     # ── 卖出 ────────────────────────────────────────────────────────────────
 
-    def sell(self, code: str, price: float, shares: int = None) -> Dict[str, Any]:
-        """虚拟卖出"""
+    def sell(self, code: str, price: float, shares: int = None, note: str = "") -> Dict[str, Any]:
+        """虚拟卖出（减仓/清仓）"""
         if price <= 0:
             return {"success": False, "msg": "价格无效"}
 
@@ -201,6 +202,8 @@ class Portfolio:
 
         sell_amount = shares * price
         realized_pnl = (price - existing["avg_cost"]) * shares
+        is_clear = shares == existing["shares"]
+        action_label = note or ("清仓" if is_clear else "减仓")
 
         trade_record = {
             "id": len(self.trades) + 1,
@@ -216,9 +219,10 @@ class Portfolio:
             "realized_pnl": round(realized_pnl, 2),
             "hold_days": (datetime.now().date() - datetime.strptime(
                 existing["buy_date"], "%Y-%m-%d").date()).days,
+            "note": action_label,
         }
 
-        if shares == existing["shares"]:
+        if is_clear:
             self.positions = [p for p in self.positions if p["code"] != code]
         else:
             existing["shares"] -= shares
@@ -228,11 +232,11 @@ class Portfolio:
         self.trades.append(trade_record)
         self._save()
 
-        logger.info(f"卖出: {code} {existing['name']} {shares}股@{price}元, "
+        logger.info(f"{action_label}: {code} {existing['name']} {shares}股@{price}元, "
                     f"盈亏{realized_pnl:.2f}元({realized_pnl/(existing['avg_cost']*shares)*100:.1f}%)")
         return {
             "success": True,
-            "msg": f"卖出成功: {existing['name']}({code}) {shares}股@{price}元, "
+            "msg": f"{action_label}成功: {existing['name']}({code}) {shares}股@{price}元, "
                    f"已实现盈亏 {realized_pnl:.2f}元 ({realized_pnl/(existing['avg_cost']*shares)*100:.1f}%)",
             "trade": trade_record,
         }

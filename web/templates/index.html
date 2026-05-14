@@ -643,7 +643,7 @@
       <button class="analyze-btn" id="analyzeBtn" onclick="loadSellSignals()">🔮 分析卖出信号</button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
         <input id="directBuyCode" placeholder="输入股票代码" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:120px;outline:none" />
-        <button class="btn btn-buy" onclick="directBuy()">📈 直接买入</button>
+        <button class="btn btn-buy" onclick="directBuy()">📈 直接加仓</button>
       </div>
     </div>
     <div id="sellSignalsContent" style="margin-bottom:24px"></div>
@@ -677,7 +677,7 @@
     <div class="modal-info" id="modalInfo">买入金额：<strong id="modalAmount">0.00</strong> 元</div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()" style="width:auto;flex:1">取消</button>
-      <button class="btn btn-primary" onclick="confirmBuy()" style="width:auto;flex:1;background:var(--green)">确认买入</button>
+      <button class="btn btn-primary" onclick="confirmBuy()" style="width:auto;flex:1;background:var(--green)">确认加仓</button>
     </div>
   </div>
 </div>
@@ -1927,7 +1927,7 @@ function renderMergedTable(picks, container) {
               <td><div class="strategy-badges">${badges}</div></td>
               <td><div class="signals">${sigs}</div></td>
               <td>${riskTagHtml(p)}</td>
-              <td class="row-actions"><button class="btn-buy" onclick="openBuyModal('${p.ts_code}','${p.name}',${price})">买入</button></td>
+              <td class="row-actions"><button class="btn-buy" onclick="openBuyModal('${p.ts_code}','${p.name}',${price})">加仓</button></td>
             </tr>
           `;
         }).join('')}
@@ -2087,19 +2087,20 @@ function renderBuyStrategyTags(buyStrategyStr, code) {
   const MIN_SCORE = 40;
 
   const tags = ids.map(id => {
-    // 有评分信息时，只显示命中且评分足够高的策略
-    if (hasScoreInfo && id in strategyScores && strategyScores[id] < MIN_SCORE) {
-      return '';
-    }
     const name = strategyNameMap[id] || id;
     const score = strategyScores[id];
     const hasScore = score !== undefined;
+    const isExpired = hasScoreInfo && !hasScore; // 有全局评分信息但本策略无评分 = 已失效
+    const isWeak = hasScore && score < MIN_SCORE; // 评分过低
 
-    // 根据评分给标签上色：高分绿色、中分黄色、低分(刚好过线)橙色
-    let scoreColor = 'var(--accent)';
-    let scoreBg = 'rgba(88,166,255,0.1)';
-    let scoreBorder = 'rgba(88,166,255,0.25)';
-    if (hasScore) {
+    // 根据状态给标签上色
+    let scoreColor, scoreBg, scoreBorder;
+    if (isExpired || isWeak) {
+      // 已失效/评分过低 → 灰色
+      scoreColor = '#8b949e';
+      scoreBg = 'rgba(139,148,158,0.08)';
+      scoreBorder = 'rgba(139,148,158,0.2)';
+    } else if (hasScore) {
       if (score >= 60) {
         scoreColor = '#3fb950';
         scoreBg = 'rgba(63,185,80,0.12)';
@@ -2113,20 +2114,102 @@ function renderBuyStrategyTags(buyStrategyStr, code) {
         scoreBg = 'rgba(255,166,87,0.12)';
         scoreBorder = 'rgba(255,166,87,0.3)';
       }
+    } else {
+      // 无评分信息（未运行筛选）→ 默认蓝色
+      scoreColor = 'var(--accent)';
+      scoreBg = 'rgba(88,166,255,0.1)';
+      scoreBorder = 'rgba(88,166,255,0.25)';
     }
 
     // 超长名称截断
     const short = name.length > 4 ? name.substring(0, 3) + '…' : name;
     const display = hasScore ? `${short} ${score}` : short;
-    const title = hasScore ? `${name} · 符合度 ${score}分` : name;
+    let title;
+    if (isExpired) title = `${name} · 已不在当前筛选中`;
+    else if (isWeak) title = `${name} · 符合度 ${score}分（低于阈值）`;
+    else if (hasScore) title = `${name} · 符合度 ${score}分`;
+    else title = name;
 
-    return `<span class="buy-strategy-tag" title="${title}" style="background:${scoreBg};color:${scoreColor};border-color:${scoreBorder}">${display}</span>`;
+    return `<span class="buy-strategy-tag" title="${title}" style="background:${scoreBg};color:${scoreColor};border-color:${scoreBorder};${isExpired||isWeak?'opacity:0.6;text-decoration:line-through':''}">${display}</span>`;
   }).filter(Boolean);
 
   if (tags.length === 0) {
     return '<span style="color:var(--muted);font-size:12px">—</span>';
   }
   return `<div class="buy-strategy-tag-wrap">${tags.join('')}</div>`;
+}
+
+// ── 持仓综合状态卡片 ──────────────────────────────────────────────
+function renderPositionStatus(code, buyStrategyStr) {
+  const pick = lastResult && lastResult.comprehensive_picks
+    ? lastResult.comprehensive_picks.find(p => p.ts_code === code)
+    : null;
+
+  const riskColorMap = {
+    safe: '#3fb950',
+    watch: '#d29922',
+    conflict: '#ffa657',
+    high_risk: '#f85149',
+    unknown: '#8b949e'
+  };
+  const riskLabelMap = {
+    safe: '信号清晰',
+    watch: '轻度警示',
+    conflict: '买卖分歧',
+    high_risk: '风险较高',
+    unknown: '未知'
+  };
+
+  // 从卖出信号API获取风险数据（如果已加载）
+  const sig = lastPortfolioData && lastPortfolioData.sellSignals
+    ? lastPortfolioData.sellSignals.find(s => s.code === code)
+    : null;
+  const riskTag = sig ? sig.risk_tag : (pick ? pick.risk_tag : 'unknown');
+  const riskScore = sig ? sig.risk_score : (pick ? pick.risk_score : 0);
+
+  const riskColor = riskColorMap[riskTag] || '#8b949e';
+  const riskLabel = riskLabelMap[riskTag] || riskTag;
+
+  let html = `<div style="display:flex;flex-direction:column;gap:3px;font-size:11px">`;
+
+  if (pick) {
+    const nStrategies = pick.n_strategies || 0;
+    const totalScore = pick.total_score || 0;
+    const winRate = pick.win_rate_pct || '0%';
+    html += `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">`;
+    html += `<span style="color:var(--accent);font-weight:700">${nStrategies}策略</span>`;
+    html += `<span style="color:var(--muted)">·</span>`;
+    html += `<span style="color:var(--text)">评分${totalScore}</span>`;
+    html += `<span style="color:var(--muted)">·</span>`;
+    html += `<span style="color:var(--green)">胜率${winRate}</span>`;
+    html += `</div>`;
+  } else {
+    html += `<div style="color:var(--muted);font-size:11px">未在当前筛选中</div>`;
+  }
+
+  html += `<div style="display:flex;gap:5px;align-items:center">`;
+  html += `<span style="color:${riskColor};font-weight:600">● ${riskLabel}</span>`;
+  if (riskScore > 0) html += `<span style="color:var(--muted)">(${riskScore}分)</span>`;
+  html += `</div>`;
+
+  // 买入策略是否仍满足
+  if (buyStrategyStr) {
+    const buyIds = buyStrategyStr.split(',').map(s => s.trim()).filter(Boolean);
+    if (pick && pick.strategies_hit) {
+      const stillHitIds = new Set(pick.strategies_hit.map(s => s.id));
+      const expired = buyIds.filter(id => !stillHitIds.has(id));
+      if (expired.length > 0) {
+        const expiredNames = expired.map(id => strategyNameMap[id] || id).join(', ');
+        html += `<div style="color:#8b949e;font-size:10px">⚠ 已失效: ${expiredNames}</div>`;
+      }
+    } else if (buyIds.length > 0) {
+      // 没有pick信息，所有策略都可能已失效
+      html += `<div style="color:#8b949e;font-size:10px">⚠ 买入策略已不在当前筛选</div>`;
+    }
+  }
+
+  html += `</div>`;
+  return html;
 }
 
 function renderSellDiag(sig) {
@@ -2155,22 +2238,11 @@ function renderSellDiag(sig) {
   `;
 }
 
-function renderSellBtn(sig, pos) {
-  if (!sig) {
-    return `<button class="btn-sell" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">卖出</button>`;
-  }
-  const urgent = sig.sell_level === 'URGENT';
-  const sell = sig.sell_level === 'SELL';
-  const reduce = sig.sell_level === 'REDUCE';
-  const label = urgent ? '紧急卖出' : sell ? '建议卖出' : reduce ? '减仓' : '卖出';
-  const style = urgent
-    ? 'background:rgba(218,54,51,0.2);border-color:#da3633;color:#f85149;font-weight:700'
-    : sell
-    ? 'background:rgba(248,81,73,0.15);border-color:var(--red);color:var(--red)'
-    : reduce
-    ? 'background:rgba(255,166,87,0.15);border-color:var(--orange);color:var(--orange)'
-    : '';
-  return `<button class="btn-sell" style="${style}" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">${label}</button>`;
+function renderPositionActions(pos) {
+  const addBtn = `<button class="btn-add" onclick="openBuyModal('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
+  const reduceBtn = `<button class="btn-sell" style="background:rgba(255,166,87,0.15);border-color:var(--orange);color:var(--orange)" onclick="reduceStock('${pos.code}','${pos.name}',${pos.shares})">减仓</button>`;
+  const clearBtn = `<button class="btn-sell" onclick="clearStock('${pos.code}','${pos.name}')">清仓</button>`;
+  return `${addBtn} ${reduceBtn} ${clearBtn}`;
 }
 
 function setPortfolioSort(key) {
@@ -2231,9 +2303,9 @@ function renderPortfolio(data) {
       <div class="sub" style="color:${pnlColor}">${pnlSign}${acc.total_pnl_pct}%</div>
     </div>
     <div class="info-card">
-      <div class="label">📊 持仓盈亏</div>
+      <div class="label">📊 持仓市值</div>
       <div class="value" style="font-size:24px">¥${acc.position_value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div class="sub">${acc.position_count} 只股票</div>
+      <div class="sub" style="color:${acc.position_pnl>=0?'var(--green)':'var(--red)'}">${acc.position_pnl>=0?'+':''}¥${Math.abs(acc.position_pnl||0).toLocaleString('zh-CN',{minimumFractionDigits:2})} (${acc.position_count}只)</div>
     </div>
     <div class="info-card">
       <div class="label">💵 可用资金</div>
@@ -2301,8 +2373,7 @@ function renderPortfolio(data) {
           })();
           const sig = signalMap[pos.code];
           const sellDiag = sig ? renderSellDiag(sig) : '<span style="color:var(--muted);font-size:12px">未分析</span>';
-          const sellBtn = sig ? renderSellBtn(sig, pos) : `<button class="btn-sell" onclick="sellStock('${pos.code}','${pos.name}',0,${pos.shares})">卖出</button>`;
-          const addBtn = `<button class="btn-add" onclick="openBuyModal('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
+          const actions = renderPositionActions(pos);
           return `
             <tr>
               <td>${stockNameHtml(pos.code, pos.name)}</td>
@@ -2314,7 +2385,7 @@ function renderPortfolio(data) {
               <td>${renderBuyStrategyTags(pos.buy_strategy, pos.code)}</td>
               <td>¥${(pos.current_value||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}</td>
               <td>${sellDiag}</td>
-              <td style="white-space:nowrap">${addBtn} ${sellBtn}</td>
+              <td style="white-space:nowrap">${actions}</td>
             </tr>
           `;
         }).join('')}
@@ -2372,26 +2443,51 @@ async function loadTradeHistory() {
   `;
 }
 
-async function sellStock(code, name, price, shares) {
+async function clearStock(code, name) {
   // 自动获取实时最新价用于确认框展示
-  let sellPrice = price;
-  if (sellPrice <= 0) {
-    try {
-      const r = await fetch(`/api/quick_price?code=${code}`);
-      const j = await r.json();
-      if (j.code === 0) sellPrice = j.data.price;
-    } catch (e) {}
-  }
+  let sellPrice = 0;
+  try {
+    const r = await fetch(`/api/quick_price?code=${code}`);
+    const j = await r.json();
+    if (j.code === 0) sellPrice = j.data.price;
+  } catch (e) {}
   const priceStr = sellPrice > 0 ? `¥${sellPrice.toFixed(2)}` : '实时最新价';
-  if (!confirm(`确认卖出 ${name}(${code}) ${shares}股？\n结算价格：${priceStr}`)) return;
+  if (!confirm(`确认清仓 ${name}(${code})？\n结算价格：${priceStr}`)) return;
   const resp = await fetch('/api/portfolio/sell', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, price: 0, shares })
+    body: JSON.stringify({ code, price: 0, note: '清仓' })
   });
   const j = await resp.json();
   if (j.code === 0) { notify(j.data.msg, 'success'); loadPortfolio(); }
-  else notify(j.msg || '卖出失败', 'error');
+  else notify(j.msg || '清仓失败', 'error');
+}
+
+async function reduceStock(code, name, maxShares) {
+  // 自动获取实时最新价用于确认框展示
+  let sellPrice = 0;
+  try {
+    const r = await fetch(`/api/quick_price?code=${code}`);
+    const j = await r.json();
+    if (j.code === 0) sellPrice = j.data.price;
+  } catch (e) {}
+  const priceStr = sellPrice > 0 ? `¥${sellPrice.toFixed(2)}` : '实时最新价';
+  const defaultShares = Math.max(100, Math.floor(maxShares / 2 / 100) * 100);
+  const input = prompt(`减仓 ${name}(${code})\n结算价格：${priceStr}\n请输入减仓股数（最多 ${maxShares} 股，100股整数倍）：`, defaultShares);
+  if (!input) return;
+  const shares = parseInt(input, 10);
+  if (isNaN(shares) || shares <= 0 || shares > maxShares || shares % 100 !== 0) {
+    notify('减仓数量无效，必须是100的整数倍且不超过持仓数量', 'error');
+    return;
+  }
+  const resp = await fetch('/api/portfolio/sell', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, price: 0, shares, note: '减仓' })
+  });
+  const j = await resp.json();
+  if (j.code === 0) { notify(j.data.msg, 'success'); loadPortfolio(); }
+  else notify(j.msg || '减仓失败', 'error');
 }
 
 // ── Top Tab Switch ──

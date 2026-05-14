@@ -99,7 +99,7 @@ class VolumeBreakoutStrategy(BaseStrategy):
                     signals.append("量能持续放大")
                     score += 10
 
-                if score < 40:
+                if score < 45:
                     continue
 
                 quote = self._get_quote(scanner, code, price)

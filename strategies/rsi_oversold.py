@@ -75,7 +75,7 @@ class RSIOversoldStrategy(BaseStrategy):
                     signals.append("价格<20日均线超跌")
                     score += 10
 
-                if score < 40:
+                if score < 45:
                     continue
 
                 quote = self._get_quote(scanner, code, float(close.iloc[-1]))
