@@ -57,21 +57,31 @@ class RightSideTradingStrategy(BaseStrategy):
         c = float(close.iloc[i])
         vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
 
-        # ── 条件1: 突破20日新高 ──
+        # ── 条件1&2: 突破20日/60日新高 ──
+        # 合并计算避免重复，60日突破已隐含20日突破，只取更高分
         breakout_20_pct = 0.0
+        breakout_60_pct = 0.0
+        has_breakout_60 = False
+        high_60 = None
+        if i >= 60:
+            high_60 = float(high.iloc[i-60:i].max())
+            has_breakout_60 = c > high_60
+            breakout_60_pct = (c - high_60) / high_60 * 100
+
         if i >= 20:
             high_20 = float(high.iloc[i-20:i].max())
             breakout_20_pct = (c - high_20) / high_20 * 100
-            
-            if c > high_20:
+
+            # 只突破20日但未突破60日才单独加分
+            if c > high_20 and not has_breakout_60:
                 signals.append(f"突破20日新高({high_20:.2f})")
-                score += 20  # 优化：25→20（让60日突破更重要）
-                
+                score += 20
+
                 # 优化2：突破有效性验证（突破幅度>1%）
                 if breakout_20_pct > 1.0:
                     signals.append(f"20日突破有效({breakout_20_pct:.1f}%)")
                     score += 10
-                
+
                 # 优化3：突破幅度过滤（1%~8%为有效突破）
                 if 1.0 <= breakout_20_pct <= 8.0:
                     signals.append(f"20日突破幅度合理({breakout_20_pct:.1f}%)")
@@ -80,28 +90,23 @@ class RightSideTradingStrategy(BaseStrategy):
                     signals.append(f"20日突破幅度过大({breakout_20_pct:.1f}%)")
                     score -= 10  # 可能已过热的，降低评分
 
-        # ── 条件2: 60日高点突破（加分项，信号更强）──
-        breakout_60_pct = 0.0
-        if i >= 60:
-            high_60 = float(high.iloc[i-60:i].max())
-            breakout_60_pct = (c - high_60) / high_60 * 100
-            
-            if c > high_60:
-                signals.append(f"突破60日新高({high_60:.2f})")
-                score += 30  # 优化：10→30（60日突破更强）
-                
-                # 优化2：突破有效性验证（突破幅度>1%）
-                if breakout_60_pct > 1.0:
-                    signals.append(f"60日突破有效({breakout_60_pct:.1f}%)")
-                    score += 15
-                
-                # 优化3：突破幅度过滤（1%~8%为有效突破）
-                if 1.0 <= breakout_60_pct <= 8.0:
-                    signals.append(f"60日突破幅度合理({breakout_60_pct:.1f}%)")
-                    score += 10
-                elif breakout_60_pct > 8.0:
-                    signals.append(f"60日突破幅度过大({breakout_60_pct:.1f}%)")
-                    score -= 15  # 可能已过热的，大幅降低评分
+        # 60日高点突破（加分项，信号更强）
+        if has_breakout_60:
+            signals.append(f"突破60日新高({high_60:.2f})")
+            score += 30  # 优化：10→30（60日突破更强）
+
+            # 优化2：突破有效性验证（突破幅度>1%）
+            if breakout_60_pct > 1.0:
+                signals.append(f"60日突破有效({breakout_60_pct:.1f}%)")
+                score += 15
+
+            # 优化3：突破幅度过滤（1%~8%为有效突破）
+            if 1.0 <= breakout_60_pct <= 8.0:
+                signals.append(f"60日突破幅度合理({breakout_60_pct:.1f}%)")
+                score += 10
+            elif breakout_60_pct > 8.0:
+                signals.append(f"60日突破幅度过大({breakout_60_pct:.1f}%)")
+                score -= 15  # 可能已过热的，大幅降低评分
 
         # ── 条件3: 突破时放量 ──
         if vr > 2.0:
@@ -161,7 +166,7 @@ class RightSideTradingStrategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=min(score, 100),
-            win_rate=self._calc_win_rate(score, signals),
+            win_rate=None,
             signals=signals,
             latest_price=round(float(quote.get("最新价", c)), 2),
             pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),

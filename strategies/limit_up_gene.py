@@ -3,11 +3,13 @@
 原理：
   具有"涨停基因"的股票容易反复涨停
   条件：
-  1. 近30日内有过涨停记录（至少1次）
+  1. 当日涨停（或近期涨停）
   2. 涨停后未大幅回落（最大回撤 < 15%）
   3. 当前处于连板梯队（或近期再次启动）
   4. 所在题材/板块仍在活跃中
   5. 当日量比 > 1.5（热点关注）
+
+注：当前实现仅扫描当日涨停股票，"近30日涨停回溯"功能待扩展
 """
 
 import pandas as pd
@@ -105,7 +107,7 @@ class LimitUpGeneStrategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=score,
-            win_rate=self._calc_win_rate(score, signals),
+            win_rate=None,
             signals=signals,
             latest_price=round(float(quote.get("最新价", latest)), 2),
             pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),

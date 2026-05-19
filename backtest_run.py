@@ -307,8 +307,8 @@ def run_backtest():
         dates.append(wed.iloc[0]['date'].strftime('%Y%m%d') if not wed.empty
                       else g.iloc[-1]['date'].strftime('%Y%m%d'))
 
-    # 策略列表 (排除涨停基因)
-    strategies = [k for k in STRATEGY_REGISTRY if k != 'limit_up_gene']
+    # 策略列表
+    strategies = list(STRATEGY_REGISTRY.keys())
 
     # 加载股票列表
     with open('/Users/jacob/personal/stock_screener/data/cache/stocks.json') as f:

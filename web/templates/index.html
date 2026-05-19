@@ -533,8 +533,8 @@
       <h3 style="margin-top:12px">推荐数量</h3>
       <select class="topn-select" id="topnSelect">
         <option value="5">Top 5</option>
-        <option value="10" selected>Top 10</option>
-        <option value="20">Top 20</option>
+        <option value="10">Top 10</option>
+        <option value="20" selected>Top 20</option>
       </select>
     </div>
 
@@ -939,17 +939,6 @@ const STRATEGY_TOOLTIPS = {
       { text: '启动未过热（近5日涨幅<10%）', score: '+10', meaning: '非追高，低位启动' },
     ],
     threshold: '综合评分 ≥ 40 分，胜率约 56%',
-  },
-  limit_up_gene: {
-    title: '涨停基因策略',
-    icon: '🔥',
-    principle: '近期有涨停记录且未大幅回落，保留涨停动能。属于高风险高收益，适合激进型投资者。',
-    conditions: [
-      { text: '近期有涨停记录（10日内）', score: '+40', meaning: '资金强势拉升，题材活跃' },
-      { text: '涨停后未大幅回落（<10%）', score: '+30', meaning: '主力未出货，筹码稳定' },
-      { text: '涨停后缩量整理', score: '+20', meaning: '主力控盘，蓄势待发' },
-    ],
-    threshold: '综合评分 ≥ 40 分，⚠️ 注意：涨停次日可能无法买入',
   },
   rsi_oversold: {
     title: 'RSI 超卖策略',
@@ -1893,7 +1882,7 @@ function renderMergedTable(picks, container) {
       <thead>
         <tr>
           <th>#</th><th>股票</th><th>最新价</th><th>涨跌幅</th><th>量比</th>
-          <th>综合胜率</th><th>命中策略</th><th>关键信号</th>
+          <th>综合评分</th><th>命中策略（得分）</th><th>关键信号</th>
           <th title="基于实时技术指标的卖出风险评估，点击可查看详情">风险评估 ℹ️</th>
           <th>操作</th>
         </tr>
@@ -1903,11 +1892,11 @@ function renderMergedTable(picks, container) {
           const pct = parseFloat(p.pct_chg) || 0;
           const pctClass = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
           const pctStr = pct > 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`;
-          const wr = p.final_win_rate || 0;
-          const wrColor = wr >= 0.65 ? '#3fb950' : wr >= 0.55 ? '#d29922' : '#f85149';
-          const scoreVal = p.total_score || 0;
+          const scoreVal = p.composite_score || p.total_score || 0;
           const scoreClass = scoreVal >= 80 ? 'score-high' : scoreVal >= 50 ? 'score-mid' : 'score-low';
-          const badges = (p.strategies_hit || []).map(s => `<span class="st-badge">${s.icon||''} ${s.name}</span>`).join('');
+          const badges = (p.strategies_hit || []).map(s =>
+            `<span class="st-badge" title="策略评分: ${s.score}">${s.icon||''} ${s.name} <span style="opacity:0.7;font-size:10px">${s.score}</span></span>`
+          ).join('');
           const sigs = (p.all_signals || []).slice(0, 3).map(s => `<span class="signal-chip">${s}</span>`).join('');
           const price = parseFloat(p.latest_price) || 0;
           const rowRiskClass = p.risk_tag === 'high_risk' ? 'row-high-risk' : '';
@@ -1918,12 +1907,7 @@ function renderMergedTable(picks, container) {
               <td class="price">${price > 0 ? price.toFixed(2) : '-'}</td>
               <td class="${pctClass}" style="font-weight:700">${pctStr}</td>
               <td>${((p.volume_ratio)||1).toFixed(1)}x</td>
-              <td>
-                <div class="win-rate-bar">
-                  <div class="win-bar"><div class="win-fill" style="width:${wr*100}%;background:${wrColor}"></div></div>
-                  <span class="win-text" style="color:${wrColor}">${p.win_rate_pct}</span>
-                </div>
-              </td>
+              <td><span class="score-pill ${scoreClass}" title="加权总分:${(p.weighted_score||0).toFixed(1)} 综合评分:${(p.composite_score||0).toFixed(1)}">${scoreVal}</span></td>
               <td><div class="strategy-badges">${badges}</div></td>
               <td><div class="signals">${sigs}</div></td>
               <td>${riskTagHtml(p)}</td>
@@ -1960,8 +1944,6 @@ function renderStrategyTable(detail, container) {
           const pct = parseFloat(s.pct_chg) || 0;
           const pctClass = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
           const pctStr = pct > 0 ? `+${pct.toFixed(2)}%` : `${pct.toFixed(2)}%`;
-          const wr = parseFloat(s.win_rate) || 0;
-          const wrColor = wr >= 0.65 ? '#3fb950' : wr >= 0.55 ? '#d29922' : '#f85149';
           const scoreVal = s.score || 0;
           const scoreClass = scoreVal >= 80 ? 'score-high' : scoreVal >= 50 ? 'score-mid' : 'score-low';
           const sigs = (s.signals || []).map(sig => `<span class="signal-chip">${sig}</span>`).join('');
@@ -1974,12 +1956,6 @@ function renderStrategyTable(detail, container) {
               <td class="${pctClass}" style="font-weight:700">${pctStr}</td>
               <td>${((s.volume_ratio)||1).toFixed(1)}x</td>
               <td><span class="score-pill ${scoreClass}">${scoreVal}</span></td>
-              <td>
-                <div class="win-rate-bar">
-                  <div class="win-bar"><div class="win-fill" style="width:${wr*100}%;background:${wrColor}"></div></div>
-                  <span class="win-text" style="color:${wrColor}">${s.win_rate_pct}</span>
-                </div>
-              </td>
               <td><div class="signals">${sigs}</div></td>
               <td><div class="risk-flag-wrap">${strategyRiskHtml(s.risk_flags)}</div></td>
               <td class="row-actions"><button class="btn-buy" onclick="openBuyModal('${s.ts_code}','${s.name}',${price})">买入</button></td>
@@ -2174,14 +2150,11 @@ function renderPositionStatus(code, buyStrategyStr) {
 
   if (pick) {
     const nStrategies = pick.n_strategies || 0;
-    const totalScore = pick.total_score || 0;
-    const winRate = pick.win_rate_pct || '0%';
+    const compScore = pick.composite_score || pick.total_score || 0;
     html += `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">`;
     html += `<span style="color:var(--accent);font-weight:700">${nStrategies}策略</span>`;
     html += `<span style="color:var(--muted)">·</span>`;
-    html += `<span style="color:var(--text)">评分${totalScore}</span>`;
-    html += `<span style="color:var(--muted)">·</span>`;
-    html += `<span style="color:var(--green)">胜率${winRate}</span>`;
+    html += `<span style="color:var(--text)">综合评分${compScore.toFixed(1)}</span>`;
     html += `</div>`;
   } else {
     html += `<div style="color:var(--muted);font-size:11px">未在当前筛选中</div>`;
@@ -2595,6 +2568,14 @@ document.getElementById('topnSelect').addEventListener('change', saveUIState);
 init();
 </script>
 </body>
+</html>
+</html>
+</html>
+</html>
+</html>
+</html>
+</html>
+</html>
 </html>
 </html>
 </html>

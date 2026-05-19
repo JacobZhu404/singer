@@ -364,14 +364,6 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
             if score < 55:
                 return 0, []
 
-        elif strategy_name == "limit_up_gene":
-            pct = close.pct_change() * 100
-            today_pct = pct.iloc[i]
-            if today_pct >= 9.5: signals.append(f"今日涨停({today_pct:.1f}%)"); score += 40
-            limit_days = sum(1 for j in range(max(0, i-30), i+1) if pct.iloc[j] >= 9.5)
-            if limit_days >= 1: signals.append(f"近30日涨停{limit_days}次"); score += min(limit_days*10, 20)
-            if score < 40: return 0, []
-
         else:
             return 0, []
 

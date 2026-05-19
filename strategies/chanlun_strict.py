@@ -831,7 +831,7 @@ class ChanlunStrictStrategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=min(score, 100),
-            win_rate=win_rate,
+            win_rate=None,
             signals=signals,
             latest_price=round(price, 2),
             pct_chg=round(pct, 2),

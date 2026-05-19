@@ -191,6 +191,7 @@ class MarketScanner:
         self._indicator_cache: Dict[str, Dict[str, Any]] = {}  # 代码 → 预计算指标
         self._lock = threading.Lock()
         self._include_realtime: bool = True
+        self._max_cache_size: int = 2000   # ⚡ 优化：内存缓存上限，防止内存溢出
 
     def load(self) -> bool:
         self._loaded = True
@@ -201,6 +202,18 @@ class MarketScanner:
         code6 = str(code).strip()
         if len(code6) > 2 and code6[:2].lower() in ("sh", "sz"):
             code6 = code6[2:]
+
+        # ── 优化：LRU淘汰防止内存溢出 ──
+        with self._lock:
+            if len(self._kline_cache) >= self._max_cache_size:
+                # 删除最早插入的20%条目
+                evict_n = self._max_cache_size // 5
+                evict_keys = list(self._kline_cache.keys())[:evict_n]
+                for k in evict_keys:
+                    del self._kline_cache[k]
+                    self._cache_days.pop(k, None)
+                logger.info(f"LRU淘汰: 移除{len(evict_keys)}只股票缓存")
+
         today = datetime.now().strftime("%Y-%m-%d")
         with self._lock:
             if code6 in self._kline_cache and self._cache_days.get(code6, 0) >= days:

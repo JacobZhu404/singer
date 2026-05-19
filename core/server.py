@@ -129,7 +129,7 @@ def get_engine(market: str = "主板") -> ScreenEngine:
     global _engine
     with _engine_lock:
         if _engine is None or _engine.market != market:
-            _engine = ScreenEngine(market=market, top_n=10)
+            _engine = ScreenEngine(market=market, top_n=20)
     return _engine
 
 
@@ -144,7 +144,7 @@ def api_strategies():
 def api_screen():
     """
     执行策略筛选
-    Body: { strategies: ["macd_bull", ...], market: "主板", top_n: 10, force_refresh: false }
+    Body: { strategies: ["macd_bull", ...], market: "主板", top_n: 20, force_refresh: false }
     """
     global _last_result, _is_running
 
@@ -154,7 +154,7 @@ def api_screen():
     body = request.get_json() or {}
     strategies = body.get("strategies", None)
     market = body.get("market", "主板")
-    top_n = int(body.get("top_n", 10))
+    top_n = int(body.get("top_n", 20))
     force_refresh = bool(body.get("force_refresh", False))
     skip_download = bool(body.get("skip_download", False))
 
@@ -443,7 +443,7 @@ def api_quick_screen():
     body = request.get_json() or {}
     strategy_name = body.get("strategy", "macd_bull")
     market = body.get("market", "主板")
-    top_n = int(body.get("top_n", 10))
+    top_n = int(body.get("top_n", 20))
 
     try:
         engine = get_engine(market)
@@ -462,7 +462,6 @@ def api_quick_screen():
                         "ts_code": s.ts_code,
                         "name": s.name,
                         "score": s.score,
-                        "win_rate_pct": f"{s.win_rate * 100:.1f}%",
                         "signals": s.signals,
                         "latest_price": s.latest_price,
                         "pct_chg": s.pct_chg,
@@ -744,7 +743,6 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
                 "ts_code": s.ts_code,
                 "name": s.name,
                 "score": s.score,
-                "win_rate_pct": f"{s.win_rate * 100:.1f}%",
                 "signals": s.signals,
                 "latest_price": s.latest_price,
                 "pct_chg": s.pct_chg,

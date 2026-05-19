@@ -55,7 +55,7 @@ class BaseStrategy(ABC):
     description: str = ""
     base_win_rate: float = 0.5
 
-    def __init__(self, top_n: int = 10):
+    def __init__(self, top_n: int = 20):
         self.top_n = top_n
         self._progress_callback: Optional[Callable[[str, int, int], None]] = None
 
@@ -150,14 +150,6 @@ class BaseStrategy(ABC):
                 self._report_progress("executing", idx, total)
 
         return self._build_result(candidates, trade_date, scanned)
-
-    def _calc_win_rate(self, score: float, signals: List[str]) -> float:
-        """根据评分和信号数量估算胜率"""
-        base = self.base_win_rate
-        score_bonus = (score - 50) / 100 * 0.2
-        signal_bonus = min(len(signals) * 0.03, 0.15)
-        win_rate = base + score_bonus + signal_bonus
-        return round(max(0.3, min(0.85, win_rate)), 3)
 
     def _get_name_map(self, stock_list: pd.DataFrame) -> Dict[str, str]:
         """构建 代码 -> name 映射（过滤ST股）"""
