@@ -276,7 +276,7 @@ def run_stats():
                       else g.iloc[-1]['date'].strftime('%Y%m%d'))
     dates = sorted(set(dates))
 
-    strategies = [k for k in STRATEGY_REGISTRY if k != 'limit_up_gene']
+    strategies = list(STRATEGY_REGISTRY.keys())
 
     # 加载股票列表（全市场）
     with open('/Users/jacob/personal/stock_screener/data/cache/stocks.json') as f:

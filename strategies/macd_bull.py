@@ -9,12 +9,18 @@
 核心逻辑：
   1. MACD零轴金叉（DIF>0, DEA>0, DIF>DEA）
   2. 四线多头排列（MA5>MA10>MA20>MA60）
-  3. 趋势已确立（收盘价 > MA20 且 MA20 向上）
+  3. 趋势已确立（收盘价 > MA20 且 MA60 向上）
+
+v2改进：
+  - 区分金叉阶段（刚突破/确认/延续/成熟）
+  - 检测动能衰竭风险（DIF下行、MACD柱缩小）
+  - MA20>MA60 改为 MA60斜率向上（避免冗余）
 
 信号评分：
   - MACD零轴金叉：+30（核心信号）
+  - 金叉阶段：刚突破+25 / 确认+20 / 延续+15 / 成熟+0
   - 四线多头排列：+20
-  - MA20>MA60 中期多头：+15
+  - MA60向上：+15（原MA20>MA60，避免冗余）
   - MACD柱放大（近3日）：+15
   - 价格站上MA20（趋势确认）：+10
   - 价格站上MA5（短期强势）：+5
@@ -66,6 +72,7 @@ class MACDBullStrategy(BaseStrategy):
 
         signals = []
         score = 0
+        extra_risks = []  # 策略自计算的风险标签
 
         # ── 条件1: MACD 零轴金叉（核心信号）──
         # DIF>0 且 DEA>0 且 DIF>DEA
@@ -76,12 +83,33 @@ class MACDBullStrategy(BaseStrategy):
             # 非核心信号，直接过滤
             return None
 
+        # ── 条件1b: 金叉持续天数（区分阶段）──
+        cross_days = 0
+        for j in range(i, max(i - 30, -1), -1):
+            if dif.iloc[j] > dea.iloc[j]:
+                cross_days += 1
+            else:
+                break
+
+        if cross_days <= 3:
+            signals.append("刚突破(金叉1-3天)")
+            score += 25
+        elif cross_days <= 10:
+            signals.append("趋势确认(金叉4-10天)")
+            score += 20
+        elif cross_days <= 20:
+            signals.append("趋势延续(金叉11-20天)")
+            score += 15
+        else:
+            signals.append("趋势成熟(金叉>20天)")
+            # 不加分，可能末期
+
         # ── 条件2: 四线多头排列 ──
         ma5 = mas["ma5"].iloc[i]
         ma10 = mas["ma10"].iloc[i]
         ma20 = mas["ma20"].iloc[i]
         ma60 = mas["ma60"].iloc[i]
-        
+
         if not any(pd.isna(x) for x in [ma5, ma10, ma20, ma60]):
             if ma5 > ma10 > ma20 > ma60:
                 signals.append("四线多头排列")
@@ -90,9 +118,12 @@ class MACDBullStrategy(BaseStrategy):
                 # 不满足条件，直接过滤
                 return None
 
-            # ── 条件3: MA20>MA60 中期趋势 ──
-            if ma20 > ma60:
-                signals.append("MA20>MA60中期多头")
+            # ── 条件3: MA60斜率向上 ──
+            # 原条件 MA20>MA60 冗余（四线多头已蕴含 MA20>MA60）
+            # 改为检测 MA60 是否持续向上，更有区分度
+            ma60_prev = mas["ma60"].iloc[max(0, i - 5)]
+            if not pd.isna(ma60_prev) and ma60 > ma60_prev:
+                signals.append("MA60向上(中期趋势良好)")
                 score += 15
 
         # ── 条件4: MACD 柱放大（近3日连续） ──
@@ -112,6 +143,25 @@ class MACDBullStrategy(BaseStrategy):
             signals.append("价格站上MA5")
             score += 5
 
+        # ── 新增：动能衰竭风险检测（不扣分，仅标注风险）──
+        if i >= 2:
+            # DIF连续下行（虽然仍>DEA，但趋势在减弱）
+            if dif.iloc[i] < dif.iloc[i - 1] < dif.iloc[i - 2]:
+                extra_risks.append({
+                    "type": "trend_weakening",
+                    "level": "warn",
+                    "label": "DIF走弱",
+                    "desc": "DIF连续3日下行，上涨动能减弱",
+                })
+            # MACD柱连续缩小
+            if macd_bar.iloc[i] < macd_bar.iloc[i - 1] < macd_bar.iloc[i - 2]:
+                extra_risks.append({
+                    "type": "momentum_fade",
+                    "level": "warn",
+                    "label": "柱缩小",
+                    "desc": "MACD柱连续3日缩小，多头动能衰竭",
+                })
+
         # 阈值检查
         if score < 75:
             return None
@@ -122,20 +172,21 @@ class MACDBullStrategy(BaseStrategy):
         pct = quote.get("涨跌幅", 0.0) or 0.0
         vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
 
-        win_rate = self._calc_win_rate(score, signals)
         risk_flags = _compute_risk_flags(df)
+        # 合并通用风险标签和策略自计算风险标签
+        all_risk_flags = risk_flags + extra_risks
 
         return StockSignal(
             ts_code=code,
             name=name_map.get(code, code),
             strategy=self.name,
             score=min(score, 100),
-            win_rate=win_rate,
+            win_rate=None,
             signals=signals,
             latest_price=round(float(latest), 2),
             pct_chg=round(float(pct), 2),
             volume_ratio=round(vr, 2),
-            risk_flags=risk_flags,
+            risk_flags=all_risk_flags,
             trade_date=trade_date,
             extra={
                 "dif": round(float(dif.iloc[i]), 4),
@@ -145,5 +196,6 @@ class MACDBullStrategy(BaseStrategy):
                 "ma10": round(float(ma10), 2) if not pd.isna(ma10) else None,
                 "ma20": round(float(ma20), 2) if not pd.isna(ma20) else None,
                 "ma60": round(float(ma60), 2) if not pd.isna(ma60) else None,
+                "cross_days": cross_days,
             }
         )

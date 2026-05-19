@@ -129,7 +129,7 @@ class BollingerBandsStrategy(BaseStrategy):
                 name=name_map.get(code, code),
                 strategy=self.name,
                 score=min(score, 100),
-                win_rate=self._calc_win_rate(score, signals),
+                win_rate=None,
                 signals=signals,
                 latest_price=float(quote.get("最新价", price)),
                 pct_chg=float(quote.get("涨跌幅", 0.0)),

@@ -130,7 +130,7 @@ class StrongStockStrategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=score,
-            win_rate=self._calc_win_rate(score, signals),
+            win_rate=None,
             signals=signals,
             latest_price=round(float(quote.get("最新价", latest)), 2),
             pct_chg=round(float(quote.get("涨跌幅", 0.0)), 2),

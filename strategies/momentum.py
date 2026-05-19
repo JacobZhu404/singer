@@ -4,18 +4,18 @@
 定位：识别强势股，捕捉趋势延续
 与 macd_bull/golden_cross 的区别：
   - macd_bull/golden_cross: 基于技术指标（MACD/MA金叉）
-  - momentum: 基于价格动量（过去N日涨幅排名）
+  - momentum: 基于价格动量（过去N日涨幅）
 
 核心逻辑：
-  1. 过去N日涨幅排名前10%（相对强度高）
+  1. 过去N日涨幅较高（趋势向上）
   2. 涨幅 > 0（上涨趋势）
   3. 成交量配合（量比 > 1.2）
   4. RSI未超买（< 70）
 
 信号评分：
-  - 过去5日涨幅排名前10%：+40
-  - 过去10日涨幅排名前10%：+30
-  - 过去20日涨幅排名前10%：+20
+  - 过去5日涨幅高：+40（涨幅越大分越高，封顶40）
+  - 过去10日涨幅高：+30（封顶30）
+  - 过去20日涨幅高：+20（封顶20）
   - 成交量放大（量比>1.5）：+15
   - RSI未超买（<70）：+10
   - 价格在MA20上方：+10
@@ -35,11 +35,11 @@ logger = logging.getLogger(__name__)
 class MomentumStrategy(BaseStrategy):
     """
     动量策略：
-    基于价格动量（过去N日涨幅排名），识别强势股
+    基于价格动量（过去N日涨幅强度），识别强势股
     适合趋势延续行情
     """
     name = "momentum"
-    description = "价格动量排名前10%+量能确认，捕捉趋势延续"
+    description = "价格动量强度+量能确认，捕捉趋势延续"
     base_win_rate = 0.58
 
     def __init__(self, top_n: int = 10, lookback_days: int = 20):
@@ -161,14 +161,3 @@ class MomentumStrategy(BaseStrategy):
             },
         )
 
-    def _calc_win_rate(self, score: int, signals: List[str]) -> float:
-        """计算胜率（基于历史回测）"""
-        base = self.base_win_rate
-        if score >= 90:
-            return min(base + 0.15, 0.90)
-        elif score >= 75:
-            return min(base + 0.10, 0.85)
-        elif score >= 60:
-            return min(base + 0.05, 0.75)
-        else:
-            return base

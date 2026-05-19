@@ -21,7 +21,7 @@ import numpy as np
 import logging
 
 from .base import BaseStrategy, StockSignal, _compute_risk_flags
-from ..utils.indicators import calc_volume_ratio
+
 
 logger = logging.getLogger(__name__)
 
@@ -142,12 +142,9 @@ class VolumeBreakoutStrategy(BaseStrategy):
             if len(close) >= 10 and has_breakout:
                 # 查找近10日是否有突破
                 for j in range(-10, -1):
-                    if j + 1 == 0:
-                        break
                     # 某日突破20日新高
                     if high.iloc[j] > high.iloc[j-20:j].max():
-                        # 突破后是否有回踩（价格回落到MA5或MA10附近）
-                        ma5_at_j = close.rolling(5).mean().iloc[j]
+                        # 突破后是否有回踩（价格回落到MA10附近）
                         ma10_at_j = close.rolling(10).mean().iloc[j]
                         
                         # 回踩后继续上涨
@@ -170,7 +167,7 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 name=name_map.get(code, code),
                 strategy=self.name,
                 score=min(score, 100),
-                win_rate=self._calc_win_rate(score, signals),
+                win_rate=None,
                 signals=signals,
                 latest_price=float(quote.get("最新价", price)),
                 pct_chg=float(quote.get("涨跌幅", 0.0)),
@@ -179,6 +176,13 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 trade_date=trade_date,
                 extra={
                     "vol_ratio": round(float(vol_ratio), 2),
+                    "vol_ma20": round(float(vol_ma20), 0),
+                    "high_30": round(float(high_30), 2),
+                },
+            )
+
+        except Exception as e:
+            logger.debug(f"[量价突破] {code} 计算失败: {e}")
                     "vol_ma20": round(float(vol_ma20), 0),
                     "high_30": round(float(high_30), 2),
                 },

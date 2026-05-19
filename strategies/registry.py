@@ -98,14 +98,6 @@ STRATEGY_REGISTRY = {
         "icon": "✨",
         "weight": 0.9,
     },
-    "limit_up_gene": {
-        "cls": LimitUpGeneStrategy,
-        "name": "涨停基因",
-        "description": "近期有涨停记录，涨停后未大幅回落，题材活跃",
-        "tags": ["涨停", "短线"],
-        "icon": "🔥",
-        "weight": 1.0,
-    },
 }
 
 

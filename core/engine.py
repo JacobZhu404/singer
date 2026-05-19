@@ -30,7 +30,7 @@ class ScreenEngine:
     - 统一胜率输出
     """
 
-    def __init__(self, market: str = "主板", top_n: int = 10):
+    def __init__(self, market: str = "主板", top_n: int = 20):
         self.market = market
         self.top_n = top_n
         self._stock_list: Optional[pd.DataFrame] = None
@@ -299,9 +299,9 @@ class ScreenEngine:
     def merge_results(
         self,
         results: Dict[str, ScreenResult],
-        top_n: int = 10,
-        min_single_score: int = 30,
-        min_weighted_score: int = 45,
+        top_n: int = 20,
+        min_single_score: int = 20,          # 从30降至20，降低单策略门槛
+        min_weighted_score: int = 30,        # 从45降至30，降低加权总分门槛
         market_trend: Optional[str] = None,
         market_strength: Optional[float] = None,
     ) -> List[Dict]:
@@ -350,9 +350,6 @@ class ScreenEngine:
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
             weight = meta.get("weight", 1.0)
-            # 从策略类获取基础胜率用于加权
-            strategy_cls = meta.get("cls")
-            base_win_rate = getattr(strategy_cls, "base_win_rate", 0.5) if strategy_cls else 0.5
 
             for sig in result.all_signals:
                 # ── 质量门槛1：单策略原始分过滤（使用大盘调整后的门槛）──
@@ -374,7 +371,6 @@ class ScreenEngine:
                         "strategies_hit": [],
                         "total_score": 0,
                         "weighted_score": 0.0,
-                        "max_win_rate": 0,
                         "all_signals": [],
                         "strategy_rank_sum": 0,
                         "strategy_count": 0,
@@ -392,12 +388,8 @@ class ScreenEngine:
                 # 策略内部排名加成：排名越靠前，加成越高
                 rank_bonus = (1 - rank_pct) * 15  # 第1名得15分，最后1名得0分
 
-                # 胜率加权：高胜率策略的命中贡献更大
-                win_rate_weight = 1.0 + (base_win_rate - 0.5) * 0.8  # 0.6胜率→1.08倍
-
                 entry["total_score"] += sig.score
-                entry["weighted_score"] += sig.score * weight * win_rate_weight + rank_bonus
-                entry["max_win_rate"] = max(entry["max_win_rate"], sig.win_rate)
+                entry["weighted_score"] += sig.score * weight + rank_bonus
                 entry["all_signals"].extend(sig.signals)
                 entry["strategy_rank_sum"] += rank_pct
                 entry["strategy_count"] += 1
@@ -409,7 +401,6 @@ class ScreenEngine:
                         if f["type"] not in existing:
                             entry.setdefault("_risk_flags", []).append(f)
 
-        # 叠加加成：被多策略命中则胜率额外提升
         final_list = []
         for code, entry in merged.items():
             n_strategies = len(entry["strategies_hit"])
@@ -417,9 +408,6 @@ class ScreenEngine:
             # ── 质量门槛2：加权总分过滤（使用大盘调整后的门槛）──
             if entry["weighted_score"] < adjusted_min_weighted:
                 continue
-
-            overlap_bonus = min((n_strategies - 1) * 0.05, 0.15)
-            final_win_rate = min(entry["max_win_rate"] + overlap_bonus, 0.90)
 
             # ── 轻量风险扫描（利用已缓存K线，不发新请求）────────────
             risk_tag, risk_reasons, risk_score, calc_flags = self._quick_risk_scan(code)
@@ -440,11 +428,14 @@ class ScreenEngine:
             # 计算平均排名百分比（越低越好）
             avg_rank_pct = entry["strategy_rank_sum"] / entry["strategy_count"] if entry["strategy_count"] > 0 else 1.0
 
-            # 综合评分 = 加权得分60% + 排名加成30% + 多策略共识10%
+            # 综合评分 = 加权得分50% + 排名加成20% + 多策略共识10% + 风险调整20%
+            # 基于回测负收益调整：增加风险权重，降低纯评分权重
+            risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * 20  # 风险评分也影响总分
             composite_score = (
-                entry["weighted_score"] * 0.6 +
-                (1 - avg_rank_pct) * 30 +
-                n_strategies * 5
+                entry["weighted_score"] * 0.5 +
+                (1 - avg_rank_pct) * 20 +
+                n_strategies * 5 +
+                risk_adjustment
             )
             
             # ── 根据买入风险调整综合评分 ──
@@ -454,8 +445,6 @@ class ScreenEngine:
             final_list.append({
                 **entry,
                 "n_strategies": n_strategies,
-                "final_win_rate": round(final_win_rate, 3),
-                "win_rate_pct": f"{final_win_rate * 100:.1f}%",
                 "all_signals": list(set(entry["all_signals"])),
                 # 风险信息
                 "risk_tag": risk_tag,
@@ -476,7 +465,7 @@ class ScreenEngine:
                 "avg_rank_pct": round(avg_rank_pct, 3),
             })
 
-        # 新排序：优先命中策略数，其次综合评分（加权得分+排名加成+胜率加权）
+        # 排序：命中策略数 > 综合评分
         final_list.sort(key=lambda x: (x["n_strategies"], x["composite_score"]), reverse=True)
         return final_list[:top_n]
 
@@ -676,8 +665,6 @@ class ScreenEngine:
                         "ts_code": s.ts_code,
                         "name": s.name,
                         "score": s.score,
-                        "win_rate": s.win_rate,
-                        "win_rate_pct": f"{s.win_rate * 100:.1f}%",
                         "signals": s.signals,
                         "latest_price": s.latest_price,
                         "pct_chg": s.pct_chg,

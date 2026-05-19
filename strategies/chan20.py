@@ -146,7 +146,7 @@ class Chan20Strategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=score,
-            win_rate=win_rate,
+            win_rate=None,
             signals=signals,
             latest_price=round(float(latest), 2),
             pct_chg=round(float(pct), 2),
