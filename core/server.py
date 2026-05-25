@@ -686,6 +686,27 @@ def api_portfolio_signals():
         return jsonify({"code": 1, "msg": str(e)})
 
 
+@app.route("/api/portfolio/evaluate", methods=["POST"])
+def api_portfolio_evaluate():
+    """
+    对持仓股票运行全部策略评分
+    Body: { codes: ["000001.SZ", ...] }
+    Returns: { code: 0, data: [ { ts_code, name, composite_score, strategies_hit:[...], ... } ] }
+    """
+    try:
+        body = request.get_json() or {}
+        codes = body.get("codes", [])
+        if not codes:
+            return jsonify({"code": 0, "data": []})
+
+        engine = get_engine("主板")
+        results = engine.evaluate_positions(codes)
+        return jsonify({"code": 0, "data": results})
+    except Exception as e:
+        logger.error(f"持仓策略评估失败: {e}")
+        return jsonify({"code": 1, "msg": str(e)})
+
+
 @app.route("/api/config/realtime", methods=["GET"])
 def api_get_realtime_config():
     return jsonify({"code": 0, "data": {"enabled": _enable_realtime}})
@@ -756,5 +777,4 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
 
 def run_server(host: str = "0.0.0.0", port: int = 5188, debug: bool = False):
     logger.info(f"启动股票筛选工具服务: http://{host}:{port}")
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
     app.run(host=host, port=port, debug=debug, use_reloader=False)

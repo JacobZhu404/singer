@@ -158,7 +158,7 @@ class VolumeBreakoutStrategy(BaseStrategy):
             if not (has_volume and has_breakout):
                 return None
 
-            if score < 55:
+            if score < 85:  # 收紧：55→85，控制命中数
                 return None
 
             quote = self._get_quote(scanner, code, price)
@@ -176,13 +176,6 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 trade_date=trade_date,
                 extra={
                     "vol_ratio": round(float(vol_ratio), 2),
-                    "vol_ma20": round(float(vol_ma20), 0),
-                    "high_30": round(float(high_30), 2),
-                },
-            )
-
-        except Exception as e:
-            logger.debug(f"[量价突破] {code} 计算失败: {e}")
                     "vol_ma20": round(float(vol_ma20), 0),
                     "high_30": round(float(high_30), 2),
                 },

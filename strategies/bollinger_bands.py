@@ -119,7 +119,7 @@ class BollingerBandsStrategy(BaseStrategy):
                 signals.append("接近布林上轨")
                 score += 30
 
-            if score < 45:
+            if score < 75:  # 收紧：45→75，控制命中数
                 return None
 
             quote = self._get_quote(scanner, code, float(price))

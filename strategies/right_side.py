@@ -90,10 +90,13 @@ class RightSideTradingStrategy(BaseStrategy):
                     signals.append(f"20日突破幅度过大({breakout_20_pct:.1f}%)")
                     score -= 10  # 可能已过热的，降低评分
 
-        # 60日高点突破（加分项，信号更强）
+        # 60日高点突破（核心条件）
         if has_breakout_60:
             signals.append(f"突破60日新高({high_60:.2f})")
             score += 30  # 优化：10→30（60日突破更强）
+        elif not (c > high_20 and breakout_20_pct > 1.0):
+            # 没有有效突破（20日或60日），不是右侧交易信号，直接过滤
+            return None
 
             # 优化2：突破有效性验证（突破幅度>1%）
             if breakout_60_pct > 1.0:
@@ -157,7 +160,7 @@ class RightSideTradingStrategy(BaseStrategy):
             score += 10
 
         # ── 阈值过滤 ──
-        if score < 60:  # 优化：阈值提高至60（原45）
+        if score < 90:  # 收紧：60→90，控制命中数
             return None
 
         quote = self._get_quote(scanner, code, c)

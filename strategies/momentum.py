@@ -83,10 +83,12 @@ class MomentumStrategy(BaseStrategy):
         momentum_score = 0
         signals = []
 
-        # 过去5日涨幅 > 0
-        if change_5d > 0:
+        # 过去5日涨幅 > 5%（收紧：从>0提高到>5%，过滤弱动量）
+        if change_5d > 5:
             momentum_score += min(change_5d * 2, 40)  # 最高40分
             signals.append(f"5日涨幅{change_5d:.1f}%")
+        else:
+            return None
 
         # 过去10日涨幅 > 0
         if change_10d > 0:
@@ -127,15 +129,12 @@ class MomentumStrategy(BaseStrategy):
             momentum_score += 10
 
         # ── 阈值过滤 ──
-        if momentum_score < 50:
+        if momentum_score < 85:  # 收紧：50→85，控制命中数
             return None
 
         # ── 构建返回结果 ──
         quote = self._get_quote(scanner, code, float(price_now))
         pct = quote.get("涨跌幅", 0.0) or 0.0
-
-        # 计算胜率
-        win_rate = self._calc_win_rate(momentum_score, signals)
 
         # 风险标记
         risk_flags = _compute_risk_flags(df)
@@ -145,7 +144,7 @@ class MomentumStrategy(BaseStrategy):
             name=name_map.get(code, code),
             strategy=self.name,
             score=min(int(momentum_score), 100),
-            win_rate=win_rate,
+            win_rate=None,
             signals=signals,
             latest_price=round(float(price_now), 2),
             pct_chg=round(float(pct), 2),

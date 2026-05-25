@@ -97,12 +97,9 @@ class MACDBullStrategy(BaseStrategy):
         elif cross_days <= 10:
             signals.append("趋势确认(金叉4-10天)")
             score += 20
-        elif cross_days <= 20:
-            signals.append("趋势延续(金叉11-20天)")
-            score += 15
         else:
-            signals.append("趋势成熟(金叉>20天)")
-            # 不加分，可能末期
+            # 金叉超过10天，不是趋势启动最佳窗口，直接过滤
+            return None
 
         # ── 条件2: 四线多头排列 ──
         ma5 = mas["ma5"].iloc[i]
@@ -162,8 +159,8 @@ class MACDBullStrategy(BaseStrategy):
                     "desc": "MACD柱连续3日缩小，多头动能衰竭",
                 })
 
-        # 阈值检查
-        if score < 75:
+        # 阈值检查（收紧：75→90，控制命中数在合理范围）
+        if score < 90:
             return None
 
         # ── 构建返回结果 ──

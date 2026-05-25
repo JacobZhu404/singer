@@ -622,7 +622,14 @@
       </div>
       <div id="resultArea" style="display:none">
         <div class="info-grid" id="summaryCards"></div>
-        <div class="result-tabs" id="resultTabs"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="result-tabs" id="resultTabs"></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary" onclick="exportCSV()" style="font-size:12px;padding:5px 10px;white-space:nowrap">📥 导出CSV</button>
+            <button class="btn btn-secondary" onclick="exportCol('code')" style="font-size:12px;padding:5px 10px;white-space:nowrap">📋 复制代码</button>
+            <button class="btn btn-secondary" onclick="exportCol('name')" style="font-size:12px;padding:5px 10px;white-space:nowrap">📋 复制名称</button>
+          </div>
+        </div>
         <!-- 风险过滤器（仅综合推荐 tab 显示） -->
         <div id="riskFilterBar" style="display:none;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap">
           <span style="font-size:12px;color:var(--muted);flex-shrink:0">风险过滤：</span>
@@ -642,6 +649,9 @@
       <div class="sig-summary" id="sigSummary"></div>
       <button class="analyze-btn" id="analyzeBtn" onclick="loadSellSignals()">🔮 分析卖出信号</button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <button class="btn" onclick="exportCSV()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer">📥 导出CSV</button>
+        <button class="btn" onclick="exportCol('code')" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer">📋 复制代码</button>
+        <button class="btn" onclick="exportCol('name')" style="background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer">📋 复制名称</button>
         <input id="directBuyCode" placeholder="输入股票代码" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:120px;outline:none" />
         <button class="btn btn-buy" onclick="directBuy()">📈 直接加仓</button>
       </div>
@@ -1989,6 +1999,25 @@ async function loadPortfolio() {
         total_positions: sj.data.total_positions || 0
       };
     }
+
+    // 对持仓股票运行全部策略评分
+    if (data.positions && data.positions.length > 0) {
+      try {
+        const codes = data.positions.map(p => p.code);
+        const evalResp = await fetch('/api/portfolio/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codes })
+        });
+        const evalJson = await evalResp.json();
+        if (evalJson.code === 0) {
+          data.strategyScores = evalJson.data || [];
+        }
+      } catch (ee) {
+        console.warn('持仓策略评分加载失败:', ee);
+      }
+    }
+
     lastPortfolioData = data;
     renderPortfolio(data);
     document.getElementById('positionBadge').textContent = data.account.position_count || 0;
@@ -2048,18 +2077,23 @@ function renderBuyStrategyTags(buyStrategyStr, code) {
   const ids = buyStrategyStr.split(',').map(s => s.trim()).filter(Boolean);
   if (ids.length === 0) return '<span style="color:var(--muted);font-size:12px">—</span>';
 
-  // 从最新筛选结果中查找该股票各策略的评分
-  const strategyScores = {};
-  if (lastResult && lastResult.comprehensive_picks && code) {
-    const pick = lastResult.comprehensive_picks.find(p => p.ts_code === code);
-    if (pick && pick.strategies_hit) {
-      pick.strategies_hit.forEach(sh => {
-        strategyScores[sh.id] = sh.score;
-      });
+  // 优先从持仓实时评分数据中获取，其次从最新筛选结果获取
+  let strategyScores = {};
+  let hasScoreInfo = false;
+  if (lastPortfolioData && lastPortfolioData.strategyScores && code) {
+    const evalPick = lastPortfolioData.strategyScores.find(p => p.ts_code === code);
+    if (evalPick && evalPick.strategies_hit) {
+      evalPick.strategies_hit.forEach(sh => { strategyScores[sh.id] = sh.score; });
+      hasScoreInfo = true;
     }
   }
-
-  const hasScoreInfo = Object.keys(strategyScores).length > 0;
+  if (!hasScoreInfo && lastResult && lastResult.comprehensive_picks && code) {
+    const pick = lastResult.comprehensive_picks.find(p => p.ts_code === code);
+    if (pick && pick.strategies_hit) {
+      pick.strategies_hit.forEach(sh => { strategyScores[sh.id] = sh.score; });
+      hasScoreInfo = true;
+    }
+  }
   const MIN_SCORE = 40;
 
   const tags = ids.map(id => {
@@ -2117,9 +2151,14 @@ function renderBuyStrategyTags(buyStrategyStr, code) {
 
 // ── 持仓综合状态卡片 ──────────────────────────────────────────────
 function renderPositionStatus(code, buyStrategyStr) {
-  const pick = lastResult && lastResult.comprehensive_picks
-    ? lastResult.comprehensive_picks.find(p => p.ts_code === code)
-    : null;
+  // 优先从持仓实时评分数据中获取，其次从最新筛选结果获取
+  let pick = null;
+  if (lastPortfolioData && lastPortfolioData.strategyScores) {
+    pick = lastPortfolioData.strategyScores.find(p => p.ts_code === code);
+  }
+  if (!pick && lastResult && lastResult.comprehensive_picks) {
+    pick = lastResult.comprehensive_picks.find(p => p.ts_code === code);
+  }
 
   const riskColorMap = {
     safe: '#3fb950',
@@ -2154,7 +2193,7 @@ function renderPositionStatus(code, buyStrategyStr) {
     html += `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">`;
     html += `<span style="color:var(--accent);font-weight:700">${nStrategies}策略</span>`;
     html += `<span style="color:var(--muted)">·</span>`;
-    html += `<span style="color:var(--text)">综合评分${compScore.toFixed(1)}</span>`;
+    html += `<span style="color:var(--text)">综合评分${Number(compScore).toFixed(1)}</span>`;
     html += `</div>`;
   } else {
     html += `<div style="color:var(--muted);font-size:11px">未在当前筛选中</div>`;
@@ -2212,10 +2251,10 @@ function renderSellDiag(sig) {
 }
 
 function renderPositionActions(pos) {
-  const addBtn = `<button class="btn-add" onclick="openBuyModal('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
-  const reduceBtn = `<button class="btn-sell" style="background:rgba(255,166,87,0.15);border-color:var(--orange);color:var(--orange)" onclick="reduceStock('${pos.code}','${pos.name}',${pos.shares})">减仓</button>`;
-  const clearBtn = `<button class="btn-sell" onclick="clearStock('${pos.code}','${pos.name}')">清仓</button>`;
-  return `${addBtn} ${reduceBtn} ${clearBtn}`;
+  const addBtn = `<button class="btn-add" style="width:100%;padding:4px 8px;font-size:12px" onclick="openBuyModal('${pos.code}','${pos.name}',${pos.current_price||0})">加仓</button>`;
+  const reduceBtn = `<button class="btn-sell" style="width:100%;padding:4px 8px;font-size:12px;background:rgba(255,166,87,0.15);border-color:var(--orange);color:var(--orange)" onclick="reduceStock('${pos.code}','${pos.name}',${pos.shares})">减仓</button>`;
+  const clearBtn = `<button class="btn-sell" style="width:100%;padding:4px 8px;font-size:12px" onclick="clearStock('${pos.code}','${pos.name}')">清仓</button>`;
+  return `<div style="display:flex;flex-direction:column;gap:4px;min-width:56px">${addBtn}${reduceBtn}${clearBtn}</div>`;
 }
 
 function setPortfolioSort(key) {
@@ -2330,6 +2369,7 @@ function renderPortfolio(data) {
           <th onclick="setPortfolioSort('position_pnl_pct')" style="cursor:pointer">盈亏比例<span class="sort-arrow" id="sort-position_pnl_pct"></span></th>
           <th onclick="setPortfolioSort('hold_days')" style="cursor:pointer">持仓天数<span class="sort-arrow" id="sort-hold_days"></span></th>
           <th>买入策略</th>
+          <th>综合评分</th>
           <th onclick="setPortfolioSort('current_value')" style="cursor:pointer">市值<span class="sort-arrow" id="sort-current_value"></span></th>
           <th>卖出诊断</th><th>操作</th>
         </tr>
@@ -2347,6 +2387,16 @@ function renderPortfolio(data) {
           const sig = signalMap[pos.code];
           const sellDiag = sig ? renderSellDiag(sig) : '<span style="color:var(--muted);font-size:12px">未分析</span>';
           const actions = renderPositionActions(pos);
+          // 获取该股票的实时综合评分
+          let compScoreHtml = '<span style="color:var(--muted);font-size:12px">—</span>';
+          if (lastPortfolioData && lastPortfolioData.strategyScores) {
+            const evalPick = lastPortfolioData.strategyScores.find(p => p.ts_code === pos.code);
+            if (evalPick) {
+              const sc = evalPick.composite_score || evalPick.total_score || 0;
+              const scClass = sc >= 80 ? 'score-high' : sc >= 50 ? 'score-mid' : 'score-low';
+              compScoreHtml = `<span class="score-pill ${scClass}" title="命中${evalPick.n_strategies||0}个策略 · 加权${(evalPick.weighted_score||0).toFixed(1)}">${Number(sc).toFixed(1)}</span>`;
+            }
+          }
           return `
             <tr>
               <td>${stockNameHtml(pos.code, pos.name)}</td>
@@ -2356,6 +2406,7 @@ function renderPortfolio(data) {
               <td><span style="color:${pnlPctColor};font-weight:700">${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%</span></td>
               <td class="hold-days">${holdDays}天</td>
               <td>${renderBuyStrategyTags(pos.buy_strategy, pos.code)}</td>
+              <td>${compScoreHtml}</td>
               <td>¥${(pos.current_value||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}</td>
               <td>${sellDiag}</td>
               <td style="white-space:nowrap">${actions}</td>
@@ -2471,8 +2522,13 @@ function switchTopTab(tab) {
   document.getElementById('screenArea').style.display = tab === 'screen' ? 'block' : 'none';
   document.getElementById('portfolioArea').style.display = tab === 'portfolio' ? 'block' : 'none';
   if (tab === 'portfolio') {
+    currentTab = 'portfolio';
     loadPortfolio();
-    // 重置卖出信号区域（下次 loadPortfolio 会自动触发）
+  } else {
+    // 切回选股页时，恢复 currentTab 为有效的选股内Tab
+    if (currentTab === 'portfolio' || !currentTab) {
+      currentTab = 'merged';
+    }
   }
   saveUIState();
 }
@@ -2564,18 +2620,138 @@ function notify(msg, type = 'success') {
 document.getElementById('marketSelect').addEventListener('change', saveUIState);
 document.getElementById('topnSelect').addEventListener('change', saveUIState);
 
+// ── Export ──
+function exportCSV() {
+  const tab = currentTab || 'merged';
+  let picks = [];
+  let headers = [];
+  let rows = [];
+  let tradeDate = new Date().toISOString().slice(0, 10);
+
+  if (tab === 'merged') {
+    if (!lastResult || !lastResult.comprehensive_picks || !lastResult.comprehensive_picks.length) {
+      notify('暂无数据可导出', 'warn');
+      return;
+    }
+    picks = lastResult.comprehensive_picks;
+    tradeDate = lastResult.trade_date || tradeDate;
+    headers = ['代码', '名称', '最新价', '涨跌额', '涨跌幅', '综合评分', '信号', '命中策略', '行业', '风险等级'];
+    rows = picks.map(p => [
+      p.code || '',
+      p.name || '',
+      p.price ?? '',
+      p.change ?? '',
+      p.change_pct ?? '',
+      p.score ?? '',
+      (p.signals || []).map(s => s.name || s).join(';'),
+      (p.strategies || []).map(s => strategyNameMap[s] || s).join(';'),
+      p.industry || '',
+      p.risk_tag || 'unknown'
+    ]);
+  } else if (tab === 'portfolio') {
+    if (!lastPortfolioData || !lastPortfolioData.positions || !lastPortfolioData.positions.length) {
+      notify('暂无持仓数据可导出', 'warn');
+      return;
+    }
+    picks = lastPortfolioData.positions;
+    headers = ['代码', '名称', '持仓成本', '最新价', '盈亏金额', '盈亏%', '持仓天数', '买入策略'];
+    rows = picks.map(p => [
+      p.code || '',
+      p.name || '',
+      p.avg_cost ?? '',
+      p.current_price ?? '',
+      p.position_pnl ?? '',
+      p.position_pnl_pct ?? '',
+      (() => { try { return Math.floor((new Date() - new Date(p.buy_date)) / 86400000); } catch(e) { return ''; } })(),
+      p.buy_strategy || ''
+    ]);
+  } else {
+    // 单个策略 tab
+    const detail = lastResult && lastResult.strategy_details && lastResult.strategy_details[tab];
+    if (!detail || !detail.top_stocks || !detail.top_stocks.length) {
+      notify('暂无数据可导出', 'warn');
+      return;
+    }
+    picks = detail.top_stocks;
+    tradeDate = detail.trade_date || tradeDate;
+    headers = ['代码', '名称', '最新价', '涨跌幅', '量比', '策略评分', '触发信号', '风险'];
+    rows = picks.map(s => [
+      s.ts_code || '',
+      s.name || '',
+      s.latest_price ?? '',
+      s.pct_chg ?? '',
+      s.volume_ratio ?? '',
+      s.score ?? '',
+      (s.signals || []).map(sig => sig).join(';'),
+      (s.risk_flags || []).map(f => f.label || f).join(';')
+    ]);
+  }
+
+  const esc = v => `"${String(v).replace(/"/g, '""')}"`;
+  const csv = [headers.map(esc), ...rows.map(r => r.map(esc))].map(r => r.join(',')).join('\n');
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csv], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `股票筛选_${tradeDate}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  notify('CSV 已导出', 'success');
+}
+
+function exportCol(col) {
+  // 根据当前 tab 获取对应的股票列表
+  const tab = currentTab || 'merged';
+  let picks = [];
+  let codeKey = 'code';
+  let nameKey = 'name';
+
+  if (tab === 'merged') {
+    if (!lastResult || !lastResult.comprehensive_picks || !lastResult.comprehensive_picks.length) {
+      notify('暂无数据', 'warn');
+      return;
+    }
+    picks = lastResult.comprehensive_picks;
+  } else if (tab === 'portfolio') {
+    if (!lastPortfolioData || !lastPortfolioData.positions || !lastPortfolioData.positions.length) {
+      notify('暂无持仓数据', 'warn');
+      return;
+    }
+    picks = lastPortfolioData.positions;
+  } else {
+    // 单个策略 tab
+    const detail = lastResult && lastResult.strategy_details && lastResult.strategy_details[tab];
+    if (!detail || !detail.top_stocks || !detail.top_stocks.length) {
+      notify('暂无数据', 'warn');
+      return;
+    }
+    picks = detail.top_stocks;
+    codeKey = 'ts_code';  // 单策略数据用 ts_code
+  }
+
+  const key = col === 'code' ? codeKey : nameKey;
+  const label = col === 'code' ? '代码' : '名称';
+  const text = picks.map(p => String(p[key] || '')).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    notify(`${label} 已复制（${picks.length} 只）`, 'success');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    notify(`${label} 已复制`, 'success');
+  });
+}
+
 // ── Boot ──
 init();
 </script>
 </body>
-</html>
-</html>
-</html>
-</html>
-</html>
-</html>
-</html>
-</html>
-</html>
-</html>
 </html>

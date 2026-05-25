@@ -163,7 +163,7 @@ class TencentDataSource(DataSource):
             if not klines:
                 return pd.DataFrame()
             rows = [{"date": k[0], "open": float(k[1]), "close": float(k[2]),
-                     "low": float(k[3]), "high": float(k[4]),
+                     "high": float(k[3]), "low": float(k[4]),
                      "vol": float(k[5]) if len(k) > 5 else 0.0}
                     for k in klines if isinstance(k, list) and len(k) >= 5]
             return pd.DataFrame(rows)
@@ -247,7 +247,7 @@ class EastmoneyDataSource(DataSource):
                 p = item.split(",")
                 if len(p) >= 6:
                     rows.append({"date": p[0], "open": float(p[1]), "close": float(p[2]),
-                                 "low": float(p[3]), "high": float(p[4]), "vol": float(p[5])})
+                                 "high": float(p[3]), "low": float(p[4]), "vol": float(p[5])})
             return pd.DataFrame(rows)
         except Exception as e:
             logger.debug(f"东财K线解析失败 {code}: {e}")
