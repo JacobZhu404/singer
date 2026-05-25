@@ -109,8 +109,8 @@ class GoldenCrossStrategy(BaseStrategy):
             signals.append(f"RSI偏弱({r:.0f})")
             score -= 10
 
-        # 阈值检查（比 macd_bull 低，捕捉更早信号）
-        if score < 60:
+        # 阈值检查（收紧：60→65，控制命中数）
+        if score < 65:
             return None
 
         quote = self._get_quote(scanner, code, c)

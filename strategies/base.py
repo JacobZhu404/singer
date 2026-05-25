@@ -151,14 +151,31 @@ class BaseStrategy(ABC):
 
         return self._build_result(candidates, trade_date, scanned)
 
+    @staticmethod
+    def _resolve_code_col(stock_list: pd.DataFrame) -> Optional[str]:
+        """解析股票列表中的代码列名"""
+        if "代码" in stock_list.columns:
+            return "代码"
+        if "ts_code" in stock_list.columns:
+            return "ts_code"
+        return None
+
+    @staticmethod
+    def _resolve_name_col(stock_list: pd.DataFrame) -> Optional[str]:
+        """解析股票列表中的名称列名"""
+        if "名称" in stock_list.columns:
+            return "名称"
+        if "name" in stock_list.columns:
+            return "name"
+        return None
+
     def _get_name_map(self, stock_list: pd.DataFrame) -> Dict[str, str]:
         """构建 代码 -> name 映射（过滤ST股）"""
         if stock_list.empty:
             return {}
-        code_col = "代码" if "代码" in stock_list.columns else \
-                   "ts_code" if "ts_code" in stock_list.columns else None
-        name_col = "名称" if "名称" in stock_list.columns else "name"
-        if code_col and name_col in stock_list.columns:
+        code_col = self._resolve_code_col(stock_list)
+        name_col = self._resolve_name_col(stock_list)
+        if code_col and name_col and name_col in stock_list.columns:
             valid = ~stock_list[name_col].str.contains("ST|退", na=False)
             df_clean = stock_list[valid]
             return dict(zip(df_clean[code_col].astype(str), df_clean[name_col].astype(str)))
@@ -166,8 +183,8 @@ class BaseStrategy(ABC):
 
     def _get_codes(self, stock_list: pd.DataFrame) -> List[str]:
         """从股票列表提取代码"""
-        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
-        if stock_list.empty or code_col not in stock_list.columns:
+        code_col = self._resolve_code_col(stock_list)
+        if stock_list.empty or code_col is None or code_col not in stock_list.columns:
             return []
         return stock_list[code_col].astype(str).tolist()
 
@@ -180,9 +197,32 @@ class BaseStrategy(ABC):
 
     def _build_result(self, candidates: List[StockSignal], trade_date: str,
                       scanned: int, sort_key=None) -> ScreenResult:
-        """统一构造筛选结果：signals 为 Top N 展示用，all_signals 为全量命中供合并用"""
+        """统一构造筛选结果：signals 为 Top N 展示用，all_signals 为全量命中供合并用
+
+        优化：
+        1. 命中数上限控制（单策略不超过300只）
+        2. 排名百分位评分（解决满分扎堆、增加区分度）
+        """
+        MAX_HITS = 300
         key = sort_key or (lambda x: x.score)
         candidates.sort(key=key, reverse=True)
+
+        # 命中数上限：超过300只时只保留前300
+        if len(candidates) > MAX_HITS:
+            candidates = candidates[:MAX_HITS]
+
+        # 排名百分位评分：原始分 * 0.6 + 排名加成 * 40
+        # 解决多个股票原始分都是100分的问题
+        total = len(candidates)
+        for rank, sig in enumerate(candidates, 1):
+            rank_pct = (rank - 1) / total if total > 1 else 0
+            # 排名越靠前，最终分数越高
+            # 例：原始100分排名第1 → 60 + 40 = 100
+            # 例：原始100分排名50% → 60 + 20 = 80
+            # 例：原始80分排名最后 → 48 + 0 = 48
+            sig.score = round(sig.score * 0.6 + (1 - rank_pct) * 40, 1)
+
+        candidates.sort(key=lambda x: x.score, reverse=True)
         return ScreenResult(
             strategy_name=self.name,
             strategy_desc=self.description,
@@ -191,6 +231,11 @@ class BaseStrategy(ABC):
             total_scanned=scanned,
             all_signals=candidates[:],
         )
+
+
+def _resolve_pct_col(df: pd.DataFrame) -> str:
+    """解析K线DataFrame中的涨跌幅列名"""
+    return "pct_chg" if "pct_chg" in df.columns else "daily_chg"
 
 
 def _compute_risk_flags(df: pd.DataFrame) -> list:
@@ -205,9 +250,9 @@ def _compute_risk_flags(df: pd.DataFrame) -> list:
     if df is None or len(df) < 10:
         return []
     close = df["close"].astype(float)
-    high  = df["high"].astype(float)
-    low   = df["low"].astype(float)
-    vol   = df["vol"].astype(float)
-    pct_col = "pct_chg" if "pct_chg" in df.columns else "daily_chg"
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    vol = df["vol"].astype(float)
+    pct_col = _resolve_pct_col(df)
     pct_chg = df[pct_col].astype(float) if pct_col in df.columns else pd.Series(0, index=close.index)
     return calc_risk_flags(close, high, low, vol, pct_chg)

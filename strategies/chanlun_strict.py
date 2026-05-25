@@ -804,8 +804,8 @@ class ChanlunStrictStrategy(BaseStrategy):
         if not (has_buy_point or has_divergence):
             return None
 
-        # 优化：阈值提高至55
-        if score < 55:
+        # 收紧阈值：55→65，控制命中数
+        if score < 65:
             return None
 
         # 实时行情
@@ -823,7 +823,6 @@ class ChanlunStrictStrategy(BaseStrategy):
         if analysis:
             analysis.current_pct = pct
 
-        win_rate = self._calc_win_rate(score, signals)
         risk_flags = _compute_risk_flags(df)
 
         return StockSignal(

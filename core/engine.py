@@ -2,24 +2,74 @@
 核心引擎：策略调度 + 胜率计算 + 综合推荐
 """
 
-import json
 import logging
 import threading
-from dataclasses import asdict
 from typing import List, Optional, Dict, Callable
 
 import pandas as pd
 
 from ..strategies.base import ScreenResult, StockSignal
-from ..strategies.registry import get_strategy, list_strategies, STRATEGY_REGISTRY
+from ..strategies.registry import get_strategy, STRATEGY_REGISTRY
 from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
-from ..utils.indicators import calc_macd, calc_rsi, calc_bollinger, calc_ma, calc_risk_flags
+from ..utils.indicators import calc_risk_flags
 from ..utils.market_trend import get_market_trend, get_market_trend_strength
 from ..utils.sell_signals import detect_sell_signals, assess_buy_risk
 
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# ── 模块级常量 ───────────────────────────────────────────────────────────
+
+_EMPTY_POSITION_RESULT = {
+    "ts_code": "",
+    "name": "",
+    "latest_price": None,
+    "pct_chg": 0.0,
+    "volume_ratio": None,
+    "trade_date": "",
+    "n_strategies": 0,
+    "composite_score": 0.0,
+    "weighted_score": 0.0,
+    "total_score": 0,
+    "strategies_hit": [],
+    "all_signals": [],
+    "strategy_rank_sum": 0,
+    "strategy_count": 0,
+    "risk_tag": "unknown",
+    "risk_reasons": [],
+    "risk_score": 0,
+    "risk_flags": [],
+    "sell_signals": [],
+    "sell_score": 0,
+    "stop_loss_price": None,
+    "take_profit_price": None,
+    "sell_risk_level": "unknown",
+    "buy_risk": "unknown",
+    "buy_risk_reasons": [],
+    "avg_rank_pct": 1.0,
+}
+
+
+class _ScoreWeights:
+    """综合评分权重常量"""
+    WEIGHTED = 0.5
+    RANK = 20.0
+    CONSENSUS = 5.0
+    RISK_FACTOR = 20.0
+    MARKET_STRENGTH = 3.0
+
+
+class _Thresholds:
+    """门槛常量"""
+    MIN_SINGLE_SCORE = 20
+    MIN_WEIGHTED_SCORE = 30
+    RANK_BONUS_MAX = 15.0
+    BEAR_FACTOR = 1.3
+    BULL_FACTOR = 0.9
+    RISK_SCAN_MIN_BARS = 15
+    SELL_SCAN_MIN_BARS = 20
+    BUY_RISK_MIN_BARS = 20
 
 
 class ScreenEngine:
@@ -37,28 +87,29 @@ class ScreenEngine:
         self._stop_event: Optional[threading.Event] = None
         # 进度状态（供外部轮询）
         self._progress: Dict = {
-            "phase": "idle",   # idle | prefetch | running | merging | done
+            "phase": "idle",
             "current": "",
             "current_index": 0,
             "total": 0,
             "pct": 0,
-            "strategies": {},  # name -> {status, phase, pct, hits, scanned, total_stocks}
+            "strategies": {},
         }
         self._progress_lock = threading.Lock()
 
     def _stop_requested(self) -> bool:
-        if self._stop_event is None:
-            return False
-        return self._stop_event.is_set()
+        return self._stop_event is not None and self._stop_event.is_set()
 
-    def _set_progress(self, phase: str, current: str = "", current_index: int = 0, total: int = 0, pct: int = -1):
+    def _set_progress(self, phase: str, current: str = "", current_index: int = 0,
+                      total: int = 0, pct: int = -1):
         with self._progress_lock:
+            if pct < 0:
+                pct = int(current_index / total * 100) if total > 0 else 0
             self._progress.update({
                 "phase": phase,
                 "current": current,
                 "current_index": current_index,
                 "total": total,
-                "pct": pct if pct >= 0 else int(current_index / total * 100) if total > 0 else 0,
+                "pct": pct,
             })
 
     def _set_strategy_progress(self, name: str, status: str, pct: int = 0, hits: int = 0,
@@ -86,15 +137,22 @@ class ScreenEngine:
 
     def _load_stock_list(self) -> pd.DataFrame:
         if self._stock_list is None:
-            logger.info(f"加载股票列表")
+            logger.info("加载股票列表")
             self._stock_list = get_stock_list()
         return self._stock_list
+
+    @staticmethod
+    def _get_code_name_cols(stock_list: pd.DataFrame) -> tuple:
+        """提取股票列表的代码列和名称列"""
+        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
+        name_col = "名称" if "名称" in stock_list.columns else "name"
+        return code_col, name_col
 
     def _precalc(self, stock_list: pd.DataFrame,
                  progress_callback: Optional[Callable[[str, str, int, int], None]] = None):
         """预计算指标并缓存，避免各策略重复计算"""
         from ..utils.precalc import precalc_indicators
-        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
+        code_col, _ = self._get_code_name_cols(stock_list)
         if stock_list.empty or code_col not in stock_list.columns:
             return
         codes = stock_list[code_col].astype(str).tolist()
@@ -119,7 +177,7 @@ class ScreenEngine:
     def download_data(
         self,
         force_refresh: bool = False,
-        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
     ) -> dict:
         """
         阶段1：下载/更新K线数据到缓存。
@@ -135,7 +193,7 @@ class ScreenEngine:
         stock_list = self._load_stock_list()
         market_scanner.load()
 
-        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
+        code_col, _ = self._get_code_name_cols(stock_list)
         codes = stock_list[code_col].astype(str).tolist()
 
         # 强制刷新：清空现有缓存（通过公共方法，线程安全）
@@ -151,16 +209,17 @@ class ScreenEngine:
         with self._progress_lock:
             self._progress["strategies"] = {}
 
-        if progress_callback:
-            progress_callback("prefetch", "正在加载行情数据...", 0, len(codes))
+        self._notify_progress(progress_callback, "prefetch", "正在加载行情数据...", 0, len(codes))
 
         def _on_fetch(code: str, done: int, total_codes: int):
             self._set_progress("prefetch", f"加载中 {done}/{total_codes}...", done, total_codes)
-            if progress_callback:
-                progress_callback("prefetch", f"加载K线 {done}/{total_codes}...", done, total_codes)
+            self._notify_progress(progress_callback, "prefetch",
+                                  f"加载K线 {done}/{total_codes}...", done, total_codes)
 
-        fetch_result = market_scanner.prefetch_batch(codes, days=120, max_workers=50,
-                                       progress_callback=_on_fetch)
+        fetch_result = market_scanner.prefetch_batch(
+            codes, days=120, max_workers=50, progress_callback=_on_fetch,
+            force_refresh=force_refresh,
+        )
 
         status_after = market_scanner.get_cache_status()
         after_count = status_after["memory_cached"]
@@ -173,14 +232,13 @@ class ScreenEngine:
                                f"数据更新完成，已缓存 {after_count}/{total_codes} 只"
                                f"（{len(failed_codes)}只获取失败）",
                                after_count, total_codes)
-            if progress_callback:
-                progress_callback("done",
+            self._notify_progress(progress_callback, "done",
                                   f"数据更新完成，已缓存 {after_count}/{total_codes} 只",
                                   after_count, total_codes)
         else:
             self._set_progress("done", f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
-            if progress_callback:
-                progress_callback("done", f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
+            self._notify_progress(progress_callback, "done",
+                                  f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
 
         return {"status": "ok", "cached_count": after_count, "downloaded": downloaded,
                 "failed_count": len(failed_codes)}
@@ -188,7 +246,7 @@ class ScreenEngine:
     def screen_strategies(
         self,
         strategy_names: List[str],
-        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
         on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
     ) -> Dict[str, ScreenResult]:
         """
@@ -221,8 +279,7 @@ class ScreenEngine:
             # 阶段1: 数据加载
             self._set_progress("running", name, idx - 1, total)
             self._set_strategy_progress(name, "running", 0, 0, "loading")
-            if progress_callback:
-                progress_callback("running", name, idx - 1, total)
+            self._notify_progress(progress_callback, "running", name, idx - 1, total)
 
             total_codes = 0
             try:
@@ -245,12 +302,12 @@ class ScreenEngine:
                 self._set_strategy_progress(name, "running", 99, 0, "writing", total_stocks=total_codes)
 
                 # 阶段4: 执行完成
-                self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done", total_stocks=total_codes)
+                self._set_strategy_progress(name, "done", 100, len(result.all_signals), "done",
+                                            total_stocks=total_codes)
                 if on_strategy_done:
                     on_strategy_done(name, result)
                 self._set_progress("running", name, idx, total)
-                if progress_callback:
-                    progress_callback("running", name, idx, total)
+                self._notify_progress(progress_callback, "running", name, idx, total)
             except Exception as e:
                 logger.error(f"策略 {name} 执行失败: {e}")
                 self._set_strategy_progress(name, "done", 100, 0, "done", total_stocks=total_codes)
@@ -266,15 +323,14 @@ class ScreenEngine:
                         "pct": 100,
                     }
         self._set_progress("done", "筛选完成", total, total)
-        if progress_callback:
-            progress_callback("done", "筛选完成", total, total)
+        self._notify_progress(progress_callback, "done", "筛选完成", total, total)
 
         return {"status": "ok", "results": results}
 
     def run_multi(
         self,
         strategy_names: List[str],
-        progress_callback: Optional[Callable[[str, int, int, str], None]] = None,
+        progress_callback: Optional[Callable[[str, str, int, int], None]] = None,
         force_refresh: bool = False,
         on_strategy_done: Optional[Callable[[str, ScreenResult], None]] = None,
     ) -> Dict[str, ScreenResult]:
@@ -300,8 +356,8 @@ class ScreenEngine:
         self,
         results: Dict[str, ScreenResult],
         top_n: int = 20,
-        min_single_score: int = 20,          # 从30降至20，降低单策略门槛
-        min_weighted_score: int = 30,        # 从45降至30，降低加权总分门槛
+        min_single_score: int = _Thresholds.MIN_SINGLE_SCORE,
+        min_weighted_score: int = _Thresholds.MIN_WEIGHTED_SCORE,
         market_trend: Optional[str] = None,
         market_strength: Optional[float] = None,
     ) -> List[Dict]:
@@ -320,20 +376,21 @@ class ScreenEngine:
         # ── 根据大盘趋势调整门槛 ──
         adjusted_min_single = min_single_score
         adjusted_min_weighted = min_weighted_score
-        
+
         if market_trend == "bear":
-            # 熊市：提高门槛，只保留最强信号
-            adjusted_min_single = int(min_single_score * 1.3)
-            adjusted_min_weighted = int(min_weighted_score * 1.3)
-            logger.info(f"[大盘过滤器] 熊市模式：提高门槛至 single={adjusted_min_single}, weighted={adjusted_min_weighted}")
+            adjusted_min_single = int(min_single_score * _Thresholds.BEAR_FACTOR)
+            adjusted_min_weighted = int(min_weighted_score * _Thresholds.BEAR_FACTOR)
+            logger.info(f"[大盘过滤器] 熊市模式：提高门槛至 single={adjusted_min_single}, "
+                        f"weighted={adjusted_min_weighted}")
         elif market_trend == "bull":
-            # 牛市：适当放宽门槛
-            adjusted_min_single = int(min_single_score * 0.9)
-            adjusted_min_weighted = int(min_weighted_score * 0.9)
-            logger.info(f"[大盘过滤器] 牛市模式：降低门槛至 single={adjusted_min_single}, weighted={adjusted_min_weighted}")
+            adjusted_min_single = int(min_single_score * _Thresholds.BULL_FACTOR)
+            adjusted_min_weighted = int(min_weighted_score * _Thresholds.BULL_FACTOR)
+            logger.info(f"[大盘过滤器] 牛市模式：降低门槛至 single={adjusted_min_single}, "
+                        f"weighted={adjusted_min_weighted}")
         else:
-            logger.info(f"[大盘过滤器] 中性模式：使用默认门槛 single={min_single_score}, weighted={min_weighted_score}")
-        
+            logger.info(f"[大盘过滤器] 中性模式：使用默认门槛 single={min_single_score}, "
+                        f"weighted={min_weighted_score}")
+
         # ── 预计算每个策略内部排名 ──
         strategy_rank_info = {}
         for strategy_name, result in results.items():
@@ -386,7 +443,7 @@ class ScreenEngine:
                 })
 
                 # 策略内部排名加成：排名越靠前，加成越高
-                rank_bonus = (1 - rank_pct) * 15  # 第1名得15分，最后1名得0分
+                rank_bonus = (1 - rank_pct) * _Thresholds.RANK_BONUS_MAX
 
                 entry["total_score"] += sig.score
                 entry["weighted_score"] += sig.score * weight + rank_bonus
@@ -409,14 +466,17 @@ class ScreenEngine:
             if entry["weighted_score"] < adjusted_min_weighted:
                 continue
 
-            # ── 轻量风险扫描（利用已缓存K线，不发新请求）────────────
-            risk_tag, risk_reasons, risk_score, calc_flags = self._quick_risk_scan(code)
+            # ── 一次性获取K线，复用于三个扫描 ──
+            df = market_scanner.get_history(code, days=60)
+
+            # ── 轻量风险扫描 ──
+            risk_tag, risk_reasons, risk_score, calc_flags = self._quick_risk_scan(code, df)
 
             # ── 卖出信号扫描 ──
-            sell_info = self._quick_sell_scan(code)
-            
+            sell_info = self._quick_sell_scan(code, df)
+
             # ── 买入风险评估（基于卖出信号）──
-            buy_risk_info = self._quick_buy_risk_assess(code)
+            buy_risk_info = self._quick_buy_risk_assess(code, df)
 
             # 合并策略计算的 risk_flags 和 K线计算的
             all_flags = entry.pop("_risk_flags", [])
@@ -426,21 +486,20 @@ class ScreenEngine:
                     all_flags.append(f)
 
             # 计算平均排名百分比（越低越好）
-            avg_rank_pct = entry["strategy_rank_sum"] / entry["strategy_count"] if entry["strategy_count"] > 0 else 1.0
+            avg_rank_pct = (entry["strategy_rank_sum"] / entry["strategy_count"]
+                            if entry["strategy_count"] > 0 else 1.0)
 
-            # 综合评分 = 加权得分50% + 排名加成20% + 多策略共识10% + 风险调整20%
-            # 基于回测负收益调整：增加风险权重，降低纯评分权重
-            risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * 20  # 风险评分也影响总分
+            # 综合评分 = 加权得分 + 排名加成 + 多策略共识 + 风险调整 + 大盘强度
+            risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * _ScoreWeights.RISK_FACTOR
+            market_strength_adj = market_strength * _ScoreWeights.MARKET_STRENGTH if market_strength is not None else 0
             composite_score = (
-                entry["weighted_score"] * 0.5 +
-                (1 - avg_rank_pct) * 20 +
-                n_strategies * 5 +
-                risk_adjustment
+                entry["weighted_score"] * _ScoreWeights.WEIGHTED +
+                (1 - avg_rank_pct) * _ScoreWeights.RANK +
+                n_strategies * _ScoreWeights.CONSENSUS +
+                risk_adjustment +
+                market_strength_adj
             )
-            
-            # ── 根据买入风险调整综合评分 ──
-            composite_score += buy_risk_info["adjustment"]
-            composite_score = max(composite_score, 0)  # 不低于0
+            composite_score = max(composite_score, 0)
 
             final_list.append({
                 **entry,
@@ -469,38 +528,36 @@ class ScreenEngine:
         final_list.sort(key=lambda x: (x["n_strategies"], x["composite_score"]), reverse=True)
         return final_list[:top_n]
 
-    def _quick_risk_scan(self, code: str):
+    def _quick_risk_scan(self, code: str, df: Optional[pd.DataFrame] = None):
         """
         轻量风险扫描：利用已缓存的K线快速判断是否存在卖出风险。
         不发任何新网络请求——仅读取内存缓存。
-        使用统一的 calc_risk_flags 计算。
 
+        Args:
+            code: 股票代码
+            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
         Returns:
-            (risk_tag, risk_reasons, risk_score)
-            risk_tag: "safe" | "watch" | "conflict" | "high_risk"
-            risk_reasons: List[str]  具体风险描述
-            risk_score: int  0-100，越高风险越大
+            (risk_tag, risk_reasons, risk_score, risk_flags)
         """
         try:
-            df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < 15:
+            if df is None:
+                df = market_scanner.get_history(code, days=60)
+            if df is None or df.empty or len(df) < _Thresholds.RISK_SCAN_MIN_BARS:
                 return "unknown", [], 0, []
 
             close = df["close"].astype(float)
-            high  = df["high"].astype(float)
-            low   = df["low"].astype(float)
-            vol   = df["vol"].astype(float)
+            high = df["high"].astype(float)
+            low = df["low"].astype(float)
+            vol = df["vol"].astype(float)
             pct_col = "pct_chg" if "pct_chg" in df.columns else "daily_chg"
             pct_chg = df[pct_col].astype(float) if pct_col in df.columns else pd.Series(0, index=close.index)
 
             flags = calc_risk_flags(close, high, low, vol, pct_chg)
 
-            # 计算风险评分：danger=25分/warn=12分
             score = sum(25 if f["level"] == "danger" else 12 for f in flags)
             score = min(score, 100)
             reasons = [f["desc"] for f in flags]
 
-            # 标签
             if score >= 50:
                 tag = "high_risk"
             elif score >= 28:
@@ -516,17 +573,20 @@ class ScreenEngine:
             logger.debug(f"风险扫描 {code} 失败: {e}")
             return "unknown", [], 0, []
 
-    def _quick_sell_scan(self, code: str) -> dict:
+    def _quick_sell_scan(self, code: str, df: Optional[pd.DataFrame] = None) -> dict:
         """
         卖出信号快速扫描：利用已缓存的K线检测卖出信号
-        不发任何新网络请求——仅读取内存缓存
-        
+
+        Args:
+            code: 股票代码
+            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
         Returns:
-            dict: detect_sell_signals() 的返回值
+            detect_sell_signals() 的返回值
         """
         try:
-            df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < 20:
+            if df is None:
+                df = market_scanner.get_history(code, days=60)
+            if df is None or df.empty or len(df) < _Thresholds.SELL_SCAN_MIN_BARS:
                 return {
                     "has_sell_signal": False,
                     "sell_signals": [],
@@ -535,10 +595,9 @@ class ScreenEngine:
                     "take_profit_price": None,
                     "risk_level": "unknown",
                 }
-            
-            sell_info = detect_sell_signals(df)
-            return sell_info
-            
+
+            return detect_sell_signals(df)
+
         except Exception as e:
             logger.debug(f"卖出信号扫描 {code} 失败: {e}")
             return {
@@ -550,24 +609,28 @@ class ScreenEngine:
                 "risk_level": "unknown",
             }
 
-    def _quick_buy_risk_assess(self, code: str) -> dict:
+    def _quick_buy_risk_assess(self, code: str, df: Optional[pd.DataFrame] = None) -> dict:
         """
         买入风险评估：基于卖出信号评估买入风险
-        
+
+        Args:
+            code: 股票代码
+            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
         Returns:
-            dict: assess_buy_risk() 的返回值
+            assess_buy_risk() 的返回值
         """
         try:
-            df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < 20:
+            if df is None:
+                df = market_scanner.get_history(code, days=60)
+            if df is None or df.empty or len(df) < _Thresholds.BUY_RISK_MIN_BARS:
                 return {
                     "buy_risk": "unknown",
                     "risk_reasons": [],
                     "adjustment": 0,
                 }
-            
+
             return assess_buy_risk(df)
-            
+
         except Exception as e:
             logger.debug(f"买入风险评估 {code} 失败: {e}")
             return {
@@ -598,30 +661,40 @@ class ScreenEngine:
             self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
         else:
             self._set_progress("prefetch", "使用缓存数据，跳过下载", 30, 100)
-            if progress_callback:
-                progress_callback("prefetch", "使用缓存数据，跳过下载", 30, 100)
-        logger.info(f"[{datetime.now()}] 阶段1完成, 耗时: {datetime.now()-_t0}")
+            self._notify_progress(progress_callback, "prefetch", "使用缓存数据，跳过下载", 30, 100)
+        _t1 = datetime.now()
+        logger.info(f"阶段1完成, 耗时: {_t1 - _t0}")
 
         # 阶段1.5：预计算指标（按需，非阻塞）
-        # 强制关闭实时行情，只用本地缓存，避免 precalc 发起网络请求
+        # 若开启实时数据，先批量获取全市场实时行情存入临时缓存，
+        # 避免预计算阶段逐只请求触发限流
         _orig_include = market_scanner._include_realtime
-        market_scanner._include_realtime = False
+        if _orig_include and not skip_download:
+            stock_list = self._load_stock_list()
+            code_col, _ = self._get_code_name_cols(stock_list)
+            all_codes = stock_list[code_col].astype(str).tolist()
+            logger.info(f"批量获取实时行情: {len(all_codes)}只")
+            realtime_map = market_scanner.get_realtime_batch(all_codes)
+            market_scanner._realtime_batch = realtime_map
+            logger.info(f"实时行情获取完成: {len(realtime_map)}只")
+
+        market_scanner._include_realtime = True
         try:
             stock_list = self._load_stock_list()
-            _t1 = datetime.now()
+            _t2 = datetime.now()
             self._precalc(stock_list, progress_callback=progress_callback)
-            logger.info(f"[{datetime.now()}] 阶段1.5完成, 耗时: {datetime.now()-_t1}")
+            logger.info(f"阶段1.5完成, 耗时: {_t2 - _t0}")
         finally:
             market_scanner._include_realtime = _orig_include
+            # 清空批量实时行情临时缓存
+            market_scanner._realtime_batch.clear()
 
         # 阶段2：串行运行策略（每个策略内部已并行）
-        _t2 = datetime.now()
-        # 包装回调：screen_strategies 内部的 done 不代表整个流程完成
         _wrapped_cb = None
         if progress_callback:
-            def _wrapped_cb(phase, current, idx, total):
+            def _wrapped_cb(phase, message, idx, total):
                 if phase != "done":
-                    progress_callback(phase, current, idx, total)
+                    progress_callback(phase, message, idx, total)
         results = self.screen_strategies(
             strategies,
             progress_callback=_wrapped_cb,
@@ -630,31 +703,115 @@ class ScreenEngine:
 
         # 阶段3: 结果合并中
         self._set_progress("merging", "正在合并结果...", 0, 100)
-        if progress_callback:
-            progress_callback("merging", "正在合并结果...", 0, 100)
-        
+        self._notify_progress(progress_callback, "merging", "正在合并结果...", 0, 100)
+
         # 获取大盘趋势
         logger.info("[大盘过滤器] 正在判断大盘趋势...")
         market_trend = get_market_trend(market_scanner)
         market_strength = get_market_trend_strength(market_scanner)
         logger.info(f"[大盘过滤器] 大盘趋势: {market_trend}, 强度: {market_strength:.2f}")
-        
+
         merged = self.merge_results(
-            results, 
+            results,
             top_n=top_n,
             market_trend=market_trend,
-            market_strength=market_strength
+            market_strength=market_strength,
         )
         self._set_progress("merging", "结果合并完成", 100, 100)
-        if progress_callback:
-            progress_callback("merging", "结果合并完成", 100, 100)
+        self._notify_progress(progress_callback, "merging", "结果合并完成", 100, 100)
         # 最终 done：整个流程真正完成
-        if progress_callback:
-            progress_callback("done", "筛选完成", len(strategies), len(strategies))
+        self._notify_progress(progress_callback, "done", "筛选完成", len(strategies), len(strategies))
 
-        strategy_summaries = {}
+        strategy_summaries = self._build_strategy_summaries(results)
+
+        return {
+            "trade_date": get_latest_trade_date(),
+            "strategies_run": strategies,
+            "comprehensive_picks": merged,
+            "strategy_details": strategy_summaries,
+        }
+
+    def evaluate_positions(
+        self,
+        codes: List[str],
+        strategies: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        对持仓股票运行全部策略评估，返回每只股票的综合评分和各策略命中详情。
+        与 get_recommendation 的区别：只评估指定股票，不扫描全市场。
+        """
+        if strategies is None:
+            strategies = [k for k in STRATEGY_REGISTRY.keys() if k != "limit_up_gene"]
+
+        market_scanner.load()
+        trade_date = get_latest_trade_date()
+
+        # 构建代码 -> 名称 映射
+        stock_list = self._load_stock_list()
+        name_map = {}
+        code_col, name_col = self._get_code_name_cols(stock_list)
+        if code_col in stock_list.columns and name_col in stock_list.columns:
+            for _, row in stock_list.iterrows():
+                name_map[str(row[code_col])] = str(row[name_col])
+
+        # 逐策略评估持仓股票
+        per_strategy_results: Dict[str, ScreenResult] = {}
+        for strategy_name in strategies:
+            strategy = get_strategy(strategy_name, top_n=self.top_n)
+            signals = []
+            for code in codes:
+                try:
+                    sig = strategy._evaluate_single_stock(
+                        code, market_scanner, name_map, trade_date
+                    )
+                    if sig is not None:
+                        signals.append(sig)
+                except Exception as e:
+                    logger.debug(f"[持仓评估] {strategy_name} {code} 失败: {e}")
+
+            per_strategy_results[strategy_name] = ScreenResult(
+                strategy_name=strategy_name,
+                strategy_desc=STRATEGY_REGISTRY.get(strategy_name, {}).get("description", ""),
+                signals=signals,
+                trade_date=trade_date,
+                total_scanned=len(codes),
+                all_signals=signals[:],
+            )
+
+        # 合并结果生成综合评分（复用 merge_results）
+        market_trend = get_market_trend(market_scanner)
+        market_strength = get_market_trend_strength(market_scanner)
+        merged = self.merge_results(
+            per_strategy_results,
+            top_n=len(codes),
+            market_trend=market_trend,
+            market_strength=market_strength,
+        )
+
+        # 构建 code -> result 映射
+        result_map = {m["ts_code"]: m for m in merged}
+
+        # 为未命中任何策略的股票也填充基础信息
+        for code in codes:
+            if code not in result_map:
+                result_map[code] = {**_EMPTY_POSITION_RESULT, "ts_code": code,
+                                    "name": name_map.get(code, code), "trade_date": trade_date}
+
+        return list(result_map.values())
+
+    @staticmethod
+    def _notify_progress(callback: Optional[Callable], phase: str, message: str,
+                         current: int, total: int):
+        """安全调用进度回调"""
+        if callback:
+            callback(phase, message, current, total)
+
+    @staticmethod
+    def _build_strategy_summaries(results: Dict[str, ScreenResult]) -> dict:
+        """构建策略摘要，供前端展示用"""
+        summaries = {}
         for name, result in results.items():
-            strategy_summaries[name] = {
+            summaries[name] = {
                 "strategy_name": result.strategy_name,
                 "strategy_desc": result.strategy_desc,
                 "trade_date": result.trade_date,
@@ -674,10 +831,4 @@ class ScreenEngine:
                     for s in result.signals
                 ]
             }
-
-        return {
-            "trade_date": get_latest_trade_date(),
-            "strategies_run": strategies,
-            "comprehensive_picks": merged,
-            "strategy_details": strategy_summaries,
-        }
+        return summaries

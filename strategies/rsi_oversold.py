@@ -97,8 +97,8 @@ class RSIOversoldStrategy(BaseStrategy):
                     trend_penalty = 15
                     score -= trend_penalty
             
-            # ── 优化3: 提高阈值 45→55 ──
-            if score < 55:
+            # 阈值收紧：55→60，确保超卖信号质量
+            if score < 60:
                 return None
 
             quote = self._get_quote(scanner, code, float(close.iloc[-1]))

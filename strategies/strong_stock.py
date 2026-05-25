@@ -69,9 +69,14 @@ class StrongStockStrategy(BaseStrategy):
                 up_vol += v
             else:
                 down_vol += v
+        has_red_fat = False
         if down_vol > 0 and up_vol / (down_vol + 1e-8) > 2.0:  # 从 1.5 提高到 2.0
             signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
             score += 20
+            has_red_fat = True
+        else:
+            # 红肥绿瘦是强势股核心特征，不满足直接过滤
+            return None
 
         if i >= 4 and all(red.iloc[i - k] for k in range(5)) and \
            all(not pd.isna(pct_chg.iloc[i - k]) and
@@ -113,7 +118,7 @@ class StrongStockStrategy(BaseStrategy):
                 signals.append(f"相对强度弱(+{rel_strength:.1f}%)")
                 score += 5
 
-        if score < 50:  # 从 30 提高到 50（根据回测结果优化）
+        if score < 80:  # 收紧：50→80，控制命中数
             return None
 
         latest = close.iloc[i]

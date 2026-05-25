@@ -139,7 +139,6 @@ class Chan20Strategy(BaseStrategy):
         quote = self._get_quote(scanner, code, float(latest))
         pct = quote.get("涨跌幅", 0.0) or 0.0
 
-        win_rate = self._calc_win_rate(score, signals)
         risk_flags = _compute_risk_flags(df)
         return StockSignal(
             ts_code=code,

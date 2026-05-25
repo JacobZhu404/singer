@@ -18,6 +18,45 @@ _lazy_cache = None
 _lazy_manager = None
 
 
+# ── 公共列名标准化 ─────────────────────────────────────────────────────────
+
+# 代码列的可能名称（按优先级）
+_CODE_ALIASES = ("symbol", "code", "代码", "股票代码")
+# 名称列的可能名称（按优先级）
+_NAME_ALIASES = ("name", "名称", "股票名称")
+
+
+def normalize_stock_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    标准化股票 DataFrame 列名：
+    - 代码相关列统一为 'ts_code'
+    - 名称相关列统一为 'name'
+    返回一个新的 DataFrame（不修改原表）。
+    """
+    if df.empty:
+        return df.copy()
+
+    rename = {}
+    for col in list(df.columns):
+        if col in _CODE_ALIASES:
+            rename[col] = "ts_code"
+        elif col in _NAME_ALIASES:
+            rename[col] = "name"
+
+    if rename:
+        df = df.rename(columns=rename)
+
+    # 兜底：按位置索引
+    if "ts_code" not in df.columns and len(df.columns) >= 1:
+        df = df.rename(columns={df.columns[0]: "ts_code"})
+    if "name" not in df.columns and len(df.columns) >= 2:
+        df = df.rename(columns={df.columns[1]: "name"})
+
+    return df
+
+
+# ── 延迟加载辅助 ───────────────────────────────────────────────────────────
+
 def _get_cache():
     global _lazy_cache
     if _lazy_cache is None:
@@ -33,6 +72,8 @@ def _get_manager():
         _lazy_manager = data_manager
     return _lazy_manager
 
+
+# ── 单只股票数据接口 ───────────────────────────────────────────────────────
 
 def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
     """
@@ -72,34 +113,13 @@ def get_stock_list() -> pd.DataFrame:
 
     cached = cache.get_cached_stock_list()
     if not cached.empty:
-        # 标准化列名：支持中文列名或旧编码列名
-        rename = {}
-        for col in list(cached.columns):
-            if col in ("symbol", "code", "代码", "股票代码"):
-                rename[col] = "ts_code"
-            elif col in ("name", "名称", "股票名称"):
-                rename[col] = "name"
-        if rename:
-            cached = cached.rename(columns=rename)
-        # 兜底：如果列名仍是乱码，尝试用位置索引
-        if "ts_code" not in cached.columns and len(cached.columns) >= 1:
-            cached = cached.rename(columns={cached.columns[0]: "ts_code"})
-        if "name" not in cached.columns and len(cached.columns) >= 2:
-            cached = cached.rename(columns={cached.columns[1]: "name"})
-        logger.info(f"股票列表(缓存): {len(cached)} 只")
-        return cached
+        df = normalize_stock_columns(cached)
+        logger.info(f"股票列表(缓存): {len(df)} 只")
+        return df
 
     df = manager.get_stock_list()
     if not df.empty:
-        # 标准化列名
-        rename = {}
-        for col in list(df.columns):
-            if col in ("symbol", "code", "代码", "股票代码"):
-                rename[col] = "ts_code"
-            elif col in ("name", "名称", "股票名称"):
-                rename[col] = "name"
-        if rename:
-            df = df.rename(columns=rename)
+        df = normalize_stock_columns(df)
         cache.save_stock_list(df)
     return df
 
@@ -139,7 +159,6 @@ def get_limit_list(trade_date: Optional[str] = None) -> pd.DataFrame:
                 break
             # 解析JS对象格式
             import re, json
-            # 提取数组部分
             m = re.search(r'\[(.+)\]', text, re.DOTALL)
             if not m:
                 break
@@ -161,17 +180,7 @@ def get_limit_list(trade_date: Optional[str] = None) -> pd.DataFrame:
         elif "pct_chg" in df.columns:
             df = df[df["pct_chg"] >= 9.5]
 
-        # 标准化列名
-        rename = {}
-        for col in df.columns:
-            if col in ("symbol", "code", "代码"):
-                rename[col] = "ts_code"
-            elif col in ("name", "名称"):
-                rename[col] = "name"
-        if rename:
-            df = df.rename(columns=rename)
-
-        return df.reset_index(drop=True)
+        return normalize_stock_columns(df).reset_index(drop=True)
     except Exception as e:
         logger.debug(f"获取涨停股列表失败: {e}")
         return pd.DataFrame()
@@ -191,7 +200,9 @@ class MarketScanner:
         self._indicator_cache: Dict[str, Dict[str, Any]] = {}  # 代码 → 预计算指标
         self._lock = threading.Lock()
         self._include_realtime: bool = True
-        self._max_cache_size: int = 2000   # ⚡ 优化：内存缓存上限，防止内存溢出
+        self._max_cache_size: int = 4000   # 内存缓存上限，覆盖全市场A股（约3300+只）
+        # 批量实时行情临时缓存（预计算阶段使用，避免逐只请求限流）
+        self._realtime_batch: Dict[str, dict] = {}
 
     def load(self) -> bool:
         self._loaded = True
@@ -206,7 +217,6 @@ class MarketScanner:
         # ── 优化：LRU淘汰防止内存溢出 ──
         with self._lock:
             if len(self._kline_cache) >= self._max_cache_size:
-                # 删除最早插入的20%条目
                 evict_n = self._max_cache_size // 5
                 evict_keys = list(self._kline_cache.keys())[:evict_n]
                 for k in evict_keys:
@@ -220,17 +230,14 @@ class MarketScanner:
                 cached = self._kline_cache[code6]
                 last_date = str(cached["date"].iloc[-1]).split()[0]
                 if pure:
-                    # pure 模式：只有缓存不含今日数据时才直接返回（含实时合并的缓存要绕过）
                     if last_date != today:
                         return cached
                     # 被实时污染了，继续走下面的逻辑重新获取纯历史
                 elif self._include_realtime:
-                    # 非 pure + 开关开启：只有缓存已有今天数据才直接返回
                     if last_date == today:
                         return cached
                     # 否则继续重新获取并合并
                 else:
-                    # 开关关闭：直接返回缓存（纯历史）
                     return cached
         df = get_stock_history(code6, days)
         if not df.empty and not pure and self._include_realtime:
@@ -247,6 +254,7 @@ class MarketScanner:
         days: int = 60,
         max_workers: int = 50,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
+        force_refresh: bool = False,
     ) -> Dict:
         """
         并发预加载K线到内存缓存，带自动补全机制。
@@ -256,6 +264,8 @@ class MarketScanner:
           第2轮：低并发(15)补全第1轮失败的
           第3轮：串行补全剩余的（每次间隔1s避免限流）
 
+        Args:
+            force_refresh: True=强制从网络重新下载，忽略本地缓存
         Returns: {"cached": int, "failed": list, "total": int}
         """
         def to6(c: str) -> str:
@@ -271,23 +281,27 @@ class MarketScanner:
             logger.info("预加载K线: 全部命中缓存")
             return {"cached": len(all_codes), "failed": [], "total": len(all_codes)}
 
-        logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
+        if force_refresh:
+            logger.info(f"强制刷新模式: {len(all_codes)}只股票将全部从网络重新下载")
+            need_fetch = all_codes
+        else:
+            logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
 
         # 第1轮：高并发快速下载
         failed = self._fetch_round(need_fetch, days, max_workers, "第1轮",
-                                   progress_callback)
+                                   progress_callback, force_refresh=force_refresh)
 
         # 第2轮：中并发补全
         if failed:
             logger.info(f"第1轮完成，{len(failed)}只失败，启动第2轮补全(并发15)")
             failed = self._fetch_round(failed, days, 15, "第2轮",
-                                       progress_callback)
+                                       progress_callback, force_refresh=force_refresh)
 
         # 第3轮：串行补全（每只间隔1s）
         if failed:
             logger.info(f"第2轮后仍有{len(failed)}只失败，启动第3轮串行补全")
             failed = self._fetch_round(failed, days, 1, "第3轮",
-                                       progress_callback)
+                                       progress_callback, force_refresh=force_refresh)
 
         if failed:
             logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
@@ -295,7 +309,8 @@ class MarketScanner:
         cache = _get_cache()
         with self._lock:
             mem_count = len(self._kline_cache)
-        logger.info(f"K线缓存完成: 内存{mem_count}只 | 本地{cache.get_cache_status()['total_stocks']}只 | 失败{len(failed)}只")
+        logger.info(f"K线缓存完成: 内存{mem_count}只 | "
+                    f"本地{cache.get_cache_status()['total_stocks']}只 | 失败{len(failed)}只")
 
         if progress_callback:
             progress_callback("完成", mem_count, len(all_codes))
@@ -303,7 +318,7 @@ class MarketScanner:
         return {"cached": mem_count, "failed": failed or [], "total": len(all_codes)}
 
     def _fetch_round(self, codes: List[str], days: int, workers: int,
-                     round_label: str, callback=None) -> List[str]:
+                     round_label: str, callback=None, force_refresh: bool = False) -> List[str]:
         """单轮下载，返回失败的代码列表"""
         done_count = 0
         total = len(codes)
@@ -311,15 +326,31 @@ class MarketScanner:
 
         def _fetch_one(code6: str):
             nonlocal done_count
-            df = get_stock_history(code6, days)
-
-            # 重试逻辑：最多重试3次，递增延迟
-            retry_delays = [0.5, 1.0, 2.0]
-            for delay in retry_delays:
+            if force_refresh:
+                # 强制刷新：跳过本地缓存，直接请求网络
+                manager = _get_manager()
+                df = manager.get_kline(code6, days)
+                # 强制模式下也重试
+                retry_delays = [0.5, 1.0, 2.0]
+                for delay in retry_delays:
+                    if not df.empty:
+                        break
+                    time.sleep(delay)
+                    df = manager.get_kline(code6, days)
+                # 写入本地缓存（更新本地数据）
                 if not df.empty:
-                    break
-                time.sleep(delay)
+                    cache = _get_cache()
+                    cache.merge_kline_to_cache(code6, df)
+            else:
                 df = get_stock_history(code6, days)
+
+                # 重试逻辑：最多重试3次，递增延迟
+                retry_delays = [0.5, 1.0, 2.0]
+                for delay in retry_delays:
+                    if not df.empty:
+                        break
+                    time.sleep(delay)
+                    df = get_stock_history(code6, days)
 
             with self._lock:
                 done_count += 1
@@ -387,14 +418,7 @@ class MarketScanner:
             if not rows:
                 return pd.DataFrame()
             df = pd.DataFrame(rows)
-            # 标准化列名
-            col_map = {}
-            for c in df.columns:
-                if c in ("symbol", "code", "代码"):
-                    col_map[c] = "ts_code"
-                elif c in ("name", "名称"):
-                    col_map[c] = "name"
-            return df.rename(columns=col_map) if col_map else df
+            return normalize_stock_columns(df)
         except Exception as e:
             logger.debug(f"get_realtime_quotes_sina page={page} failed: {e}")
             return pd.DataFrame()
@@ -455,13 +479,13 @@ class MarketScanner:
 
             result = {
                 "kline": df,
-                "macd": macd,          # (dif, dea, bar)
-                "rsi": rsi,            # Series
-                "ma": ma,               # {ma5, ma10, ...}
+                "macd": macd,
+                "rsi": rsi,
+                "ma": ma,
                 "bollinger": {"upper": bb_upper, "mid": bb_mid, "lower": bb_lower},
-                "vol_ratio": vr,        # Series
-                "td_count": td,         # Series
-                "skdj": (sk, sd),       # (sk, sd)
+                "vol_ratio": vr,
+                "td_count": td,
+                "skdj": (sk, sd),
             }
 
             with self._lock:
@@ -522,21 +546,23 @@ class MarketScanner:
         """
         将实时行情合成到K线末尾，让策略能基于当天盘中数据计算。
         仅在交易日盘中有效，非交易日不合并。
+        优先使用批量实时行情缓存（预计算阶段），没有再单只查询。
         """
         if df.empty or "date" not in df.columns:
             return df
         today = datetime.now().strftime("%Y-%m-%d")
-        # 避免重复合并（兼容 date 为字符串或 datetime64 两种格式）
         last_date = str(df["date"].iloc[-1]).split()[0]
         if last_date == today:
             return df
-        quote = self.get_realtime(code6)
+        # 优先使用批量实时行情缓存，避免逐只请求限流
+        quote = self._realtime_batch.get(code6)
+        if quote is None:
+            quote = self.get_realtime(code6)
         if not quote:
             return df
         price = quote.get("最新价", 0)
         if price <= 0:
             return df
-        # 判断今天是否有交易：有成交量或涨跌幅非零
         vol = quote.get("成交量", 0)
         pct = quote.get("涨跌幅", 0)
         if vol <= 0 and abs(pct) < 0.01:
@@ -544,12 +570,9 @@ class MarketScanner:
         open_price = quote.get("今开", price)
         high_price = quote.get("最高价", max(open_price, price))
         low_price = quote.get("最低价", min(open_price, price))
-        # 成交量用预估全天量，避免早盘量比被严重低估
         est_vol = self._estimate_full_day_volume(vol)
-        # 构造今日K线行（与历史K线列对齐）
         row = {"date": today, "open": open_price, "close": price,
                "high": high_price, "low": low_price, "vol": est_vol}
-        # 兼容可能的额外列（如 pct_chg）
         for col in df.columns:
             if col not in row:
                 if col in ("pct_chg", "daily_chg"):
