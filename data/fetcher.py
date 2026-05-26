@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # 延迟导入避免循环依赖
 _lazy_cache = None
 _lazy_manager = None
+_lazy_tdx = None
 
 
 # ── 公共列名标准化 ─────────────────────────────────────────────────────────
@@ -73,29 +74,56 @@ def _get_manager():
     return _lazy_manager
 
 
+def _get_tdx():
+    global _lazy_tdx
+    if _lazy_tdx is None:
+        from . import tdx_offline
+        _lazy_tdx = tdx_offline.tdx_store
+    return _lazy_tdx
+
+
 # ── 单只股票数据接口 ───────────────────────────────────────────────────────
 
 def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
     """
-    获取单只股票历史K线（本地缓存 → 网络多源降级）
+    获取单只股票历史K线
+    优先级：通达信离线 → 本地CSV缓存 → 网络多源降级
     """
     cache = _get_cache()
     manager = _get_manager()
-    code6 = str(code).strip().replace("sh", "").replace("sz", "")
+    code6 = str(code).strip().replace("sh", "").replace("sz", "").replace("bj", "")
 
+    # ── 第0层：通达信离线数据 ──
+    tdx = _get_tdx()
+    tdx_df = tdx.get_kline(code6, days)
+    if not tdx_df.empty and len(tdx_df) >= days:
+        last_date = tdx_df["date"].iloc[-1]
+        try:
+            age_days = (datetime.now() - pd.to_datetime(last_date)).days
+        except Exception:
+            age_days = 99
+        if age_days <= 3:
+            logger.debug(f"TDX命中: {code6}, 最新={last_date}, 距今{age_days}天")
+            return tdx_df.reset_index(drop=True)
+
+    # ── 第1层：本地CSV缓存 ──
     cached = cache.get_cached_kline(code6)
     if not cached.empty:
         cached_days = len(cached)
         if cached_days >= days and not cache.needs_update(code6, max_age_hours=4):
             return cached.tail(days).reset_index(drop=True)
         days = max(days, days - cached_days + 10)
-
+        
     df = manager.get_kline(code6, days)
     if df.empty:
+        if not tdx_df.empty:
+            logger.warning(f"网络失败，使用通达信离线数据: {code6}")
+            return tdx_df.tail(days).reset_index(drop=True)
         if not cached.empty:
             logger.warning(f"网络失败，使用旧缓存: {code6}")
             return cached.tail(days).reset_index(drop=True)
         return pd.DataFrame()
+
 
     full_df = cache.merge_kline_to_cache(code6, df)
     return full_df.tail(days).reset_index(drop=True)
@@ -273,6 +301,21 @@ class MarketScanner:
             return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz") else c
 
         all_codes = [to6(c) for c in codes]
+
+        # ── 新增：先用通达信离线数据填充内存缓存 ──
+        if not force_refresh:
+            tdx = _get_tdx()
+            tdx_hits = 0
+            for code6 in all_codes:
+                tdx_df = tdx.get_kline(code6, days)
+                if not tdx_df.empty and len(tdx_df) >= days:
+                    with self._lock:
+                        self._kline_cache[code6] = tdx_df
+                        self._cache_days[code6] = days
+                    tdx_hits += 1
+            if tdx_hits:
+                logger.info(f"通达信离线数据命中: {tdx_hits}/{len(all_codes)} 只")
+
         with self._lock:
             need_fetch = [c for c in all_codes
                           if c not in self._kline_cache or self._cache_days.get(c, 0) < days]
