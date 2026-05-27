@@ -117,30 +117,44 @@ class SinaDataSource(DataSource):
         return TencentDataSource().get_realtime(code)
 
     def get_stock_list(self) -> pd.DataFrame:
+        """
+        通过东方财富 list API 获取全市场A股列表（SH + SZ + BJ）。
+        分页拉取，每次500条，直到返回空。
+        返回标准化列名 [ts_code, name]。
+        """
         all_rows, seen = [], set()
-        # 按涨跌幅正序+倒序各取前几页，覆盖更多股票
-        for asc in (0, 1):
-            for page in range(1, 30 if asc == 0 else 6):
-                url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
-                resp = _get(_SINA_SESSION, url, {
-                    "num": 100, "page": page, "sort": "changepercent",
-                    "asc": asc, "node": "hs_a", "_s_r_a": "page"
-                })
-                if not resp:
+        page = 1
+        while True:
+            params = {
+                "pn": page,
+                "pz": 500,
+                "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",  # 沪深京全部A股
+                "fields": "f12,f14",
+            }
+            resp = _get(_EAST_SESSION,
+                        "https://push2.eastmoney.com/api/qt/clist/get",
+                        params=params)
+            if not resp:
+                break
+            try:
+                data = resp.json().get("data", {})
+                rows = data.get("diff", [])
+                if not rows:
                     break
-                try:
-                    rows = json.loads(resp.text.strip())
-                    if not rows:
-                        break
-                    for row in rows:
-                        sym = row.get("symbol", "").replace("sh", "").replace("sz", "").replace("bj", "")
-                        name = row.get("name", sym)
-                        if sym and sym not in seen:
-                            seen.add(sym)
-                            all_rows.append({"ts_code": sym, "name": name})
-                except Exception:
+                for r in rows:
+                    sym = str(r.get("f12", "")).strip()
+                    name = str(r.get("f14", "")).strip()
+                    if sym and sym not in seen:
+                        seen.add(sym)
+                        all_rows.append({"ts_code": sym, "name": name})
+                if len(rows) < 500:
                     break
-                time.sleep(0.1)
+                page += 1
+                time.sleep(0.15)
+            except Exception as e:
+                logger.debug(f"东财股票列表解析失败(page={page}): {e}")
+                break
+        logger.info(f"股票列表(东财): {len(all_rows)} 只")
         return pd.DataFrame(all_rows)
 
 

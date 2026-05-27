@@ -140,16 +140,25 @@ def get_stock_list() -> pd.DataFrame:
     manager = _get_manager()
 
     cached = cache.get_cached_stock_list()
+    df = manager.get_stock_list()
+
+    # 网络返回完整（>=1000只）才信任并更新缓存
+    if not df.empty and len(df) >= 1000:
+        df = normalize_stock_columns(df)
+        cache.save_stock_list(df)
+        logger.info(f"股票列表(网络): {len(df)} 只")
+        return df
+
+    # 网络不完整或失败，优先用本地缓存
     if not cached.empty:
+        if not df.empty and len(df) < len(cached):
+            logger.warning(f"网络股票列表不完整({len(df)}只)，使用本地缓存({len(cached)}只)")
         df = normalize_stock_columns(cached)
         logger.info(f"股票列表(缓存): {len(df)} 只")
         return df
 
-    df = manager.get_stock_list()
-    if not df.empty:
-        df = normalize_stock_columns(df)
-        cache.save_stock_list(df)
-    return df
+    # 两者都失败，返回网络结果（可能为空）
+    return normalize_stock_columns(df) if not df.empty else df
 
 
 def get_latest_trade_date() -> str:
@@ -301,20 +310,6 @@ class MarketScanner:
             return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz") else c
 
         all_codes = [to6(c) for c in codes]
-
-        # ── 新增：先用通达信离线数据填充内存缓存 ──
-        if not force_refresh:
-            tdx = _get_tdx()
-            tdx_hits = 0
-            for code6 in all_codes:
-                tdx_df = tdx.get_kline(code6, days)
-                if not tdx_df.empty and len(tdx_df) >= days:
-                    with self._lock:
-                        self._kline_cache[code6] = tdx_df
-                        self._cache_days[code6] = days
-                    tdx_hits += 1
-            if tdx_hits:
-                logger.info(f"通达信离线数据命中: {tdx_hits}/{len(all_codes)} 只")
 
         with self._lock:
             need_fetch = [c for c in all_codes
@@ -591,10 +586,15 @@ class MarketScanner:
         仅在交易日盘中有效，非交易日不合并。
         优先使用批量实时行情缓存（预计算阶段），没有再单只查询。
         """
-        if df.empty or "date" not in df.columns:
-            return df
+        if df is None or df.empty or "date" not in df.columns:
+            return df if df is not None else pd.DataFrame()
         today = datetime.now().strftime("%Y-%m-%d")
-        last_date = str(df["date"].iloc[-1]).split()[0]
+        # 兼容 date 列是 Timestamp 或字符串
+        last_date_val = df["date"].iloc[-1]
+        if hasattr(last_date_val, "strftime"):
+            last_date = last_date_val.strftime("%Y-%m-%d")
+        else:
+            last_date = str(last_date_val).split()[0]
         if last_date == today:
             return df
         # 优先使用批量实时行情缓存，避免逐只请求限流
@@ -614,7 +614,8 @@ class MarketScanner:
         high_price = quote.get("最高价", max(open_price, price))
         low_price = quote.get("最低价", min(open_price, price))
         est_vol = self._estimate_full_day_volume(vol)
-        row = {"date": today, "open": open_price, "close": price,
+        # date 用 Timestamp 保持类型一致，避免 concat 后变成 object
+        row = {"date": pd.Timestamp(today), "open": open_price, "close": price,
                "high": high_price, "low": low_price, "vol": est_vol}
         for col in df.columns:
             if col not in row:
@@ -622,7 +623,11 @@ class MarketScanner:
                     row[col] = pct
                 else:
                     row[col] = 0.0
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        new_row = pd.DataFrame([row])
+        # 保持 date 列类型一致
+        if df["date"].dtype != "object":
+            new_row["date"] = pd.to_datetime(new_row["date"])
+        df = pd.concat([df, new_row], ignore_index=True)
         return df
 
     @staticmethod
