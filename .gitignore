@@ -29,3 +29,4 @@ venv/
 # Logs
 *.log
 logs/
+data/cache/*.json
