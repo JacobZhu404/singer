@@ -257,6 +257,7 @@ class ScreenEngine:
         )
 
         # ── 子阶段3.5：批量合并今日实时行情到内存缓存 ──
+        logger.info(f"prefetch_merge 开始，缓存股票数: {len(market_scanner._kline_cache)}")
         self._set_progress("prefetch_merge", "正在获取实时行情...", 0, total)
         self._notify_progress(progress_callback, "prefetch_merge", "正在获取实时行情...", 0, total)
 
@@ -265,14 +266,16 @@ class ScreenEngine:
             rb = market_scanner.get_realtime_batch(codes)
             if rb:
                 market_scanner._realtime_batch = rb
-        except Exception:
-            pass
+                logger.info(f"prefetch_merge: 获取实时行情 {len(rb)} 只")
+        except Exception as e:
+            logger.warning(f"prefetch_merge: 批量获取实时行情失败: {e}")
 
         self._set_progress("prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
         self._notify_progress(progress_callback, "prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
 
         cached_codes = list(market_scanner._kline_cache.keys())
         merged_count = 0
+        logger.info(f"prefetch_merge: 开始合并，缓存股票数={len(cached_codes)}")
         for i, code6 in enumerate(cached_codes):
             df = market_scanner._kline_cache[code6]
             if not df.empty:
