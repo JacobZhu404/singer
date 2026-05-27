@@ -120,9 +120,11 @@ class SinaDataSource(DataSource):
         """
         通过新浪财经API获取全市场A股列表（SH + SZ + BJ）。
         分页拉取，每次100条，直到返回空。
+        API失败时自动从本地缓存文件回退。
         返回标准化列名 [ts_code, name]。
         """
         import time
+        import os
         url = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
         params = {
             "page": 1,
@@ -153,9 +155,7 @@ class SinaDataSource(DataSource):
                     name = str(r.get("name", "")).strip()
                     if sym and sym not in seen:
                         seen.add(sym)
-                        # 添加市场前缀
-                        prefix = "sh" if sym.startswith("6") else ("sz" if sym.startswith(("0", "3")) else "bj")
-                        all_rows.append({"ts_code": sym, "name": name, "symbol": f"{prefix}{sym}"})
+                        all_rows.append({"ts_code": sym, "name": name})
                 
                 if len(data) < 100:  # 最后一页
                     break
@@ -171,6 +171,32 @@ class SinaDataSource(DataSource):
                 break
         
         logger.info(f"股票列表(新浪): {len(all_rows)} 只")
+        
+        # API成功且数据完整，直接返回
+        if len(all_rows) >= 3000:
+            return pd.DataFrame(all_rows)
+        
+        # API失败或数据不完整，从本地缓存文件回退
+        cache_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                   "data", "cache", "stocks_sina.json")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                if cached_data and len(cached_data) >= 3000:
+                    logger.info(f"新浪API返回{len(all_rows)}只，从本地缓存回退: {len(cached_data)} 只")
+                    rows = []
+                    seen_cached = set()
+                    for r in cached_data:
+                        sym = str(r.get("code", "")).strip()
+                        name = str(r.get("name", "")).strip()
+                        if sym and sym not in seen_cached:
+                            seen_cached.add(sym)
+                            rows.append({"ts_code": sym, "name": name})
+                    return pd.DataFrame(rows)
+            except Exception as e:
+                logger.warning(f"读取本地股票列表缓存失败: {e}")
+        
         return pd.DataFrame(all_rows)
 
 
