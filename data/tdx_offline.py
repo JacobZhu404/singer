@@ -26,7 +26,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # ── 常量 ─────────────────────────────────────────────────────
-_TDX_FMT = "<iiiii f ii>"   # 8个格式字符 = 32字节，经实测验证
+_TDX_FMT = "<5if2i"   # 5个int32 + 1个float32 + 2个int32 = 8字段，32字节
 _PRICE_SCALE = 100.0
 
 

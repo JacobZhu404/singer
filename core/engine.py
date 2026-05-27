@@ -183,66 +183,127 @@ class ScreenEngine:
         阶段1：下载/更新K线数据到缓存。
         拆分出来让用户可以先更新数据、再跑策略。
 
+        拆分子阶段（通过 progress_callback 的 phase 参数）：
+          prefetch_init   — 加载股票列表
+          prefetch_tdx    — 检测通达信离线数据
+          prefetch_fetch  — 网络下载/更新K线
+          prefetch_done   — 下载完成
+
         Args:
             force_refresh: True=强制重新下载所有股票（忽略缓存）
-                          False=只补充未缓存的股票
+                              False=只补充未缓存的股票
             progress_callback: 进度回调 (phase, message, current, total)
         Returns:
             {"status": "ok", "cached_count": int, "downloaded": int}
         """
+        # ── 子阶段1：加载股票列表 ──
+        self._set_progress("prefetch_init", "正在加载股票列表...", 0, 100)
+        self._notify_progress(progress_callback, "prefetch_init", "正在加载股票列表...", 0, 100)
+
         stock_list = self._load_stock_list()
         market_scanner.load()
 
         code_col, _ = self._get_code_name_cols(stock_list)
-        codes = stock_list[code_col].astype(str).tolist()
+        codes = stock_list[code_col].astype(str).tolist() if not stock_list.empty else []
+        total = len(codes)
+
+        self._set_progress("prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
+        self._notify_progress(progress_callback, "prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
+
+        if total == 0:
+            return {"status": "ok", "cached_count": 0, "downloaded": 0, "failed_count": 0}
+
+        # ── 子阶段2：检测通达信离线数据 ──
+        self._set_progress("prefetch_tdx", "正在检测通达信离线数据...", 0, total)
+        self._notify_progress(progress_callback, "prefetch_tdx", "正在检测通达信离线数据...", 0, total)
+
+        tdx_available = False
+        try:
+            from ..data import tdx_offline
+            tdx_available = True
+        except Exception:
+            pass
+
+        tdx_msg = f"通达信离线数据{'可用' if tdx_available else '不可用'}，开始下载..."
+        self._set_progress("prefetch_tdx", tdx_msg, 50, total)
+        self._notify_progress(progress_callback, "prefetch_tdx", tdx_msg, 50, total)
+        self._set_progress("prefetch_tdx", "通达信数据检测完成", 100, total)
+        self._notify_progress(progress_callback, "prefetch_tdx", "通达信数据检测完成", 100, total)
+
+        # ── 子阶段3：网络下载/更新K线 ──
+        status_before = market_scanner.get_cache_status()
+        before_count = status_before["memory_cached"]
 
         # 强制刷新：清空现有缓存（通过公共方法，线程安全）
         if force_refresh:
             market_scanner.clear_memory_cache()
             logger.info("强制刷新：已清空K线缓存")
 
-        status_before = market_scanner.get_cache_status()
-        before_count = status_before["memory_cached"]
-
-        # 重置进度并清空策略子进度
-        self._set_progress("prefetch", "正在加载行情数据...", 0, len(codes))
+        self._set_progress("prefetch_fetch", "正在下载/更新K线数据...", 0, total)
         with self._progress_lock:
             self._progress["strategies"] = {}
 
-        self._notify_progress(progress_callback, "prefetch", "正在加载行情数据...", 0, len(codes))
+        self._notify_progress(progress_callback, "prefetch_fetch", "正在下载/更新K线数据...", 0, total)
 
         def _on_fetch(code: str, done: int, total_codes: int):
-            self._set_progress("prefetch", f"加载中 {done}/{total_codes}...", done, total_codes)
-            self._notify_progress(progress_callback, "prefetch",
-                                  f"加载K线 {done}/{total_codes}...", done, total_codes)
+            pct = int(done / total_codes * 100) if total_codes > 0 else 0
+            self._set_progress("prefetch_fetch", f"下载K线 {done}/{total_codes}...", done, total_codes)
+            self._notify_progress(progress_callback, "prefetch_fetch",
+                                  f"下载K线 {done}/{total_codes}...", done, total_codes)
 
         fetch_result = market_scanner.prefetch_batch(
             codes, days=120, max_workers=50, progress_callback=_on_fetch,
             force_refresh=force_refresh,
         )
 
+        # ── 子阶段3.5：批量合并今日实时行情到内存缓存 ──
+        self._set_progress("prefetch_merge", "正在获取实时行情...", 0, total)
+        self._notify_progress(progress_callback, "prefetch_merge", "正在获取实时行情...", 0, total)
+
+        # 批量获取实时行情，并写入 _realtime_batch 缓存
+        try:
+            rb = market_scanner.get_realtime_batch(codes)
+            if rb:
+                market_scanner._realtime_batch = rb
+        except Exception:
+            pass
+
+        self._set_progress("prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
+        self._notify_progress(progress_callback, "prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
+
+        cached_codes = list(market_scanner._kline_cache.keys())
+        merged_count = 0
+        for i, code6 in enumerate(cached_codes):
+            df = market_scanner._kline_cache[code6]
+            if not df.empty:
+                merged = market_scanner._merge_today_realtime(df, code6)
+                market_scanner._kline_cache[code6] = merged
+                merged_count += 1
+            if i % 300 == 0 and total > 0:
+                pct = int(i / max(len(cached_codes), 1) * 100)
+                self._set_progress("prefetch_merge", f"合并实时行情 {i}/{len(cached_codes)}...", pct, 100)
+                self._notify_progress(progress_callback, "prefetch_merge", f"合并实时行情 {i}/{len(cached_codes)}...", pct, 100)
+
+        self._set_progress("prefetch_merge", f"今日实时行情合并完成（{merged_count}只）", 100, 100)
+        self._notify_progress(progress_callback, "prefetch_merge", f"今日实时行情合并完成（{merged_count}只）", 100, 100)
+
+        # ── 子阶段4：完成 ──
         status_after = market_scanner.get_cache_status()
         after_count = status_after["memory_cached"]
         downloaded = after_count - before_count
-        total_codes = len(codes)
         failed_codes = fetch_result.get("failed", [])
 
         if failed_codes:
-            self._set_progress("done",
-                               f"数据更新完成，已缓存 {after_count}/{total_codes} 只"
-                               f"（{len(failed_codes)}只获取失败）",
-                               after_count, total_codes)
-            self._notify_progress(progress_callback, "done",
-                                  f"数据更新完成，已缓存 {after_count}/{total_codes} 只",
-                                  after_count, total_codes)
+            msg = f"数据更新完成，已缓存 {after_count}/{total} 只（{len(failed_codes)}只获取失败）"
+            self._set_progress("prefetch_done", msg, after_count, total)
+            self._notify_progress(progress_callback, "prefetch_done", msg, after_count, total)
         else:
-            self._set_progress("done", f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
-            self._notify_progress(progress_callback, "done",
-                                  f"数据更新完成，已缓存全部 {after_count} 只", after_count, total_codes)
+            msg = f"数据更新完成，已缓存全部 {after_count} 只"
+            self._set_progress("prefetch_done", msg, after_count, total)
+            self._notify_progress(progress_callback, "prefetch_done", msg, after_count, total)
 
         return {"status": "ok", "cached_count": after_count, "downloaded": downloaded,
                 "failed_count": len(failed_codes)}
-
     def screen_strategies(
         self,
         strategy_names: List[str],

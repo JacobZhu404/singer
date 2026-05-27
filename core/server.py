@@ -65,7 +65,12 @@ _sse_queues: List[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 
 # 各阶段对应的进度条百分比范围 (low, high)
+# 新增子阶段：prefetch_init / prefetch_tdx / prefetch_fetch / prefetch_done
 _PHASE_RANGES = {
+    "prefetch_init": (0, 8),
+    "prefetch_tdx": (8, 15),
+    "prefetch_fetch": (15, 25),
+    "prefetch_done": (25, 25),
     "prefetch": (0, 25),
     "precalc": (25, 40),
     "running": (40, 100),

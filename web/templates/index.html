@@ -785,24 +785,32 @@ async function checkStatus() {
     if (!d.has_result) startResultPoll();
 
     const prog = d.progress || {};
-    if (prog.phase === 'prefetch') {
+    const phase = prog.phase || '';
+    if (phase === 'prefetch_init' || phase === 'prefetch_tdx' || phase === 'prefetch_fetch' || phase === 'prefetch_merge' || phase === 'prefetch_done') {
+      // 新子阶段：显示对应状态
+      const phaseLabels = { 'prefetch_init':'📋 加载股票列表', 'prefetch_tdx':'💾 检测通达信离线数据', 'prefetch_fetch':'📥 下载K线数据', 'prefetch_merge':'🔄 合并实时行情', 'prefetch_done':'✅ 数据更新完成' };
+      showProgress(phase, phaseLabels[phase] || '加载中...', prog.current || '');
+      document.getElementById('progressPct').textContent = `${prog.pct}%`;
+      document.getElementById('progressFill').style.width = `${prog.pct}%`;
+    } else if (phase === 'prefetch') {
+      // 兼容旧版本
       showProgress('prefetch', '📥 加载行情数据', prog.current || '');
       if (prog.total > 0) {
         document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
         document.getElementById('progressFill').style.width = `${prog.pct}%`;
       }
-    } else if (prog.phase === 'precalc') {
+    } else if (phase === 'precalc') {
       showProgress('precalc', '⚙️ 指标预计算', prog.current || '');
       if (prog.total > 0) {
         document.getElementById('progressPct').textContent = `${prog.current_index}/${prog.total}`;
         document.getElementById('progressFill').style.width = `${prog.pct}%`;
       }
-    } else if (prog.phase === 'running') {
+    } else if (phase === 'running') {
       const overallPct = prog.pct || 0;
       showProgress('running', `📊 ${prog.current || '策略执行中...'}`, '');
       document.getElementById('progressPct').textContent = `${overallPct}%`;
       document.getElementById('progressFill').style.width = `${prog.pct}%`;
-    } else if (prog.phase === 'download_done') {
+    } else if (phase === 'download_done' || phase === 'done') {
       showProgress('download_done', '✅ 数据更新完成', '');
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
@@ -1229,9 +1237,11 @@ function showProgress(phase, label, detail) {
   document.getElementById('progressDetail').textContent = detail || '';
   document.getElementById('statusDot').className = 'status-dot running';
 
-  // 进度条宽度随 phase 变化
+  // 进度条宽度随 phase 变化（这些阶段由 pollProgress 精细控制，其他阶段直接100%）
   const fill = document.getElementById('progressFill');
-  if (phase === 'prefetch' || phase === 'precalc' || phase === 'running' || phase === 'merging') {
+  const keepProgressPhases = ['prefetch','precalc','running','merging',
+                          'prefetch_init','prefetch_tdx','prefetch_fetch','prefetch_merge'];
+  if (keepProgressPhases.includes(phase)) {
     // 这些阶段进度由 pollProgress 的 pct 精细控制
   } else {
     fill.style.width = '100%';
@@ -1243,7 +1253,7 @@ function showProgress(phase, label, detail) {
 // 只更新：仅下载K线数据，不筛选
 async function startOnlyUpdate() {
   if (selectedStrategies.size === 0) { notify('请先选择至少一个策略', 'error'); return; }
-  showProgress('prefetch', '📥 正在下载K线数据...', '请稍候...');
+  showProgress('prefetch_init', '📥 正在下载K线数据...', '请稍候...');
   setActionButtonsState('running', 'update');
 
   const r = await fetch('/api/download', {
@@ -1297,7 +1307,7 @@ async function startScreenTask(market, topN, forceRefresh, skipDownload = false)
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('resultArea').style.display = 'none';
 
-  showProgress('prefetch', forceRefresh ? '🚀 更新数据中...' : '⚡ 快速筛选中...', '加载行情数据...');
+  showProgress('prefetch_init', forceRefresh ? '🚀 更新数据中...' : '⚡ 快速筛选中...', '加载行情数据...');
   setActionButtonsState('running', 'screen');
 
   // 立即将所有已选中策略卡片设为等待状态
@@ -1400,8 +1410,34 @@ async function pollProgress() {
 
     document.getElementById('progressDetail').textContent = p.current || '';
 
-    if (p.phase === 'prefetch') {
-      // 阶段1：加载行情数据（全市场约3400只，50并发）
+    if (p.phase === 'prefetch_init') {
+      document.getElementById('progressLabel').textContent = '📋 加载股票列表';
+      document.getElementById('progressPct').textContent = `${p.pct}%`;
+      document.getElementById('progressFill').style.width = `${p.pct}%`;
+    } else if (p.phase === 'prefetch_tdx') {
+      document.getElementById('progressLabel').textContent = '💾 检测通达信离线数据';
+      document.getElementById('progressPct').textContent = `${p.pct}%`;
+      document.getElementById('progressFill').style.width = `${p.pct}%`;
+    } else if (p.phase === 'prefetch_fetch') {
+      document.getElementById('progressLabel').textContent = '📥 下载K线数据';
+      if (p.total > 0) {
+        document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
+        document.getElementById('progressFill').style.width = `${p.pct}%`;
+      }
+      _setAllCardsWaiting('prefetch');
+    } else if (p.phase === 'prefetch_merge') {
+      document.getElementById('progressLabel').textContent = '🔄 合并实时行情';
+      document.getElementById('progressPct').textContent = `${p.pct}%`;
+      document.getElementById('progressFill').style.width = `${p.pct}%`;
+      _setAllCardsWaiting('prefetch');
+    } else if (p.phase === 'prefetch_done') {
+      document.getElementById('progressLabel').textContent = '✅ 数据更新完成';
+      document.getElementById('progressPct').textContent = '100%';
+      document.getElementById('progressFill').style.width = '100%';
+      clearInterval(_progressTimer);
+      closeSSE();
+    } else if (p.phase === 'prefetch') {
+      // 兼容旧版本
       document.getElementById('progressLabel').textContent = '📥 加载行情数据';
       if (p.total > 0) {
         document.getElementById('progressPct').textContent = `${p.current_index}/${p.total}`;
