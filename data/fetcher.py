@@ -606,7 +606,7 @@ class MarketScanner:
         price = quote.get("最新价", 0)
         if price <= 0:
             return df
-        vol = quote.get("成交量", 0)
+        vol = quote.get("成交量", 0) * 100   # 实时行情成交量单位是"手"，转"股"
         pct = quote.get("涨跌幅", 0)
         if vol <= 0 and abs(pct) < 0.01:
             return df
