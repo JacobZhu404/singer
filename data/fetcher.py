@@ -102,6 +102,7 @@ def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
             age_days = (datetime.now() - pd.to_datetime(last_date)).days
         except Exception:
             age_days = 99
+            logger.debug(f"TDX日期解析失败: {last_date}")
         if age_days <= 3:
             logger.debug(f"TDX命中: {code6}, 最新={last_date}, 距今{age_days}天")
             return tdx_df.reset_index(drop=True)
