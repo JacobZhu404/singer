@@ -55,19 +55,8 @@ def _to_code6(code: str) -> str:
     return c
 
 
-def _get_sina_symbol(code6: str) -> str:
-    """返回新浪K线接口用的 symbol（sh/sz/bj + 代码）"""
-    c = code6.strip()
-    if c.startswith("6") or c.startswith("5"):
-        return f"sh{c}"
-    elif c.startswith("8") or c.startswith("4") or c.startswith("9"):
-        return f"bj{c}"
-    else:
-        return f"sz{c}"
-
-
-def _get_tencent_prefix(code6: str) -> str:
-    """返回腾讯接口用的前缀（sh / sz / bj）"""
+def _get_market(code6: str) -> str:
+    """根据纯数字代码判断市场：sh / sz / bj"""
     c = code6.strip()
     if c.startswith("6") or c.startswith("5"):
         return "sh"
@@ -77,15 +66,20 @@ def _get_tencent_prefix(code6: str) -> str:
         return "sz"
 
 
+def _get_sina_symbol(code6: str) -> str:
+    """返回新浪K线接口用的 symbol（sh/sz/bj + 代码）"""
+    return _get_market(code6) + code6.strip()
+
+
+def _get_tencent_prefix(code6: str) -> str:
+    """返回腾讯接口用的前缀（sh / sz / bj），同 _get_market"""
+    return _get_market(code6)
+
+
 def _get_eastmoney_secid(code6: str) -> str:
-    """返回东方财富 K 线接口用的 secid（1.xxxxx / 0.xxxxx / 2.xxxxx）"""
-    c = code6.strip()
-    if c.startswith("6") or c.startswith("5"):
-        return f"1.{c}"
-    elif c.startswith("8") or c.startswith("4") or c.startswith("9"):
-        return f"2.{c}"
-    else:
-        return f"0.{c}"
+    """返回东方财富 K 线接口用的 secid（1/0/2 + . + 代码）"""
+    SECID_MAP = {"sh": "1.", "sz": "0.", "bj": "2."}
+    return SECID_MAP.get(_get_market(code6), "0.") + code6.strip()
 
 
 def _safe_float(parts: list, idx: int, default: float = 0.0) -> float:

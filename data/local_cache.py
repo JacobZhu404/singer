@@ -16,6 +16,8 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
+from .data_sources import _to_code6
+
 logger = logging.getLogger(__name__)
 
 _CACHE_ROOT  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
@@ -31,16 +33,8 @@ def _ensure_dirs():
     os.makedirs(_KLINE_DIR, exist_ok=True)
 
 
-def _strip_prefix(code: str) -> str:
-    """去掉 sh/sz/bj 前缀，返回纯数字代码（与 data_sources._to_code6 一致）"""
-    c = str(code).strip()
-    if len(c) > 2 and c[:2].lower() in ("sh", "sz", "bj"):
-        return c[2:]
-    return c
-
-
 def _kline_path(code: str) -> str:
-    code6 = _strip_prefix(code)
+    code6 = _to_code6(code)
     return os.path.join(_KLINE_DIR, f"{code6}.csv")
 
 
@@ -50,8 +44,8 @@ def _load_meta() -> Dict:
             try:
                 with open(_META_FILE, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"读取元数据缓存失败: {e}")
     return {}
 
 
@@ -83,7 +77,7 @@ def save_kline_to_cache(code: str, df: pd.DataFrame):
     if df.empty or "date" not in df.columns:
         return
     _ensure_dirs()
-    code6 = _strip_prefix(code)
+    code6 = _to_code6(code)
     path = _kline_path(code6)
     try:
         with _lock:
@@ -119,7 +113,7 @@ def merge_kline_to_cache(code: str, new_df: pd.DataFrame) -> pd.DataFrame:
 
 def needs_update(code: str, max_age_hours: int = 4) -> bool:
     meta = _load_meta()
-    code6 = _strip_prefix(code)
+    code6 = _to_code6(code)
     entry = meta.get(code6, {})
     last = entry.get("last_update", "")
     if not last:
