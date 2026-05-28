@@ -24,7 +24,7 @@ from ..portfolio.manager import get_portfolio
 from ..portfolio.sell_analyzer import get_analyzer
 from ..strategies.base import ScreenResult
 
-# ── 日志配置 ──────────────────────────────────────────────────────────────
+# ── 日志配置 ──────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -65,7 +65,6 @@ _sse_queues: List[queue.Queue] = []
 _sse_queues_lock = threading.Lock()
 
 # 各阶段对应的进度条百分比范围 (low, high)
-# 新增子阶段：prefetch_init / prefetch_tdx / prefetch_fetch / prefetch_done
 _PHASE_RANGES = {
     "prefetch_init": (0, 8),
     "prefetch_tdx": (8, 15),
@@ -256,8 +255,7 @@ def api_screen_progress():
         progress = dict(_screen_progress)
     # 实时同步引擎的策略子进度（更准确，避免过期）
     try:
-        from ..core.engine import get_engine as _get_eng
-        engine = _get_eng()
+        engine = get_engine()  # get_engine 在本文件定义
         if engine:
             eng_progress = engine.get_progress()
             if eng_progress.get("strategies"):
@@ -280,23 +278,62 @@ def api_screen_stop():
 def api_data_status():
     """
     查询当前K线缓存状态。
-    返回已缓存的股票数量，辅助用户判断是否需要先更新数据。
+    支持 market 参数（GET），按市场过滤股票总数，使分母与下载/筛选一致。
+    优先读本地缓存文件（不调网络API），失败才降级到 get_stock_list()。
     """
-    from ..data.fetcher import market_scanner, get_stock_list
+    from ..data.fetcher import market_scanner
+    from ..core.engine import ScreenEngine
+    from pathlib import Path
+    import json as _json
+
+    market = request.args.get("market", "全部市场")
+    logger.info(f"api_data_status: market=[{market}]")
     status = market_scanner.get_cache_status()
-    # 使用内存缓存数量（与当前进度条保持一致）
     cached = status.get("memory_cached", 0)
-    # 全市场股票总数（用于前端显示 "3257 / 3400"）
+
+    # 按市场过滤股票总数
+    total_stocks = cached  # 兜底
     try:
-        total_stocks = len(get_stock_list())
-    except Exception:
+        # 优先读本地缓存文件（不调网络，速度快）
+        # 尝试两个可能的缓存文件路径
+        base = Path(__file__).resolve().parent.parent
+        cache_file = base / "data" / "cache" / "stocks.json"
+        if not cache_file.exists():
+            cache_file = base / "data" / "stocks.json"
+        if cache_file.exists():
+            with open(cache_file, "r", encoding="utf-8") as f:
+                stocks = _json.load(f)
+            raw_codes = [str(s.get("ts_code") or s.get("code") or "").strip()
+                          for s in stocks if (s.get("ts_code") or s.get("code"))]
+            if market != "全部市场":
+                engine = ScreenEngine(market=market)
+                filtered = engine._filter_by_market(raw_codes)
+                total_stocks = len(filtered)
+                logger.info(f"api_data_status: market=[{market}], 过滤后 {total_stocks} 只 (from cache file)")
+            else:
+                total_stocks = len(raw_codes)
+        else:
+            # 缓存文件不存在，降级到 get_stock_list（会调网络）
+            from ..data.fetcher import get_stock_list
+            all_stocks = get_stock_list()
+            if market != "全部市场":
+                engine = ScreenEngine(market=market)
+                code_col = "代码" if "代码" in all_stocks.columns else "ts_code"
+                raw_codes2 = all_stocks[code_col].astype(str).tolist()
+                filtered = engine._filter_by_market(raw_codes2)
+                total_stocks = len(filtered)
+            else:
+                total_stocks = len(all_stocks)
+    except Exception as e:
+        logger.error(f"api_data_status: 异常 {e}")
         total_stocks = cached  # 获取失败时以缓存数代替
+
     # 判断数据是否足够（覆盖全市场50%以上认为数据充足）
     data_ready = (total_stocks > 0 and cached >= total_stocks * 0.5) or cached >= 500
     if data_ready:
-        hint = f"已缓存 {cached} 只 / 全市场 {total_stocks} 只 ✅"
+        hint = f"已缓存 {cached} 只 / {total_stocks} 只 ✅"
     elif cached > 0:
-        hint = f"已缓存 {cached} 只 / 全市场 {total_stocks} 只 ⚠️ 建议更新"
+        hint = f"已缓存 {cached} 只 / {total_stocks} 只 ⚠️ 建议更新"
     else:
         hint = "尚未下载数据，请先更新"
     return jsonify({
@@ -315,11 +352,12 @@ def api_data_status():
 def api_download():
     """
     单独下载/更新K线数据（不跑策略）。
-    Body: { "force_refresh": false }
+    Body: { "force_refresh": false, "market": "主板" }
     前端轮询 /api/screen/progress 查看进度（phase=prefetch）。
     """
     body = request.get_json() or {}
     force = bool(body.get("force_refresh", False))
+    market = body.get("market", "主板")  # ← 修复：获取 market 参数
 
     if _is_running:
         return jsonify({"code": 2, "msg": "当前有任务正在运行，请稍后再试"})
@@ -352,7 +390,7 @@ def api_download():
                     pct = min(pct, 99)
                     _screen_progress["pct"] = pct
 
-            engine = get_engine("主板")
+            engine = get_engine(market)  # ← 修复：使用获取的 market 参数
             engine._stop_event = _stop_event
             engine.download_data(force_refresh=force, progress_callback=_on_progress)
         except Exception as e:
@@ -482,9 +520,9 @@ def api_quick_screen():
         return jsonify({"code": 1, "msg": str(e)})
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
 #  持仓 API
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
 
 @app.route("/api/portfolio", methods=["GET"])
 def api_portfolio():

@@ -19,7 +19,7 @@ def precalc_indicators(
 ) -> dict:
     """
     遍历所有股票代码，预计算技术指标并缓存到 scanner._indicator_cache。
-    使用线程池并行加速（默认 20 并发）。
+    使用线程池并行加速（默认 8 并发）。
 
     默认 days=120 可覆盖所有策略需求（volume_breakout/rsi_oversold 用 60，
     chanlun/chanlun_strict/macd_bull/chan20 用 120）。
@@ -48,7 +48,7 @@ def precalc_indicators(
             logger.debug(f"预计算指标失败 {code}: {e}")
             return code, False
 
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {executor.submit(_calc_one, code): code for code in codes}
         for idx, future in enumerate(as_completed(futures), 1):
             code = futures[future]

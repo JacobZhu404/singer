@@ -7,6 +7,7 @@ import re
 import json
 import time
 import logging
+import threading
 from typing import Optional, List, Dict
 from datetime import datetime
 
@@ -47,9 +48,44 @@ def _get(session: requests.Session, url: str, params: dict = None,
 
 
 def _to_code6(code: str) -> str:
-    """统一去除 sh/sz 前缀，返回6位代码"""
+    """统一去除 sh/sz/bj 前缀，返回纯数字代码"""
     c = str(code).strip()
-    return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz") else c
+    if len(c) > 2 and c[:2].lower() in ("sh", "sz", "bj"):
+        return c[2:]
+    return c
+
+
+def _get_sina_symbol(code6: str) -> str:
+    """返回新浪K线接口用的 symbol（sh/sz/bj + 代码）"""
+    c = code6.strip()
+    if c.startswith("6") or c.startswith("5"):
+        return f"sh{c}"
+    elif c.startswith("8") or c.startswith("4") or c.startswith("9"):
+        return f"bj{c}"
+    else:
+        return f"sz{c}"
+
+
+def _get_tencent_prefix(code6: str) -> str:
+    """返回腾讯接口用的前缀（sh / sz / bj）"""
+    c = code6.strip()
+    if c.startswith("6") or c.startswith("5"):
+        return "sh"
+    elif c.startswith("8") or c.startswith("4") or c.startswith("9"):
+        return "bj"
+    else:
+        return "sz"
+
+
+def _get_eastmoney_secid(code6: str) -> str:
+    """返回东方财富 K 线接口用的 secid（1.xxxxx / 0.xxxxx / 2.xxxxx）"""
+    c = code6.strip()
+    if c.startswith("6") or c.startswith("5"):
+        return f"1.{c}"
+    elif c.startswith("8") or c.startswith("4") or c.startswith("9"):
+        return f"2.{c}"
+    else:
+        return f"0.{c}"
 
 
 def _safe_float(parts: list, idx: int, default: float = 0.0) -> float:
@@ -93,7 +129,7 @@ class SinaDataSource(DataSource):
 
     def get_kline(self, code: str, days: int = 60) -> pd.DataFrame:
         code6 = _to_code6(code)
-        scode = f"sh{code6}" if code6.startswith("6") else f"sz{code6}"
+        scode = _get_sina_symbol(code6)
         url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
         resp = _get(_SINA_SESSION, url, {"symbol": scode, "scale": 240, "ma": "no", "datalen": days})
         if not resp:
@@ -118,86 +154,75 @@ class SinaDataSource(DataSource):
 
     def get_stock_list(self) -> pd.DataFrame:
         """
-        通过新浪财经API获取全市场A股列表（SH + SZ + BJ）。
-        分页拉取，每次100条，直到返回空。
-        API失败时自动从本地缓存文件回退。
-        返回标准化列名 [ts_code, name]。
+        通过东方财富接口获取全市场A股列表（SH + SZ + BJ）。
+        单次请求分页拉取，比新浪财经API更稳定。
+
+        返回标准化列名 [ts_code, name, market_flag]。
         """
-        import time
-        import os
-        url = "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
-        params = {
-            "page": 1,
-            "num": 100,
-            "sort": "symbol",
-            "asc": 1,
-            "node": "hs_a",  # 沪深A股
-            "symbol": "",
-            "_s_r_a": "init"
-        }
-        
-        all_rows, seen = [], set()
-        page = 1
-        
+        import time, os, json
+
+        EAST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+        # fs: m:0+t:6(沪A) , m:0+t:80(深A) , m:1+t:2(北交所)
+        FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
+        FIELDS = "f12,f14,f13"  # f12=代码, f14=名称, f13=市场(1=沪,0=深)
+
+        cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "data", "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, "stocks.json")  # 统一文件名
+
+        all_stocks = {}
+        page, page_size = 1, 500
+
         while True:
-            params["page"] = page
+            params = {"pn": page, "pz": page_size, "fs": FS, "fields": FIELDS}
             try:
-                resp = _get(_SINA_SESSION, url, params=params, timeout=10)
-                if not resp or not resp.text or resp.text == '[]':
+                resp = _get(_EAST_SESSION, EAST_URL, params=params, timeout=15)
+                if not resp:
+                    logger.warning(f"东财股票列表API无响应 (page={page})")
                     break
-                
                 data = resp.json()
-                if not data:
+                diff = data.get("data", {}).get("diff", {})
+                total = data.get("data", {}).get("total", 0)
+                if not diff:
                     break
-                
-                for r in data:
-                    sym = str(r.get("code", "")).strip()
-                    name = str(r.get("name", "")).strip()
-                    if sym and sym not in seen:
-                        seen.add(sym)
-                        all_rows.append({"ts_code": sym, "name": name})
-                
-                if len(data) < 100:  # 最后一页
+                for k, v in diff.items():
+                    code = str(v.get("f12", "")).strip()
+                    name = str(v.get("f14", "")).strip()
+                    if code:
+                        all_stocks[code] = {"ts_code": code, "name": name}
+                logger.info(f"东财股票列表: 第{page}页 +{len(diff)}条, 累计={len(all_stocks)}/{total}")
+                if len(all_stocks) >= total:
                     break
-                
                 page += 1
-                time.sleep(0.1)  # 避免请求过快
-                
-                if page > 100:  # 安全限制
-                    break
-                    
+                time.sleep(0.05)
             except Exception as e:
-                logger.debug(f"新浪股票列表解析失败(page={page}): {e}")
+                logger.warning(f"东财股票列表请求失败(page={page}): {e}")
                 break
-        
-        logger.info(f"股票列表(新浪): {len(all_rows)} 只")
-        
-        # API成功且数据完整，直接返回
-        if len(all_rows) >= 3000:
-            return pd.DataFrame(all_rows)
-        
-        # API失败或数据不完整，从本地缓存文件回退
-        cache_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                   "data", "cache", "stocks_sina.json")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    cached_data = json.load(f)
-                if cached_data and len(cached_data) >= 3000:
-                    logger.info(f"新浪API返回{len(all_rows)}只，从本地缓存回退: {len(cached_data)} 只")
-                    rows = []
-                    seen_cached = set()
-                    for r in cached_data:
-                        sym = str(r.get("code", "")).strip()
-                        name = str(r.get("name", "")).strip()
-                        if sym and sym not in seen_cached:
-                            seen_cached.add(sym)
-                            rows.append({"ts_code": sym, "name": name})
-                    return pd.DataFrame(rows)
-            except Exception as e:
-                logger.warning(f"读取本地股票列表缓存失败: {e}")
-        
-        return pd.DataFrame(all_rows)
+
+        if len(all_stocks) < 3000:
+            logger.warning(f"东财返回仅{len(all_stocks)}只（期望>=3000），回退缓存")
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        cached = json.load(f)
+                    rows = [{"ts_code": str(r.get("ts_code", r.get("code", ""))).strip(),
+                             "name": str(r.get("name", "")).strip()}
+                            for r in cached if r.get("ts_code") or r.get("code")]
+                    if rows:
+                        logger.info(f"回退缓存: {len(rows)} 只")
+                        return pd.DataFrame(rows)
+                except Exception as e2:
+                    logger.error(f"读取缓存失败: {e2}")
+
+        rows = list(all_stocks.values())
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False, indent=2)
+            logger.info(f"股票列表(东财API): {len(rows)} 只，已更新缓存")
+        except Exception as e:
+            logger.warning(f"更新股票列表缓存失败: {e}")
+        return pd.DataFrame(rows)
 
 
 class TencentDataSource(DataSource):
@@ -205,7 +230,7 @@ class TencentDataSource(DataSource):
 
     def get_kline(self, code: str, days: int = 60) -> pd.DataFrame:
         code6 = _to_code6(code)
-        prefix = "sh" if code6.startswith("6") else "sz"
+        prefix = _get_tencent_prefix(code6)
         resp = _get(_TENCENT_SESSION,
                     "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
                     {"param": f"{prefix}{code6},day,,,{days},qfq"})
@@ -229,7 +254,7 @@ class TencentDataSource(DataSource):
 
     def get_realtime(self, code: str) -> Dict:
         code6 = _to_code6(code)
-        prefix = "sh" if code6.startswith("6") else "sz"
+        prefix = _get_tencent_prefix(code6)
         resp = _get(_TENCENT_SESSION, f"https://qt.gtimg.cn/q={prefix}{code6}")
         if not resp:
             return {}
@@ -241,7 +266,7 @@ class TencentDataSource(DataSource):
             if len(parts) < 35:
                 return {}
             return {
-                "代码": code6, "名称": parts[1] if len(parts) > 1 else code6,
+                "code": code6, "名称": parts[1] if len(parts) > 1 else code6,
                 "最新价": _safe_float(parts, 3), "昨收": _safe_float(parts, 4),
                 "今开": _safe_float(parts, 5), "成交量": _safe_float(parts, 6),
                 "成交额": _safe_float(parts, 37), "换手率": _safe_float(parts, 38),
@@ -254,7 +279,7 @@ class TencentDataSource(DataSource):
             return {}
 
     def get_realtime_batch(self, codes: List[str]) -> Dict[str, Dict]:
-        normalized = [("sh" if _to_code6(c).startswith("6") else "sz") + _to_code6(c) for c in codes]
+        normalized = [_get_tencent_prefix(_to_code6(c)) + _to_code6(c) for c in codes]
         results = {}
         for i in range(0, len(normalized), 90):
             batch = normalized[i:i+90]
@@ -268,7 +293,7 @@ class TencentDataSource(DataSource):
                     raw_code = m.group(1)[2:]
                     if len(parts) > 35:
                         results[raw_code] = {
-                            "代码": raw_code, "名称": parts[1] if len(parts) > 1 else raw_code,
+                            "code": raw_code, "名称": parts[1] if len(parts) > 1 else raw_code,
                             "最新价": _safe_float(parts, 3), "昨收": _safe_float(parts, 4),
                             "今开": _safe_float(parts, 5), "成交量": _safe_float(parts, 6),
                             "成交额": _safe_float(parts, 37), "换手率": _safe_float(parts, 38),
@@ -288,9 +313,9 @@ class EastmoneyDataSource(DataSource):
 
     def get_kline(self, code: str, days: int = 60) -> pd.DataFrame:
         code6 = _to_code6(code)
-        prefix = "1" if code6.startswith("6") else "0"
+        secid = _get_eastmoney_secid(code6)
         resp = _get(_EAST_SESSION, "https://push2his.eastmoney.com/api/qt/stock/kline/get", {
-            "secid": f"{prefix}.{code6}", "fields1": "f1,f2,f3,f4,f5,f6",
+            "secid": secid, "fields1": "f1,f2,f3,f4,f5,f6",
             "fields2": "f51,f52,f53,f54,f55,f56,f57", "klt": "101",
             "fqt": "0", "end": datetime.now().strftime("%Y%m%d"), "lmt": days,
         })
@@ -321,42 +346,102 @@ class EastmoneyDataSource(DataSource):
 # ═══════════════════════════════════════════════════════════════════════════
 
 class DataSourceManager:
-    """按优先级尝试多个数据源，失败自动降级"""
-
+    """
+    按优先级尝试多个数据源，失败自动降级。
+    带源健康状态追踪：某源连续失败多次后自动跳过，直到冷却期过。
+    """
     def __init__(self):
         self._sources: List[DataSource] = [
             SinaDataSource(),
             TencentDataSource(),
             EastmoneyDataSource(),
         ]
+        # 源健康状态: {name: {"fail_count": int, "last_fail": float}}
+        self._health: Dict[str, Dict] = {}
+        self._health_lock = threading.Lock()
+        self._fail_threshold = 5        # 连续失败N次后标记为不健康
+        self._cooldown_sec = 300       # 冷却期（秒），过后重试
+
+    def _mark_fail(self, name: str):
+        now = time.time()
+        with self._health_lock:
+            if name not in self._health:
+                self._health[name] = {"fail_count": 0, "last_fail": now}
+            h = self._health[name]
+            # 如果距离上次失败超过冷却期，重置计数
+            if now - h["last_fail"] > self._cooldown_sec:
+                h["fail_count"] = 0
+            h["fail_count"] += 1
+            h["last_fail"] = now
+
+    def _mark_success(self, name: str):
+        with self._health_lock:
+            if name in self._health:
+                self._health[name]["fail_count"] = 0
+
+    def _is_healthy(self, name: str) -> bool:
+        with self._health_lock:
+            if name not in self._health:
+                return True
+            h = self._health[name]
+            # 超过冷却期，允许重试
+            if time.time() - h["last_fail"] > self._cooldown_sec:
+                return True
+            return h["fail_count"] < self._fail_threshold
 
     def get_kline(self, code: str, days: int = 60) -> pd.DataFrame:
         for source in self._sources:
+            if not self._is_healthy(source.name):
+                logger.debug(f"[{source.name}] 源暂时不可用（连续失败），跳过")
+                continue
             try:
                 df = source.get_kline(code, days)
                 if not df.empty:
+                    self._mark_success(source.name)
                     return df
+                # 返回空DataFrame也视为失败（接口被封会返回空或HTML）
+                self._mark_fail(source.name)
             except Exception as e:
+                self._mark_fail(source.name)
                 logger.debug(f"[{source.name}] K线失败 {code}: {e}")
         return pd.DataFrame()
 
+    def get_health_status(self) -> Dict:
+        """返回各数据源健康状态，供前端展示"""
+        with self._health_lock:
+            return {name: {"fail_count": h["fail_count"],
+                          "last_fail": h["last_fail"],
+                          "healthy": self._is_healthy(name)}
+                    for name, h in self._health.items()}
+
     def get_realtime(self, code: str) -> Dict:
         for source in self._sources:
+            if not self._is_healthy(source.name):
+                logger.debug(f"[{source.name}] 源暂时不可用（连续失败），跳过")
+                continue
             try:
                 data = source.get_realtime(code)
                 if data:
+                    self._mark_success(source.name)
                     return data
+                self._mark_fail(source.name)
             except Exception as e:
+                self._mark_fail(source.name)
                 logger.debug(f"[{source.name}] 实时行情失败 {code}: {e}")
         return {}
 
     def get_realtime_batch(self, codes: List[str]) -> Dict[str, Dict]:
-        try:
-            results = TencentDataSource().get_realtime_batch(codes)
-            if results:
-                return results
-        except Exception as e:
-            logger.debug(f"腾讯批量行情失败: {e}")
+        # 先尝试腾讯批量接口（最快）
+        if self._is_healthy("tencent"):
+            try:
+                results = TencentDataSource().get_realtime_batch(codes)
+                if results:
+                    self._mark_success("tencent")
+                    return results
+                self._mark_fail("tencent")
+            except Exception as e:
+                self._mark_fail("tencent")
+                logger.debug(f"腾讯批量行情失败: {e}")
         # 降级为逐个查询
         results = {}
         for code in codes:

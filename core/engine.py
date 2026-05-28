@@ -135,6 +135,52 @@ class ScreenEngine:
         with self._progress_lock:
             return dict(self._progress)
 
+    def _filter_by_market(self, codes: List[str]) -> List[str]:
+        """
+        根据 self.market 过滤股票代码列表。
+        兼容两种代码格式：
+          - 带前缀: sh600000, sz000001, bj920339
+          - 纯数字:  600000, 000001, 920339
+        市场分类规则（基于代码前缀）：
+          - 沪市主板：60xxxx
+          - 深市主板：000xxx / 001xxx / 002xxx / 003xxx
+          - 创业板：  300xxx / 301xxx / 302xxx
+          - 科创板：  688xxx / 689xxx
+          - 北交所：  8xxxxx / 4xxxxx / 9xxxxx
+        """
+        market = self.market
+
+        def _pure(c: str) -> str:
+            """去掉 sh/sz/bj 前缀，返回纯数字代码"""
+            c = str(c).strip()
+            for p in ("sh", "sz", "bj"):
+                if c.startswith(p):
+                    return c[len(p):]
+            return c
+
+        def _is_主板(c):
+            return (_pure(c).startswith("60") or _pure(c).startswith("000")
+                    or _pure(c).startswith("001") or _pure(c).startswith("002")
+                    or _pure(c).startswith("003"))
+        def _is_创业板(c):
+            return _pure(c).startswith("300") or _pure(c).startswith("301") or _pure(c).startswith("302")
+        def _is_科创板(c):
+            return _pure(c).startswith("688") or _pure(c).startswith("689")
+
+        if market == "主板":
+            return [c for c in codes if _is_主板(c)]
+        elif market == "创业板":
+            return [c for c in codes if _is_创业板(c)]
+        elif market == "科创板":
+            return [c for c in codes if _is_科创板(c)]
+        elif market == "主板+创业板":
+            return [c for c in codes if _is_主板(c) or _is_创业板(c)]
+        elif market == "主板+科创板":
+            return [c for c in codes if _is_主板(c) or _is_科创板(c)]
+        else:
+            # "全部市场" 或其他，不过滤
+            return codes
+
     def _load_stock_list(self) -> pd.DataFrame:
         if self._stock_list is None:
             logger.info("加载股票列表")
@@ -168,6 +214,11 @@ class ScreenEngine:
     def run_single(self, strategy_name: str) -> ScreenResult:
         """执行单个策略"""
         stock_list = self._load_stock_list()
+        if self.market != "全部市场":
+            code_col, _ = self._get_code_name_cols(stock_list)
+            codes = stock_list[code_col].astype(str).tolist()
+            filtered = self._filter_by_market(codes)
+            stock_list = stock_list[stock_list[code_col].astype(str).isin(filtered)]
         strategy = get_strategy(strategy_name, top_n=self.top_n)
         market_scanner.load()
         logger.info(f"执行策略: {strategy_name}")
@@ -181,37 +232,74 @@ class ScreenEngine:
     ) -> dict:
         """
         阶段1：下载/更新K线数据到缓存。
-        拆分出来让用户可以先更新数据、再跑策略。
+
+        两种路径：
+          增量更新（force_refresh=False 且本地已有缓存）
+            → 直接从内存缓存读取已有股票代码，不调股票列表API
+          全量更新（force_refresh=True 或缓存为空）
+            → 获取股票列表，更新全市场
 
         拆分子阶段（通过 progress_callback 的 phase 参数）：
-          prefetch_init   — 加载股票列表
+          prefetch_init   — 确定股票代码来源（缓存 or 股票列表API）
           prefetch_tdx    — 检测通达信离线数据
           prefetch_fetch  — 网络下载/更新K线
+          prefetch_merge  — 批量合并今日实时行情
           prefetch_done   — 下载完成
 
         Args:
-            force_refresh: True=强制重新下载所有股票（忽略缓存）
-                              False=只补充未缓存的股票
+            force_refresh: True=强制全量更新（忽略缓存，重新获取股票列表）
+                              False=增量更新（优先用本地缓存代码）
             progress_callback: 进度回调 (phase, message, current, total)
         Returns:
-            {"status": "ok", "cached_count": int, "downloaded": int}
+            {"status": "ok", "cached_count": int, "downloaded": int, "failed_count": int}
         """
-        # ── 子阶段1：加载股票列表 ──
-        self._set_progress("prefetch_init", "正在加载股票列表...", 0, 100)
-        self._notify_progress(progress_callback, "prefetch_init", "正在加载股票列表...", 0, 100)
+        # ── 子阶段1：确定股票代码来源 ──
+        logger.info(f"download_data 被调用: force_refresh={force_refresh}, market={self.market}")  # ← 添加日志
+        self._set_progress("prefetch_init", "正在确定股票代码来源...", 0, 100)
+        self._notify_progress(progress_callback, "prefetch_init", "正在确定股票代码来源...", 0, 100)
 
-        stock_list = self._load_stock_list()
         market_scanner.load()
+        cached_codes = market_scanner.get_cached_codes()
 
-        code_col, _ = self._get_code_name_cols(stock_list)
-        codes = stock_list[code_col].astype(str).tolist() if not stock_list.empty else []
-        total = len(codes)
+        if not force_refresh and len(cached_codes) > 0:
+            # 增量更新：直接用本地缓存的代码，不调股票列表API
+            codes = cached_codes
+            total = len(codes)
+            logger.info(f"增量更新：使用本地缓存代码 {total} 只（跳过股票列表API）")
+            self._set_progress("prefetch_init", f"增量更新，共 {total} 只", 100, 100)
+            self._notify_progress(progress_callback, "prefetch_init", f"增量更新，共 {total} 只", total, total)
 
-        self._set_progress("prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
-        self._notify_progress(progress_callback, "prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
+        else:
+            # 全量更新：获取股票列表
+            reason = "force_refresh=True" if force_refresh else "本地缓存为空"
+            logger.info(f"全量更新：{reason}，获取股票列表...")
+            self._set_progress("prefetch_init", "正在加载股票列表...", 0, 100)
+            self._notify_progress(progress_callback, "prefetch_init", "正在加载股票列表...", 0, 100)
+
+            stock_list = self._load_stock_list()
+            code_col, _ = self._get_code_name_cols(stock_list)
+            codes = stock_list[code_col].astype(str).tolist() if not stock_list.empty else []
+            total = len(codes)
+
+            self._set_progress("prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
+            self._notify_progress(progress_callback, "prefetch_init", f"股票列表加载完成，共 {total} 只", 100, 100)
 
         if total == 0:
             return {"status": "ok", "cached_count": 0, "downloaded": 0, "failed_count": 0}
+
+        # ── 检查停止信号 ──
+        if self._stop_requested():
+            logger.info("收到停止信号，中止下载（确定代码后）")
+            return {"status": "stopped", "cached_count": 0, "downloaded": 0, "failed_count": 0}
+
+        # ── 根据 market 过滤代码 ──
+        if self.market != "全部市场":
+            before_filter = total
+            codes = self._filter_by_market(codes)
+            total = len(codes)
+            logger.info(f"市场过滤 [{self.market}]: {before_filter} → {total} 只")
+            if total == 0:
+                return {"status": "ok", "cached_count": 0, "downloaded": 0, "failed_count": 0}
 
         # ── 子阶段2：检测通达信离线数据 ──
         self._set_progress("prefetch_tdx", "正在检测通达信离线数据...", 0, total)
@@ -254,6 +342,7 @@ class ScreenEngine:
         fetch_result = market_scanner.prefetch_batch(
             codes, days=120, max_workers=50, progress_callback=_on_fetch,
             force_refresh=force_refresh,
+            stop_event=self._stop_event,  # ← 传递停止事件
         )
 
         # ── 子阶段3.5：批量合并今日实时行情到内存缓存 ──
@@ -273,19 +362,19 @@ class ScreenEngine:
         self._set_progress("prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
         self._notify_progress(progress_callback, "prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
 
-        cached_codes = list(market_scanner._kline_cache.keys())
+        cached_codes_after = list(market_scanner._kline_cache.keys())
         merged_count = 0
-        logger.info(f"prefetch_merge: 开始合并，缓存股票数={len(cached_codes)}")
-        for i, code6 in enumerate(cached_codes):
+        logger.info(f"prefetch_merge: 开始合并，缓存股票数={len(cached_codes_after)}")
+        for i, code6 in enumerate(cached_codes_after):
             df = market_scanner._kline_cache[code6]
             if not df.empty:
                 merged = market_scanner._merge_today_realtime(df, code6)
                 market_scanner._kline_cache[code6] = merged
                 merged_count += 1
             if i % 300 == 0 and total > 0:
-                pct = int(i / max(len(cached_codes), 1) * 100)
-                self._set_progress("prefetch_merge", f"合并实时行情 {i}/{len(cached_codes)}...", pct, 100)
-                self._notify_progress(progress_callback, "prefetch_merge", f"合并实时行情 {i}/{len(cached_codes)}...", pct, 100)
+                pct = int(i / max(len(cached_codes_after), 1) * 100)
+                self._set_progress("prefetch_merge", f"合并实时行情 {i}/{len(cached_codes_after)}...", pct, 100)
+                self._notify_progress(progress_callback, "prefetch_merge", f"合并实时行情 {i}/{len(cached_codes_after)}...", pct, 100)
 
         self._set_progress("prefetch_merge", f"今日实时行情合并完成（{merged_count}只）", 100, 100)
         self._notify_progress(progress_callback, "prefetch_merge", f"今日实时行情合并完成（{merged_count}只）", 100, 100)
@@ -326,6 +415,14 @@ class ScreenEngine:
         """
         stock_list = self._load_stock_list()
         market_scanner.load()
+
+        # 按市场过滤股票列表
+        if self.market != "全部市场":
+            code_col, _ = self._get_code_name_cols(stock_list)
+            codes = stock_list[code_col].astype(str).tolist()
+            filtered = self._filter_by_market(codes)
+            stock_list = stock_list[stock_list[code_col].astype(str).isin(filtered)]
+            logger.info(f"screen_strategies: 按市场[{self.market}]过滤，{len(codes)} → {len(stock_list)} 只")
 
         total = len(strategy_names)
         results = {}
@@ -568,7 +665,7 @@ class ScreenEngine:
             final_list.append({
                 **entry,
                 "n_strategies": n_strategies,
-                "all_signals": list(set(entry["all_signals"])),
+                "all_signals": list(dict.fromkeys(entry["all_signals"])),  # 去重保序保留频次（不转set）
                 # 风险信息
                 "risk_tag": risk_tag,
                 "risk_reasons": risk_reasons,
@@ -722,7 +819,12 @@ class ScreenEngine:
         # 阶段1：预加载K线数据（可跳过）
         _t0 = datetime.now()
         if not skip_download:
-            self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
+            dl_result = self.download_data(force_refresh=force_refresh, progress_callback=progress_callback)
+            if dl_result.get("status") == "stopped":
+                logger.info("用户已停止下载，提前终止筛选")
+                self._set_progress("done", "已停止", 0, 100)
+                self._notify_progress(progress_callback, "done", "已停止", 0, 100)
+                return {"status": "stopped", "comprehensive_picks": []}
         else:
             self._set_progress("prefetch", "使用缓存数据，跳过下载", 30, 100)
             self._notify_progress(progress_callback, "prefetch", "使用缓存数据，跳过下载", 30, 100)
@@ -821,17 +923,30 @@ class ScreenEngine:
         # 逐策略评估持仓股票
         per_strategy_results: Dict[str, ScreenResult] = {}
         for strategy_name in strategies:
+            if self._stop_requested():
+                logger.info("收到停止信号，提前终止持仓评估")
+                break
+
             strategy = get_strategy(strategy_name, top_n=self.top_n)
             signals = []
-            for code in codes:
-                try:
-                    sig = strategy._evaluate_single_stock(
-                        code, market_scanner, name_map, trade_date
-                    )
-                    if sig is not None:
-                        signals.append(sig)
-                except Exception as e:
-                    logger.debug(f"[持仓评估] {strategy_name} {code} 失败: {e}")
+
+            # 并行评估所有代码
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                futures = {
+                    pool.submit(strategy._evaluate_single_stock,
+                                code, market_scanner, name_map, trade_date): code
+                    for code in codes
+                }
+                for future in as_completed(futures):
+                    if self._stop_requested():
+                        break
+                    try:
+                        sig = future.result()
+                        if sig is not None:
+                            signals.append(sig)
+                    except Exception as e:
+                        logger.debug(f"[持仓评估] {strategy_name} {futures[future]} 失败: {e}")
 
             per_strategy_results[strategy_name] = ScreenResult(
                 strategy_name=strategy_name,
