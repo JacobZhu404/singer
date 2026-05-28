@@ -1158,8 +1158,9 @@ let _dataStatusTimer = null;
 
 async function fetchDataStatus() {
   try {
+    const market = document.getElementById('marketSelect').value;
     const [dr, sr] = await Promise.all([
-      fetch('/api/data_status').then(r => r.json()),
+      fetch(`/api/data_status?market=${encodeURIComponent(market)}`).then(r => r.json()),
       fetch('/api/status').then(r => r.json()).catch(() => null),
     ]);
     const isRunning = sr && sr.data && sr.data.is_running;
@@ -1252,14 +1253,14 @@ function showProgress(phase, label, detail) {
 
 // 只更新：仅下载K线数据，不筛选
 async function startOnlyUpdate() {
-  if (selectedStrategies.size === 0) { notify('请先选择至少一个策略', 'error'); return; }
   showProgress('prefetch_init', '📥 正在下载K线数据...', '请稍候...');
   setActionButtonsState('running', 'update');
 
+  const market = document.getElementById('marketSelect').value;
   const r = await fetch('/api/download', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ force_refresh: true })
+    body: JSON.stringify({ force_refresh: true, market: market })
   });
   const j = await r.json();
   if (j.code !== 0) {
@@ -1627,9 +1628,12 @@ async function stopScreening() {
 // ── Stock Link Helper ──
 function getStockLinks(code, name) {
   const c = String(code || '').replace(/[^0-9]/g, '');
-  const prefix = c.startsWith('6') ? 'sh' : 'sz';
+  let prefix;
+  if (c.startsWith('6')) prefix = 'sh';
+  else if (c.startsWith('8') || c.startsWith('4') || c.startsWith('9')) prefix = 'bj';
+  else prefix = 'sz';
   return {
-    sina: `https://finance.sina.com.cn/realstock/company/${c}/nc.shtml`,
+    sina: `https://finance.sina.com.cn/realstock/company/${prefix}${c}/nc.shtml`,
     eastmoney: `https://quote.eastmoney.com/${prefix}${c}.html`,
     tencent: `https://stockpage.10jqka.com.cn/${c}/`,
     xueqiu: `https://xueqiu.com/S/${prefix}${c}`,

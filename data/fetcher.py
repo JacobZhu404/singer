@@ -134,31 +134,73 @@ def get_stock_realtime(code: str) -> dict:
     return _get_manager().get_realtime(code)
 
 
-def get_stock_list() -> pd.DataFrame:
-    """获取全市场股票列表（本地缓存优先），返回标准化列名 [ts_code, name]"""
+def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
+    """
+    获取全市场股票列表。
+    
+    Cache validity rules:
+    1. If cache exists AND cache contains today's closing data AND market is closed → use cache (skip API)
+    2. If force_refresh=True → always try API first
+    3. If API fails → degrade to cache with warning
+    
+    Args:
+        force_refresh: True when user clicks "更新数据", False for passive loading
+    """
     cache = _get_cache()
     manager = _get_manager()
 
     cached = cache.get_cached_stock_list()
+    
+    # 规则1: 被动加载 + 缓存有效 → 直接用缓存（不请求API）
+    if not force_refresh and not cached.empty:
+        if _is_cache_valid_for_today(cached):
+            logger.info(f"股票列表(缓存有效): {len(cached)} 只，跳过网络请求")
+            return normalize_stock_columns(cached)
+    
+    # 规则2: 主动更新 或 缓存无效 → 请求API
     df = manager.get_stock_list()
 
-    # 网络返回完整（>=1000只）才信任并更新缓存
-    if not df.empty and len(df) >= 1000:
+    # 网络返回完整（>=3000只）才信任并更新缓存
+    if not df.empty and len(df) >= 3000:
         df = normalize_stock_columns(df)
         cache.save_stock_list(df)
         logger.info(f"股票列表(网络): {len(df)} 只")
         return df
 
-    # 网络不完整或失败，优先用本地缓存
+    # 规则3: 网络不完整或失败，用本地缓存
     if not cached.empty:
         if not df.empty and len(df) < len(cached):
             logger.warning(f"网络股票列表不完整({len(df)}只)，使用本地缓存({len(cached)}只)")
         df = normalize_stock_columns(cached)
-        logger.info(f"股票列表(缓存): {len(df)} 只")
+        logger.info(f"股票列表(缓存回退): {len(df)} 只")
         return df
 
     # 两者都失败，返回网络结果（可能为空）
     return normalize_stock_columns(df) if not df.empty else df
+
+
+def _is_cache_valid_for_today(cached: pd.DataFrame) -> bool:
+    """
+    判断缓存是否包含今日收盘数据。
+    不能只看日期==今天，要看缓存中最新数据是否是收盘后生成的。
+    """
+    import os
+    cache_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "stocks.json")
+    if not os.path.exists(cache_file):
+        return False
+    
+    import time
+    mtime = os.path.getmtime(cache_file)
+    cache_hour = datetime.fromtimestamp(mtime).hour
+    
+    # 缓存文件修改时间在收盘后（15点后）→ 认为是收盘数据，有效
+    # 缓存文件修改时间在开盘期间（9~15点）→ 认为是盘中数据，无效
+    if cache_hour >= 15:
+        # 且是今天生成的
+        cache_date = datetime.fromtimestamp(mtime).date()
+        if cache_date == datetime.now().date():
+            return True
+    return False
 
 
 def get_latest_trade_date() -> str:
@@ -248,7 +290,7 @@ class MarketScanner:
     def get_history(self, code: str, days: int = 60, pure: bool = False) -> pd.DataFrame:
         """单只K线（内存 → 本地 → 网络），线程安全"""
         code6 = str(code).strip()
-        if len(code6) > 2 and code6[:2].lower() in ("sh", "sz"):
+        if len(code6) > 2 and code6[:2].lower() in ("sh", "sz", "bj"):
             code6 = code6[2:]
 
         # ── 优化：LRU淘汰防止内存溢出 ──
@@ -292,6 +334,7 @@ class MarketScanner:
         max_workers: int = 50,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
         force_refresh: bool = False,
+        stop_event: Optional[threading.Event] = None,  # ← 新增停止事件参数
     ) -> Dict:
         """
         并发预加载K线到内存缓存，带自动补全机制。
@@ -303,11 +346,12 @@ class MarketScanner:
 
         Args:
             force_refresh: True=强制从网络重新下载，忽略本地缓存
+            stop_event: 停止事件，用于中断下载
         Returns: {"cached": int, "failed": list, "total": int}
         """
         def to6(c: str) -> str:
             c = str(c).strip()
-            return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz") else c
+            return c[2:] if len(c) > 2 and c[:2].lower() in ("sh", "sz", "bj") else c
 
         all_codes = [to6(c) for c in codes]
 
@@ -325,21 +369,39 @@ class MarketScanner:
         else:
             logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
 
-        # 第1轮：高并发快速下载
-        failed = self._fetch_round(need_fetch, days, max_workers, "第1轮",
-                                   progress_callback, force_refresh=force_refresh)
+        # 并发自适应降级：20 → 10 → 5 → 串行（降低并发避免卡死）
+        concurrency_levels = [max_workers, 20, 10, 5]
+        failed = []
+        for round_idx, cur_workers in enumerate(concurrency_levels):
+            if not need_fetch:
+                break
+            # 检查停止事件
+            if stop_event and stop_event.is_set():
+                logger.info("prefetch_batch: 收到停止信号，中止下载")
+                break
+            label = f"第{round_idx+1}轮(并发{cur_workers})"
+            logger.info(f"{label}: 尝试 {len(need_fetch)} 只")
+            failed = self._fetch_round(
+                need_fetch, days, cur_workers, label,
+                progress_callback, force_refresh=force_refresh,
+                stop_event=stop_event  # ← 传递停止事件
+            )
+            if not failed:
+                break
+            need_fetch = failed
+            if round_idx + 1 < len(concurrency_levels):
+                logger.warning(f"{label} 失败 {len(failed)} 只，降级到并发 {concurrency_levels[round_idx+1]}")
+            else:
+                logger.warning(f"{label} 失败 {len(failed)} 只，进入串行兜底")
 
-        # 第2轮：中并发补全
+        # 最终串行兜底
         if failed:
-            logger.info(f"第1轮完成，{len(failed)}只失败，启动第2轮补全(并发15)")
-            failed = self._fetch_round(failed, days, 15, "第2轮",
-                                       progress_callback, force_refresh=force_refresh)
-
-        # 第3轮：串行补全（每只间隔1s）
-        if failed:
-            logger.info(f"第2轮后仍有{len(failed)}只失败，启动第3轮串行补全")
-            failed = self._fetch_round(failed, days, 1, "第3轮",
-                                       progress_callback, force_refresh=force_refresh)
+            logger.info(f"并发全部失败，启动串行兜底，共 {len(failed)} 只")
+            failed = self._fetch_round(
+                failed, days, 1, "串行兜底",
+                progress_callback, force_refresh=force_refresh,
+                stop_event=stop_event  # ← 传递停止事件
+            )
 
         if failed:
             logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
@@ -356,56 +418,100 @@ class MarketScanner:
         return {"cached": mem_count, "failed": failed or [], "total": len(all_codes)}
 
     def _fetch_round(self, codes: List[str], days: int, workers: int,
-                     round_label: str, callback=None, force_refresh: bool = False) -> List[str]:
-        """单轮下载，返回失败的代码列表"""
+                     round_label: str, callback=None, force_refresh: bool = False,
+                     stop_event: Optional[threading.Event] = None) -> List[str]:
+        """单轮下载，返回失败的代码列表。支持停止事件中断。"""
         done_count = 0
         total = len(codes)
         failed_codes = []
+        lock = threading.Lock()
 
         def _fetch_one(code6: str):
             nonlocal done_count
-            if force_refresh:
-                # 强制刷新：跳过本地缓存，直接请求网络
-                manager = _get_manager()
-                df = manager.get_kline(code6, days)
-                # 强制模式下也重试
-                retry_delays = [0.5, 1.0, 2.0]
-                for delay in retry_delays:
-                    if not df.empty:
-                        break
-                    time.sleep(delay)
+            df = None
+            # 每次重试前都检查停止事件
+            if stop_event and stop_event.is_set():
+                return code6, None
+            try:
+                if force_refresh:
+                    manager = _get_manager()
                     df = manager.get_kline(code6, days)
-                # 写入本地缓存（更新本地数据）
-                if not df.empty:
-                    cache = _get_cache()
-                    cache.merge_kline_to_cache(code6, df)
-            else:
-                df = get_stock_history(code6, days)
-
-                # 重试逻辑：最多重试3次，递增延迟
-                retry_delays = [0.5, 1.0, 2.0]
-                for delay in retry_delays:
-                    if not df.empty:
-                        break
-                    time.sleep(delay)
+                    for i, delay in enumerate((0.5, 1.0, 2.0)):
+                        if df is not None and not df.empty:
+                            break
+                        if stop_event and stop_event.is_set():
+                            return code6, None
+                        # wait 在 stop_event.set() 时立即返回，替代 time.sleep
+                        if stop_event:
+                            stop_event.wait(timeout=delay)
+                            if stop_event.is_set():
+                                return code6, None
+                        else:
+                            time.sleep(delay)
+                        df = manager.get_kline(code6, days)
+                    if df is not None and not df.empty:
+                        cache = _get_cache()
+                        cache.merge_kline_to_cache(code6, df)
+                else:
                     df = get_stock_history(code6, days)
-
-            with self._lock:
-                done_count += 1
-                cur = done_count
-
-            if not df.empty:
-                with self._lock:
-                    self._kline_cache[code6] = df
-                    self._cache_days[code6] = days
-            else:
-                failed_codes.append(code6)
-
-            if callback and cur % max(50, workers * 2) == 0:
-                callback(code6, cur, total)
+                    for i, delay in enumerate((0.5, 1.0, 2.0)):
+                        if df is not None and not df.empty:
+                            break
+                        if stop_event and stop_event.is_set():
+                            return code6, None
+                        if stop_event:
+                            stop_event.wait(timeout=delay)
+                            if stop_event.is_set():
+                                return code6, None
+                        else:
+                            time.sleep(delay)
+                        df = get_stock_history(code6, days)
+            except Exception:
+                pass
+            finally:
+                with lock:
+                    done_count += 1
+                    cur = done_count
+            if callback and done_count % max(50, workers * 2) == 0:
+                callback(code6, done_count, total)
+            if df is not None and not df.empty:
+                return code6, df
+            return code6, None
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            list(pool.map(_fetch_one, codes))
+            # 分批提交，每批前检查停止事件
+            futures = {}
+            for c in codes:
+                if stop_event and stop_event.is_set():
+                    break
+                f = pool.submit(_fetch_one, c)
+                futures[f] = c
+
+            # 收集已完成的
+            done_futures = set()
+            try:
+                for future in as_completed(list(futures.keys())):
+                    if stop_event and stop_event.is_set():
+                        # 停止：取消所有未完成的任务
+                        for f in futures:
+                            if not f.done():
+                                f.cancel()
+                        break
+                    try:
+                        code6, result = future.result()
+                        done_futures.add(future)
+                        if code6 is None:
+                            continue
+                        if result is not None and not (hasattr(result, 'empty') and result.empty):
+                            with self._lock:
+                                self._kline_cache[code6] = result
+                                self._cache_days[code6] = days
+                        else:
+                            failed_codes.append(code6)
+                    except Exception:
+                        failed_codes.append(futures.get(future, 'unknown'))
+            except Exception:
+                pass
 
         return failed_codes
 
@@ -532,6 +638,30 @@ class MarketScanner:
             return result
         except Exception:
             return {}
+
+    def get_cached_codes(self) -> List[str]:
+        """
+        返回本地缓存中已有的股票代码列表（内存 + 磁盘）。
+        用于增量更新场景：只更新已缓存的股票，不依赖股票列表API。
+        重启后内存缓存为空，但从磁盘缓存读取代码列表。
+        """
+        import traceback
+        # 内存缓存中的代码
+        with self._lock:
+            mem_codes = set(self._kline_cache.keys())
+
+        # 磁盘缓存中的代码（调 local_cache 的公开方法，路径最权威）
+        disk_codes = set()
+        try:
+            from .local_cache import get_cached_codes as _disk_scan
+            disk_codes = set(_disk_scan())
+            logger.info(f"get_cached_codes: 磁盘扫描到 {len(disk_codes)} 个代码")
+        except Exception as e:
+            logger.error(f"get_cached_codes 调用 local_cache 失败: {e}\n{traceback.format_exc()}")
+
+        all_codes = mem_codes | disk_codes
+        logger.info(f"get_cached_codes: 内存={len(mem_codes)}, 磁盘={len(disk_codes)}, 合计={len(all_codes)}")
+        return list(all_codes)
 
     def get_cache_status(self) -> dict:
         cache = _get_cache()

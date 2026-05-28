@@ -31,8 +31,16 @@ def _ensure_dirs():
     os.makedirs(_KLINE_DIR, exist_ok=True)
 
 
+def _strip_prefix(code: str) -> str:
+    """去掉 sh/sz/bj 前缀，返回纯数字代码（与 data_sources._to_code6 一致）"""
+    c = str(code).strip()
+    if len(c) > 2 and c[:2].lower() in ("sh", "sz", "bj"):
+        return c[2:]
+    return c
+
+
 def _kline_path(code: str) -> str:
-    code6 = str(code).strip().replace("sh", "").replace("sz", "")
+    code6 = _strip_prefix(code)
     return os.path.join(_KLINE_DIR, f"{code6}.csv")
 
 
@@ -75,7 +83,7 @@ def save_kline_to_cache(code: str, df: pd.DataFrame):
     if df.empty or "date" not in df.columns:
         return
     _ensure_dirs()
-    code6 = str(code).strip().replace("sh", "").replace("sz", "")
+    code6 = _strip_prefix(code)
     path = _kline_path(code6)
     try:
         with _lock:
@@ -111,7 +119,7 @@ def merge_kline_to_cache(code: str, new_df: pd.DataFrame) -> pd.DataFrame:
 
 def needs_update(code: str, max_age_hours: int = 4) -> bool:
     meta = _load_meta()
-    code6 = str(code).strip().replace("sh", "").replace("sz", "")
+    code6 = _strip_prefix(code)
     entry = meta.get(code6, {})
     last = entry.get("last_update", "")
     if not last:
@@ -140,6 +148,24 @@ def save_stock_list(df: pd.DataFrame):
             json.dump(df.to_dict(orient="records"), f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.warning(f"保存股票列表缓存失败: {e}")
+
+
+def get_cached_codes() -> list:
+    """
+    返回本地缓存中已有的股票代码列表（扫描 klines 目录）。
+    供 MarketScanner.get_cached_codes() 调用，避免在 fetcher.py 里重复拼路径。
+    """
+    import traceback
+    codes = []
+    try:
+        if os.path.isdir(_KLINE_DIR):
+            for fname in os.listdir(_KLINE_DIR):
+                if fname.endswith(".csv"):
+                    codes.append(fname[:-4])
+        logger.info(f"get_cached_codes: 扫描到 {len(codes)} 个CSV文件, 路径={_KLINE_DIR}")
+    except Exception as e:
+        logger.error(f"get_cached_codes 扫描磁盘异常: {e}\n{traceback.format_exc()}")
+    return codes
 
 
 def get_cache_status() -> Dict:
