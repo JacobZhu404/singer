@@ -69,14 +69,10 @@ class StrongStockStrategy(BaseStrategy):
                 up_vol += v
             else:
                 down_vol += v
-        has_red_fat = False
-        if down_vol > 0 and up_vol / (down_vol + 1e-8) > 2.0:  # 从 1.5 提高到 2.0
+        if down_vol > 0 and up_vol / (down_vol + 1e-8) > 1.5:  # 放宽从2.0到1.5
             signals.append(f"红肥绿瘦(涨缩量比{up_vol/down_vol:.1f})")
-            score += 20
-            has_red_fat = True
-        else:
-            # 红肥绿瘦是强势股核心特征，不满足直接过滤
-            return None
+            score += 15
+            extra["up_down_vol_ratio"] = round(up_vol / (down_vol + 1e-8), 2)
 
         if i >= 4 and all(red.iloc[i - k] for k in range(5)) and \
            all(not pd.isna(pct_chg.iloc[i - k]) and
@@ -106,7 +102,7 @@ class StrongStockStrategy(BaseStrategy):
                     signals.append("52周新高回踩确认")
                     score += 25
                     extra["near_52w_high"] = True
-        
+
         # 优化2：相对强度（20日涨跌幅）
         if len(df) >= 20:
             rel_strength = calc_relative_strength(close, window=20)
@@ -118,7 +114,7 @@ class StrongStockStrategy(BaseStrategy):
                 signals.append(f"相对强度弱(+{rel_strength:.1f}%)")
                 score += 5
 
-        if score < 80:  # 收紧：50→80，控制命中数
+        if score < 55:  # 放宽从80到55，同时去掉红肥绿瘦的强制过滤
             return None
 
         latest = close.iloc[i]
