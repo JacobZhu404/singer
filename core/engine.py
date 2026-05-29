@@ -362,15 +362,18 @@ class ScreenEngine:
         cached_codes_after = list(market_scanner._kline_cache.keys())
         merged_count = 0
         logger.info(f"prefetch_merge: 开始合并，缓存股票数={len(cached_codes_after)}")
-        for i, code6 in enumerate(cached_codes_after):
-            df = market_scanner._kline_cache[code6]
-            if not df.empty:
-                merged = market_scanner._merge_today_realtime(df, code6)
-                market_scanner._kline_cache[code6] = merged
-                merged_count += 1
-            if i % 300 == 0 and total > 0:
-                pct = int(i / max(len(cached_codes_after), 1) * 100)
-                self._set_progress("prefetch_merge", f"合并实时行情 {i}/{len(cached_codes_after)}...", pct, 100)
+
+        # [修复1] 给缓存读写加锁，确保线程安全
+        with market_scanner._lock:
+            for i, code6 in enumerate(cached_codes_after):
+                df = market_scanner._kline_cache[code6]
+                if not df.empty:
+                    merged = market_scanner._merge_today_realtime(df, code6)
+                    market_scanner._kline_cache[code6] = merged
+                    merged_count += 1
+                if i % 300 == 0 and total > 0:
+                    pct = int(i / max(len(cached_codes_after), 1) * 100)
+                    self._set_progress("prefetch_merge", f"合并实时行情 {i}/{len(cached_codes_after)}...", pct, 100)
 
         self._set_progress("prefetch_merge", f"今日实时行情合并完成（{merged_count}只）", 100, 100)
 
