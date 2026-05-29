@@ -25,13 +25,20 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from stock_screener.utils.indicators import calc_risk_flags
-from stock_screener.strategies.registry import STRATEGY_REGISTRY
+# [修复] 使用相对导入，避免依赖 stock_screener 包名
+from utils.indicators import calc_risk_flags
+from strategies.registry import STRATEGY_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-HOLD_PERIODS = [2, 5, 10, 30]
-SCORE_THRESHOLD = 40
+# 使用 constants.py 中的配置（如果可用，否则回退到默认值）
+try:
+    from core.constants import HOLD_PERIODS as _HP, BACKTEST_SCORE_THRESHOLD as _ST
+    HOLD_PERIODS = _HP
+    SCORE_THRESHOLD = _ST
+except ImportError:
+    HOLD_PERIODS = [2, 5, 10, 30]
+    SCORE_THRESHOLD = 40
 
 # 缓存目录（本地 CSV 文件）
 _CACHE_DIR = os.path.join(

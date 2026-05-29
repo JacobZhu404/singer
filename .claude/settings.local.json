@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from stock_screener.core.server import app; print\\('import ok'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ]
+  }
+}
