@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 卖出信号检测工具
 
@@ -6,10 +7,12 @@
 2. 买入风险评估（卖出信号强 = 买入风险高）
 """
 import pandas as pd
-import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
+
+# [修复3] 从 indicators.py 直接导入，避免重复代码
+from .indicators import calc_macd, calc_rsi
 
 
 def detect_sell_signals(df: pd.DataFrame) -> dict:
@@ -47,8 +50,8 @@ def detect_sell_signals(df: pd.DataFrame) -> dict:
     sell_signals = []
     sell_score = 0
     
-    # ── 信号1: MACD死叉 ──
-    dif, dea, macd_bar = _calc_macd(close)
+    # [修复3] 直接使用 indicators.py 的实现
+    dif, dea, macd_bar = calc_macd(close)
     if len(dif) >= 2:
         if dif.iloc[-1] < dea.iloc[-1] and dif.iloc[-2] >= dea.iloc[-2]:
             sell_signals.append("MACD死叉")
@@ -97,8 +100,8 @@ def detect_sell_signals(df: pd.DataFrame) -> dict:
             sell_signals.append("连续3日下跌")
             sell_score += 15
     
-    # ── 信号5: RSI超买回落 ──
-    rsi = _calc_rsi(close)
+    # [修复3] 直接使用 indicators.py 的实现
+    rsi = calc_rsi(close)
     if len(rsi) >= 2:
         if rsi.iloc[-2] > 70 and rsi.iloc[-1] < rsi.iloc[-2]:
             sell_signals.append("RSI超买回落")
@@ -131,28 +134,6 @@ def detect_sell_signals(df: pd.DataFrame) -> dict:
         "take_profit_price": take_profit_price,
         "risk_level": risk_level,
     }
-
-
-def _calc_macd(close: pd.Series, fast=12, slow=26, signal=9):
-    """计算MACD指标"""
-    ema_fast = close.ewm(span=fast, adjust=False).mean()
-    ema_slow = close.ewm(span=slow, adjust=False).mean()
-    dif = ema_fast - ema_slow
-    dea = dif.ewm(span=signal, adjust=False).mean()
-    macd_bar = (dif - dea) * 2
-    return dif, dea, macd_bar
-
-
-def _calc_rsi(close: pd.Series, period=14):
-    """计算RSI指标"""
-    delta = close.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
 
 
 def assess_buy_risk(df: pd.DataFrame) -> dict:
