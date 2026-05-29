@@ -153,8 +153,12 @@ def _check_sell_signal(risk_flags: list) -> bool:
 def _chanlun_check(df: pd.DataFrame) -> tuple:
     """缠论策略评分（直接使用策略模块）"""
     try:
-        from stock_screener.strategies.chanlun import _chanlun_score
-        score, signals, _ = _chanlun_score(df)
+        # [修复2] 改为正确的模块名 chanlun_strict，使用内部函数
+        from stock_screener.strategies.chanlun_strict import _analyze, _compute_score
+        analysis = _analyze(df)
+        if analysis is None:
+            return 0, []
+        score, signals, extra = _compute_score(analysis)
         return score, signals
     except Exception:
         return 0, []
