@@ -393,8 +393,7 @@ class DataSourceManager:
                 if not df.empty:
                     self._mark_success(source.name)
                     return df
-                # 返回空DataFrame也视为失败（接口被封会返回空或HTML）
-                self._mark_fail(source.name)
+                # 返回空DataFrame不视为源故障（可能只是该股票无数据）
             except Exception as e:
                 self._mark_fail(source.name)
                 logger.debug(f"[{source.name}] K线失败 {code}: {e}")
@@ -418,7 +417,7 @@ class DataSourceManager:
                 if data:
                     self._mark_success(source.name)
                     return data
-                self._mark_fail(source.name)
+                # 返回空 dict（该股票无数据）不视为源故障
             except Exception as e:
                 self._mark_fail(source.name)
                 logger.debug(f"[{source.name}] 实时行情失败 {code}: {e}")
@@ -432,7 +431,6 @@ class DataSourceManager:
                 if results:
                     self._mark_success("tencent")
                     return results
-                self._mark_fail("tencent")
             except Exception as e:
                 self._mark_fail("tencent")
                 logger.debug(f"腾讯批量行情失败: {e}")
