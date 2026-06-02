@@ -183,7 +183,7 @@ def _merge_inclusive_strict(raw_bars: List[KBar]) -> List[KBar]:
                     open=prev.open,
                     high=max(prev.high, b.high),
                     low=max(prev.low, b.low),   # 取较高的low
-                    close=max(prev.high, b.high),
+                    close=b.close,              # 保留最新收盘价，不影响MACD计算
                 )
             else:
                 # 向下合并：取低低
@@ -192,7 +192,7 @@ def _merge_inclusive_strict(raw_bars: List[KBar]) -> List[KBar]:
                     open=prev.open,
                     high=min(prev.high, b.high), # 取较低的high
                     low=min(prev.low, b.low),
-                    close=min(prev.low, b.low),
+                    close=b.close,               # 保留最新收盘价，不影响MACD计算
                 )
             result[-1] = new_bar
         else:

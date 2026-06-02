@@ -94,9 +94,6 @@ class RightSideTradingStrategy(BaseStrategy):
         if has_breakout_60:
             signals.append(f"突破60日新高({high_60:.2f})")
             score += 30  # 优化：10→30（60日突破更强）
-        elif not (c > high_20 and breakout_20_pct > 1.0):
-            # 没有有效突破（20日或60日），不是右侧交易信号，直接过滤
-            return None
 
             # 优化2：突破有效性验证（突破幅度>1%）
             if breakout_60_pct > 1.0:
@@ -110,6 +107,9 @@ class RightSideTradingStrategy(BaseStrategy):
             elif breakout_60_pct > 8.0:
                 signals.append(f"60日突破幅度过大({breakout_60_pct:.1f}%)")
                 score -= 15  # 可能已过热的，大幅降低评分
+        elif not (c > high_20 and breakout_20_pct > 1.0):
+            # 没有有效突破（20日或60日），不是右侧交易信号，直接过滤
+            return None
 
         # ── 条件3: 突破时放量 ──
         if vr > 2.0:

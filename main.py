@@ -91,11 +91,11 @@ def _run_screen(args):
     for i, p in enumerate(picks, 1):
         pct = p.get("pct_chg", 0)
         pct_str = f"+{pct:.2f}%" if pct >= 0 else f"{pct:.2f}%"
-        wr = p.get("final_win_rate", 0)
+        cs = p.get("composite_score", 0)
         strategies_hit = [s["name"] for s in p.get("strategies_hit", [])]
         print(f"\n{i}. {p['name']} ({p['ts_code']})")
         print(f"   价格: {p['latest_price']}  涨幅: {pct_str}  量比: {p['volume_ratio']:.1f}x")
-        print(f"   胜率: {wr*100:.1f}%  |  命中策略: {', '.join(strategies_hit)}")
+        print(f"   综合评分: {cs}  |  命中策略: {', '.join(strategies_hit)}")
         signals = p.get("all_signals", [])[:5]
         print(f"   信号: {' | '.join(signals)}")
 
@@ -105,9 +105,8 @@ def _run_screen(args):
         print(f"\n📌 {detail['strategy_desc']}")
         print(f"   扫描: {detail['total_scanned']} 只  命中: {detail['hit_count']} 只")
         for s in detail.get("top_stocks", [])[:3]:
-            wr_str = s.get("win_rate_pct", "")
             sigs = " | ".join(s.get("signals", [])[:3])
-            print(f"   → {s['name']}({s['ts_code']})  胜率:{wr_str}  [{sigs}]")
+            print(f"   → {s['name']}({s['ts_code']})  评分:{s['score']}  [{sigs}]")
 
 
 def _list_strategies():
