@@ -212,9 +212,25 @@ class ScreenEngine:
         if not codes:
             return
 
+        # [优化] 检查指标缓存，如果大部分已有则跳过或减少计算
+        cached_count = 0
+        for c in codes[:100]:  # 抽检前100只
+            if f"{c}_120_False" in market_scanner._indicator_cache:
+                cached_count += 1
+
+        # 如果抽检样本中有80%以上已缓存，说明可以跳过precalc
+        if cached_count >= 80:
+            logger.info(f"预计算跳过：{cached_count}/100只已缓存")
+            if progress_callback:
+                progress_callback("precalc", "使用缓存指标，跳过预计算", 100, 100)
+            return
+
         def _on_precalc_progress(done: int, total: int, code: str):
             if progress_callback:
                 progress_callback("precalc", f"预计算指标 {done}/{total}...", done, total)
+            # [修复] 检查停止信号
+            if self._stop_requested():
+                raise KeyboardInterrupt("用户停止")
 
         precalc_indicators(codes, market_scanner, days=120, progress_callback=_on_precalc_progress)
 
