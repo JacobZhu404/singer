@@ -204,6 +204,8 @@ class ScreenEngine:
     def _precalc(self, stock_list: pd.DataFrame,
                  progress_callback: Optional[Callable[[str, str, int, int], None]] = None):
         """预计算指标并缓存，避免各策略重复计算"""
+        t0 = datetime.now()
+
         from ..utils.precalc import precalc_indicators
         code_col, _ = self._get_code_name_cols(stock_list)
         if stock_list.empty or code_col not in stock_list.columns:
@@ -233,6 +235,9 @@ class ScreenEngine:
                 raise KeyboardInterrupt("用户停止")
 
         precalc_indicators(codes, market_scanner, days=120, progress_callback=_on_precalc_progress)
+
+        elapsed = (datetime.now() - t0).total_seconds()
+        logger.info(f"[耗时] _precalc: {elapsed:.1f}秒")
 
     def run_single(self, strategy_name: str) -> ScreenResult:
         """执行单个策略"""
@@ -276,6 +281,8 @@ class ScreenEngine:
         Returns:
             {"status": "ok", "cached_count": int, "downloaded": int, "failed_count": int}
         """
+        t0 = datetime.now()
+
         # 设置进度回调，_set_progress 内部会自动同步
         self._progress_cb = progress_callback
 
@@ -406,8 +413,11 @@ class ScreenEngine:
             msg = f"数据更新完成，已缓存全部 {after_count} 只"
             self._set_progress("prefetch_done", msg, after_count, total)
 
+        elapsed = (datetime.now() - t0).total_seconds()
+        logger.info(f"[耗时] download_data: {elapsed:.1f}秒")
+
         return {"status": "ok", "cached_count": after_count, "downloaded": downloaded,
-                "failed_count": len(failed_codes)}
+                "failed_count": len(failed_codes), "elapsed_seconds": elapsed}
     def screen_strategies(
         self,
         strategy_names: List[str],
@@ -425,6 +435,8 @@ class ScreenEngine:
         Returns:
             {"status": "ok", "results": Dict[str, ScreenResult]}
         """
+        t0 = datetime.now()
+
         stock_list = self._load_stock_list()
         market_scanner.load()
 
@@ -497,6 +509,9 @@ class ScreenEngine:
                     }
         self._set_progress("done", "筛选完成", total, total)
         self._notify_progress(progress_callback, "done", "筛选完成", total, total)
+
+        elapsed = (datetime.now() - t0).total_seconds()
+        logger.info(f"[耗时] screen_strategies: {elapsed:.1f}秒")
 
         return {"status": "ok", "results": results}
 
@@ -825,6 +840,8 @@ class ScreenEngine:
         一键获取推荐：执行策略 → 合并 → 排序
         策略内部已并行（BaseStrategy 模板方法），Engine 层串行调度即可。
         """
+        total_t0 = datetime.now()
+
         if strategies is None:
             strategies = [k for k in STRATEGY_REGISTRY if k != "limit_up_gene"]
 
@@ -902,11 +919,15 @@ class ScreenEngine:
 
         strategy_summaries = self._build_strategy_summaries(results)
 
+        total_elapsed = (datetime.now() - total_t0).total_seconds()
+        logger.info(f"[耗时] 整个筛选流程: {total_elapsed:.1f}秒")
+
         return {
             "trade_date": get_latest_trade_date(),
             "strategies_run": strategies,
             "comprehensive_picks": merged,
             "strategy_details": strategy_summaries,
+            "elapsed_seconds": total_elapsed,
         }
 
     def evaluate_positions(

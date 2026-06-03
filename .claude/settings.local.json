@@ -6,7 +6,12 @@
       "Bash(git commit -m ' *)",
       "Bash(python *)",
       "Bash(python3 *)",
-      "Bash(curl -s http://127.0.0.1:5188/api/screen/progress)"
+      "Bash(curl -s http://127.0.0.1:5188/api/screen/progress)",
+      "Bash(pkill -f \"python3 main.py web\")",
+      "Bash(curl -s http://127.0.0.1:5188/api/status)",
+      "Bash(curl -s http://127.0.0.1:5188/api/data_status)",
+      "Bash(curl -s http://127.0.0.1:5188/)",
+      "Bash(curl -s http://127.0.0.1:5188/api/result)"
     ]
   }
 }
