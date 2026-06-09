@@ -97,7 +97,15 @@ def save_kline_to_cache(code: str, df: pd.DataFrame):
     try:
         with _lock:
             df["date"] = pd.to_datetime(df["date"])
-            existing = get_cached_kline(code6)
+            # 直接从磁盘读取，避免递归调用 get_cached_kline
+            existing = pd.DataFrame()
+            if os.path.exists(path):
+                try:
+                    existing = pd.read_csv(path, encoding="utf-8")
+                    if not existing.empty and "date" in existing.columns:
+                        existing["date"] = pd.to_datetime(existing["date"])
+                except Exception:
+                    pass
             if not existing.empty:
                 combined = pd.concat([existing, df], ignore_index=True)
                 combined = combined.drop_duplicates(subset=["date"], keep="last")
@@ -130,15 +138,33 @@ def merge_kline_to_cache(code: str, new_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def needs_update(code: str, max_age_hours: int = 4) -> bool:
+    """
+    智能缓存过期判断：
+    - 交易时间：强制更新（用户要最新数据）
+    - 收盘后：检查最新价格是否是收盘价，不是则更新
+    """
+    from .fetcher import is_market_open
     meta = _load_meta()
     code6 = _to_code6(code)
     entry = meta.get(code6, {})
     last = entry.get("last_update", "")
     if not last:
         return True
+
+    # 交易时间：必须实时更新
+    if is_market_open():
+        return True
+
     try:
         dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S")
-        return (datetime.now() - dt).total_seconds() > max_age_hours * 3600
+        # 收盘后：检查是否15:00后的收盘价
+        # 15点后更新 = 收盘价，缓存有效
+        market_close = datetime.strptime("15:00", "%H:%M").time()
+        if dt.time() >= market_close:
+            # 15:00后更新的，是收盘价，长期有效
+            return False
+        # 15点前更新的，可能是盘中数据，需要更新
+        return True
     except ValueError:
         return True
 
