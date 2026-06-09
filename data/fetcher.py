@@ -111,9 +111,10 @@ def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
     cached = cache.get_cached_kline(code6)
     if not cached.empty:
         cached_days = len(cached)
+        # 缓存足够且有效，直接返回（跳过网络请求）
         if cached_days >= days and not cache.needs_update(code6, max_age_hours=4):
             return cached.tail(days).reset_index(drop=True)
-        days = max(days, days - cached_days + 10)
+        # 缓存不够，需要请求网络补全
         
     df = manager.get_kline(code6, days)
     if df.empty:
@@ -362,41 +363,65 @@ class MarketScanner:
 
         all_codes = [to6(c) for c in codes]
 
-        # 检查是否在交易时间，如果是则需要更新到最新数据
+        # 智能更新：交易时间强制更新，收盘后检查是否是收盘价
         from .fetcher import is_market_open
         in_market = is_market_open()
         today = datetime.now()
         today_str = today.strftime("%Y-%m-%d")
+        # 15:00后为收盘价标记时间
+        market_close_time = datetime.strptime("15:00", "%H:%M").time()
+
+        def _is_close_price(last_update_str: str) -> bool:
+            """检查是否是收盘价（15:00后更新）"""
+            if not last_update_str:
+                return False
+            try:
+                dt = datetime.strptime(last_update_str, "%Y-%m-%d %H:%M:%S")
+                return dt.time() >= market_close_time
+            except:
+                return False
 
         with self._lock:
             need_fetch = []
             for c in all_codes:
                 if c not in self._kline_cache:
                     # 不在内存，尝试从本地缓存加载
-                    # 转换格式：600000 -> 600000（CSV文件名就是纯数字）
                     cache = _get_cache()
                     local_df = cache.get_cached_kline(c)
                     if not local_df.empty:
+                        # 检查缓存时间戳
+                        meta = cache._load_meta()
+                        last_update = meta.get(c, {}).get("last_update", "")
                         last_date = str(local_df["date"].iloc[-1]).split()[0]
                         self._kline_cache[c] = local_df
                         self._cache_days[c] = days
-                        if in_market and last_date != today_str:
-                            # 交易时间但本地缓存不是今天的，需要获取实时
+                        if in_market:
+                            # 交易时间：强制更新
                             need_fetch.append(c)
-                        elif not in_market:
-                            # 非交易时间，用本地缓存
+                        elif _is_close_price(last_update):
+                            # 收盘后且是收盘价：缓存有效
                             continue
+                        else:
+                            # 非交易时间但不是收盘价：需要更新获取收盘价
+                            need_fetch.append(c)
                     else:
                         need_fetch.append(c)
                     continue
-                # 检查缓存数据的最新日期
+                # 检查内存缓存的最新日期
                 cached = self._kline_cache[c]
                 last_date = str(cached["date"].iloc[-1]).split()[0]
-                # 交易时间：必须更新到今天；非交易时间：只要有足够天数即可
+                # 检查缓存时间戳
+                meta = cache._load_meta()
+                last_update = meta.get(c, {}).get("last_update", "")
                 if in_market:
+                    # 交易时间：强制更新到最新
                     if last_date != today_str:
                         need_fetch.append(c)
+                elif _is_close_price(last_update):
+                    # 收盘后且是收盘价：缓存有效
+                    continue
                 elif self._cache_days.get(c, 0) < days:
+                    # 需要更新获取收盘价
                     need_fetch.append(c)
 
         if not need_fetch:
