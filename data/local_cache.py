@@ -12,7 +12,7 @@ import json
 import threading
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 import pandas as pd
 
@@ -27,6 +27,10 @@ _STOCKS_FILE = os.path.join(_CACHE_ROOT, "stocks.json")
 _MAX_DAYS    = 400
 
 _lock = threading.RLock()
+
+# 内存缓存层：避免重复读磁盘
+_kline_memory_cache: Dict[str, pd.DataFrame] = {}
+_memory_cache_lock = threading.RLock()
 
 
 def _ensure_dirs():
@@ -59,6 +63,13 @@ def _save_meta(meta: Dict):
 
 
 def get_cached_kline(code: str) -> pd.DataFrame:
+    """优先从内存缓存读取，避免重复读磁盘"""
+    code6 = _to_code6(code)
+    # 先查内存缓存
+    with _memory_cache_lock:
+        if code6 in _kline_memory_cache:
+            return _kline_memory_cache[code6].copy()
+
     path = _kline_path(code)
     if not os.path.exists(path):
         return pd.DataFrame()
@@ -67,6 +78,10 @@ def get_cached_kline(code: str) -> pd.DataFrame:
             df = pd.read_csv(path, encoding="utf-8")
         if not df.empty and "date" in df.columns:
             df["date"] = pd.to_datetime(df["date"])
+
+        # 写入内存缓存
+        with _memory_cache_lock:
+            _kline_memory_cache[code6] = df.copy()
         return df
     except Exception as e:
         logger.warning(f"读取缓存失败 {code}: {e}")
@@ -102,6 +117,9 @@ def save_kline_to_cache(code: str, df: pd.DataFrame):
                 "end_date":   combined["date"].max().strftime("%Y%m%d") if not combined.empty else "",
             }
             _save_meta(meta)
+            # 同步更新内存缓存
+            with _memory_cache_lock:
+                _kline_memory_cache[code6] = combined.copy()
     except Exception as e:
         logger.warning(f"保存缓存失败 {code}: {e}")
 
@@ -179,4 +197,14 @@ def clear_cache():
     if os.path.exists(_CACHE_ROOT):
         shutil.rmtree(_CACHE_ROOT)
     _ensure_dirs()
+    # 清空内存缓存
+    with _memory_cache_lock:
+        _kline_memory_cache.clear()
     logger.info("缓存已清空")
+
+
+def clear_memory_cache():
+    """仅清空内存缓存，保留磁盘文件"""
+    with _memory_cache_lock:
+        _kline_memory_cache.clear()
+    logger.info("内存缓存已清空")

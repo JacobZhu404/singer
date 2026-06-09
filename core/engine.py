@@ -61,15 +61,20 @@ class _ScoreWeights:
 
 
 class _Thresholds:
-    """门槛常量"""
-    MIN_SINGLE_SCORE = 20
-    MIN_WEIGHTED_SCORE = 30
-    RANK_BONUS_MAX = 15.0
-    BEAR_FACTOR = 1.3
-    BULL_FACTOR = 0.9
-    RISK_SCAN_MIN_BARS = 15
-    SELL_SCAN_MIN_BARS = 20
-    BUY_RISK_MIN_BARS = 20
+    """门槛常量 - 从 constants.py 集中导入"""
+    from .constants import (
+        MIN_SINGLE_SCORE, MIN_WEIGHTED_SCORE, RANK_BONUS_MAX,
+        BEAR_FACTOR, BULL_FACTOR,
+        RISK_SCAN_MIN_BARS, SELL_SCAN_MIN_BARS, BUY_RISK_MIN_BARS,
+    )
+    MIN_SINGLE_SCORE = MIN_SINGLE_SCORE
+    MIN_WEIGHTED_SCORE = MIN_WEIGHTED_SCORE
+    RANK_BONUS_MAX = RANK_BONUS_MAX
+    BEAR_FACTOR = BEAR_FACTOR
+    BULL_FACTOR = BULL_FACTOR
+    RISK_SCAN_MIN_BARS = RISK_SCAN_MIN_BARS
+    SELL_SCAN_MIN_BARS = SELL_SCAN_MIN_BARS
+    BUY_RISK_MIN_BARS = BUY_RISK_MIN_BARS
 
 
 class ScreenEngine:
@@ -877,12 +882,21 @@ class ScreenEngine:
         try:
             stock_list = self._load_stock_list()
             _t2 = datetime.now()
+            # 检查停止事件
+            if self._stop_event and self._stop_event.is_set():
+                logger.info("用户已停止，预计算中断")
+                return {"status": "stopped", "comprehensive_picks": []}
             self._precalc(stock_list, progress_callback=progress_callback)
             logger.info(f"阶段1.5完成, 耗时: {_t2 - _t0}")
         finally:
             market_scanner._include_realtime = _orig_include
             # 清空批量实时行情临时缓存
             market_scanner._realtime_batch.clear()
+
+        # 检查停止事件
+        if self._stop_event and self._stop_event.is_set():
+            logger.info("用户已停止，策略筛选中断")
+            return {"status": "stopped", "comprehensive_picks": []}
 
         # 阶段2：串行运行策略（每个策略内部已并行）
         _wrapped_cb = None
@@ -895,6 +909,11 @@ class ScreenEngine:
             progress_callback=_wrapped_cb,
             on_strategy_done=on_strategy_done,
         )["results"]
+
+        # 检查停止事件
+        if self._stop_event and self._stop_event.is_set():
+            logger.info("用户已停止，结果合并中断")
+            return {"status": "stopped", "comprehensive_picks": []}
 
         # 阶段3: 结果合并中
         self._set_progress("merging", "正在合并结果...", 0, 100)
@@ -922,6 +941,10 @@ class ScreenEngine:
         total_elapsed = (datetime.now() - total_t0).total_seconds()
         logger.info(f"[耗时] 整个筛选流程: {total_elapsed:.1f}秒")
 
+        # ── 后台预热持仓K线 ──
+        # 筛选完成后，后台并行预加载持仓股票的K线到缓存
+        self._prefetch_portfolio_klines()
+
         return {
             "trade_date": get_latest_trade_date(),
             "strategies_run": strategies,
@@ -929,6 +952,24 @@ class ScreenEngine:
             "strategy_details": strategy_summaries,
             "elapsed_seconds": total_elapsed,
         }
+
+    def _prefetch_portfolio_klines(self):
+        """后台并行预加载持仓K线"""
+        try:
+            from ..portfolio.manager import get_portfolio
+            pf = get_portfolio()
+            if not pf.positions:
+                return
+            codes = [p["code"] for p in pf.positions]
+            logger.info(f"后台预加载持仓K线: {len(codes)}只")
+            # 使用 market_scanner 并行预加载（不阻塞主流程）
+            market_scanner.prefetch_batch(
+                codes, days=60, max_workers=min(10, len(codes)),
+                force_refresh=False,
+            )
+            logger.info(f"持仓K线预热完成: {len(codes)}只")
+        except Exception as e:
+            logger.warning(f"持仓K线预热失败: {e}")
 
     def evaluate_positions(
         self,

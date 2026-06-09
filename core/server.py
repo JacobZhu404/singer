@@ -19,10 +19,17 @@ import pandas as pd
 
 from .engine import ScreenEngine
 from ..strategies.registry import list_strategies
-from ..data.fetcher import get_latest_trade_date, get_stock_realtime, get_stock_history, market_scanner
+from ..data.fetcher import get_latest_trade_date, get_stock_realtime, get_stock_history, market_scanner, is_market_open
 from ..portfolio.manager import get_portfolio
 from ..portfolio.sell_analyzer import get_analyzer
 from ..strategies.base import ScreenResult
+
+# ── 持仓信号缓存 ──
+_portfolio_signals_cache = {
+    "data": None,
+    "timestamp": None,
+    "cache_ttl_minutes": 5,  # 交易时间5分钟，休市30分钟
+}
 
 # ── 日志配置 ──────────────────────────────────────────────────────
 logging.basicConfig(
@@ -344,6 +351,7 @@ def api_data_status():
             "total_stocks": total_stocks,
             "data_ready": data_ready,
             "hint": hint,
+            "last_update": status.get("last_update"),
         }
     })
 
@@ -638,6 +646,8 @@ def api_portfolio_signals():
     卖出信号分析
     对所有持仓股票进行多维度卖出信号检测
     """
+    global _portfolio_signals_cache
+
     try:
         from ..data.fetcher import market_scanner
         pf = get_portfolio()
@@ -652,29 +662,58 @@ def api_portfolio_signals():
                 "total_positions": 0,
             }})
 
+        # ── 缓存检查 ──
+        now = datetime.now()
+        cache = _portfolio_signals_cache
+        if cache["data"] and cache["timestamp"]:
+            # 根据是否交易时间设置不同的TTL
+            ttl = 5 if is_market_open() else 30
+            age_minutes = (now - cache["timestamp"]).total_seconds() / 60
+            if age_minutes < ttl:
+                # 缓存有效，返回缓存数据
+                logger.info(f"持仓信号命中缓存，{age_minutes:.1f}分钟前")
+                result = cache["data"].copy()
+                return jsonify({"code": 0, "data": result, "cached": True, "cache_age_minutes": round(age_minutes, 1)})
+
         results = []
         urgent_count = 0
         sell_count = 0
         reduce_count = 0
 
-        for pos in pf.positions:
+        # ── 并行获取持仓K线 ──
+        def _fetch_kline(pos):
             code = pos["code"]
-            # 优先使用实时最新价，保证盈亏计算和技术指标一致性
+            # 并行获取实时价
             quote = get_stock_realtime(code)
             price = quote.get("最新价", 0)
             if price <= 0:
                 price = pos.get("current_price", 0)
             if price <= 0:
-                continue
-
-            # 拉取历史K线（60日），使用 MarketScanner 以支持盘中实时数据
+                return None
+            # 获取K线（MarketScanner会复用缓存）
             try:
                 kl = market_scanner.get_history(code, days=60)
             except Exception:
                 kl = pd.DataFrame()
+            return {
+                "pos": pos,
+                "price": price,
+                "kl": kl,
+            }
+
+        with ThreadPoolExecutor(max_workers=min(10, len(pf.positions))) as pool:
+            kline_results = list(pool.map(_fetch_kline, pf.positions))
+
+        # 串行分析（逻辑轻量）
+        for r in kline_results:
+            if r is None:
+                continue
+            pos = r["pos"]
+            price = r["price"]
+            kl = r["kl"]
 
             sig = analyzer.analyze_position(
-                code=code,
+                code=pos["code"],
                 name=pos["name"],
                 avg_cost=pos["avg_cost"],
                 current_price=price,
@@ -717,13 +756,18 @@ def api_portfolio_signals():
         # 按卖出紧迫度排序（最高在前）
         results.sort(key=lambda x: x["sell_score"], reverse=True)
 
-        return jsonify({"code": 0, "data": {
+        # 更新缓存
+        cache_data = {
             "signals": results,
             "urgent_count": urgent_count,
             "sell_count": sell_count,
             "reduce_count": reduce_count,
             "total_positions": len(pf.positions),
-        }})
+        }
+        _portfolio_signals_cache["data"] = cache_data
+        _portfolio_signals_cache["timestamp"] = datetime.now()
+
+        return jsonify({"code": 0, "data": cache_data})
     except Exception as e:
         logger.error(f"卖出信号分析失败: {e}")
         return jsonify({"code": 1, "msg": str(e)})

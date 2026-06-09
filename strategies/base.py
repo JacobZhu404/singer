@@ -203,7 +203,8 @@ class BaseStrategy(ABC):
         1. 命中数上限控制（单策略不超过300只）
         2. 排名百分位评分（解决满分扎堆、增加区分度）
         """
-        MAX_HITS = 300
+        from ..core.constants import MAX_HITS_PER_STRATEGY
+        MAX_HITS = MAX_HITS_PER_STRATEGY
         key = sort_key or (lambda x: x.score)
         candidates.sort(key=key, reverse=True)
 

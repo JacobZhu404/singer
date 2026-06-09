@@ -1,5 +1,7 @@
 """
 通达信 .day 离线数据 → CSV 缓存 批量导入脚本
+[一次性脚本] 运行后无需保留，下次数据更新用 prefetch 即可
+
 用法：
     cd /Users/jacob/personal/stock_screener
     python3 data/import_tdx.py

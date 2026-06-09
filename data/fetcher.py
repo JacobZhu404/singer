@@ -5,7 +5,7 @@
 import time
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Callable, Tuple, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -283,13 +283,17 @@ class MarketScanner:
         self._max_cache_size: int = 4000   # 内存缓存上限，覆盖全市场A股（约3300+只）
         # 批量实时行情临时缓存（预计算阶段使用，避免逐只请求限流）
         self._realtime_batch: Dict[str, dict] = {}
+        self._last_update_time: Optional[datetime] = None  # 最后更新时间
 
     def load(self) -> bool:
         self._loaded = True
         return True
 
     def get_history(self, code: str, days: int = 60, pure: bool = False) -> pd.DataFrame:
-        """单只K线（内存 → 本地 → 网络），线程安全"""
+        """
+        单只K线（内存 → 本地 → 网络），线程安全
+        优先级：内存缓存 > 本地CSV > 网络API
+        """
         code6 = str(code).strip()
         if len(code6) > 2 and code6[:2].lower() in ("sh", "sz", "bj"):
             code6 = code6[2:]
@@ -304,28 +308,30 @@ class MarketScanner:
                     self._cache_days.pop(k, None)
                 logger.info(f"LRU淘汰: 移除{len(evict_keys)}只股票缓存")
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        # 先检查内存缓存
         with self._lock:
-            if code6 in self._kline_cache and self._cache_days.get(code6, 0) >= days:
+            if code6 in self._kline_cache:
                 cached = self._kline_cache[code6]
-                last_date = str(cached["date"].iloc[-1]).split()[0]
-                if pure:
-                    if last_date != today:
-                        return cached
-                    # 被实时污染了，继续走下面的逻辑重新获取纯历史
-                elif self._include_realtime:
-                    if last_date == today:
-                        return cached
-                    # 否则继续重新获取并合并
-                else:
+                if len(cached) >= days:
                     return cached
+
+        # 内存没有，尝试本地CSV缓存
+        cache = _get_cache()
+        local_df = cache.get_cached_kline(code6)
+        if not local_df.empty and len(local_df) >= days:
+            with self._lock:
+                self._kline_cache[code6] = local_df
+                self._cache_days[code6] = days
+            return local_df
+
+        # 本地也没有，从网络获取
         df = get_stock_history(code6, days)
-        if not df.empty and not pure and self._include_realtime:
-            df = self._merge_today_realtime(df, code6)
+
         if not df.empty:
             with self._lock:
                 self._kline_cache[code6] = df
                 self._cache_days[code6] = days
+                self._last_update_time = datetime.now()
         return df
 
     def prefetch_batch(
@@ -356,9 +362,42 @@ class MarketScanner:
 
         all_codes = [to6(c) for c in codes]
 
+        # 检查是否在交易时间，如果是则需要更新到最新数据
+        from .fetcher import is_market_open
+        in_market = is_market_open()
+        today = datetime.now()
+        today_str = today.strftime("%Y-%m-%d")
+
         with self._lock:
-            need_fetch = [c for c in all_codes
-                          if c not in self._kline_cache or self._cache_days.get(c, 0) < days]
+            need_fetch = []
+            for c in all_codes:
+                if c not in self._kline_cache:
+                    # 不在内存，尝试从本地缓存加载
+                    # 转换格式：600000 -> 600000（CSV文件名就是纯数字）
+                    cache = _get_cache()
+                    local_df = cache.get_cached_kline(c)
+                    if not local_df.empty:
+                        last_date = str(local_df["date"].iloc[-1]).split()[0]
+                        self._kline_cache[c] = local_df
+                        self._cache_days[c] = days
+                        if in_market and last_date != today_str:
+                            # 交易时间但本地缓存不是今天的，需要获取实时
+                            need_fetch.append(c)
+                        elif not in_market:
+                            # 非交易时间，用本地缓存
+                            continue
+                    else:
+                        need_fetch.append(c)
+                    continue
+                # 检查缓存数据的最新日期
+                cached = self._kline_cache[c]
+                last_date = str(cached["date"].iloc[-1]).split()[0]
+                # 交易时间：必须更新到今天；非交易时间：只要有足够天数即可
+                if in_market:
+                    if last_date != today_str:
+                        need_fetch.append(c)
+                elif self._cache_days.get(c, 0) < days:
+                    need_fetch.append(c)
 
         if not need_fetch:
             logger.info("预加载K线: 全部命中缓存")
@@ -669,11 +708,13 @@ class MarketScanner:
         local = cache.get_cache_status()
         with self._lock:
             mem_count = len(self._kline_cache)
+            last_update = self._last_update_time
         return {
             "memory_cached": mem_count,
             "cached_count": local.get("total_stocks", 0),
             "local_records": local.get("total_records", 0),
             "cache_dir": local.get("cache_dir", ""),
+            "last_update": last_update.strftime("%Y-%m-%d %H:%M") if last_update else None,
         }
 
     def evaluate_batch(
@@ -788,3 +829,77 @@ class MarketScanner:
 
 # 全局扫描器（所有策略共享）
 market_scanner = MarketScanner()
+
+
+# ── 智能更新判断 ─────────────────────────────────────────────────────────
+
+def is_market_open() -> bool:
+    """判断当前是否在A股交易时间"""
+    now = datetime.now()
+    weekday = now.weekday()
+
+    # 周六日休市
+    if weekday >= 5:
+        return False
+
+    current_time = now.time()
+    morning_start = datetime.strptime("09:30", "%H:%M").time()
+    morning_end = datetime.strptime("11:30", "%H:%M").time()
+    afternoon_start = datetime.strptime("13:00", "%H:%M").time()
+    afternoon_end = datetime.strptime("15:00", "%H:%M").time()
+
+    if morning_start <= current_time <= morning_end:
+        return True
+    if afternoon_start <= current_time <= afternoon_end:
+        return True
+    return False
+
+
+def get_last_trading_date() -> Optional[datetime]:
+    """获取最近一个有A股交易的日期"""
+    now = datetime.now()
+    today = now.date()
+
+    # 如果现在在交易时间，返回今天
+    if is_market_open():
+        return now
+
+    # 否则找上一个交易日
+    for days_ago in range(1, 8):
+        check_date = now.date() - timedelta(days=days_ago)
+        weekday = check_date.weekday()
+        if weekday < 5:  # 周一到周五
+            return datetime.combine(check_date, datetime.min.time())
+    return None
+
+
+def check_data_freshness(code: str, cache_days: Dict[str, Any], max_age_minutes: int = 5) -> Dict:
+    """
+    检查缓存数据是否需要更新
+    返回: {"need_update": bool, "reason": str, "last_update": datetime}
+    """
+    code6 = str(code).strip()
+    if len(code6) > 2 and code6[:2].lower() in ("sh", "sz", "bj"):
+        code6 = code6[2:]
+
+    # 检查缓存时间戳
+    cache_time = cache_days.get(code6)
+    if not cache_time:
+        return {"need_update": True, "reason": "无缓存", "last_update": None}
+
+    # 如果在交易时间，需要更新
+    if is_market_open():
+        return {"need_update": True, "reason": "交易时间", "last_update": cache_time}
+
+    # 休市后，检查是否是最近交易日的收盘数据
+    last_trading = get_last_trading_date()
+    if not last_trading:
+        return {"need_update": True, "reason": "无法确定交易日", "last_update": cache_time}
+
+    # 缓存时间是否来自最近交易日
+    if cache_time.date() == last_trading.date():
+        # 同一天的数据已经是收盘价，不需要更新
+        return {"need_update": False, "reason": f"数据为{last_trading.strftime('%Y-%m-%d')}收盘价，无需更新", "last_update": cache_time}
+    else:
+        # 不是最新交易日，需要更新
+        return {"need_update": True, "reason": f"缓存为{cache_time.strftime('%Y-%m-%d')}，需要更新到最新", "last_update": cache_time}
