@@ -17,8 +17,15 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # ─── HTTP Sessions ──────────────────────────────────────────────────────────
+from urllib3.util import Retry
+from requests.adapters import HTTPAdapter
+
 def _make_session(referer: str) -> requests.Session:
     s = requests.Session()
+    # 增大连接池从10到30
+    adapter = HTTPAdapter(pool_connections=30, pool_maxsize=30, max_retries=Retry(total=2, backoff_factor=0.5))
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
     s.headers.update({
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36",
         "Referer": referer,

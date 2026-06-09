@@ -539,18 +539,14 @@
     </div>
 
     <div class="sidebar-section" style="flex:1">
-      <div class="toggle-wrap">
-        <label class="toggle-switch">
-          <input type="checkbox" id="realtimeToggle" checked>
-          <span class="toggle-slider"></span>
-        </label>
-        <span style="font-size:12px;color:var(--muted)">使用盘中实时数据</span>
-      </div>
       <h3>选股策略</h3>
       <div id="strategyList"></div>
     </div>
 
     <div class="sidebar-section">
+      <!-- 数据更新时间 -->
+      <div id="dataUpdateTime" style="font-size:12px;color:var(--muted);margin-bottom:8px">数据更新: --</div>
+
       <!-- 数据状态条 -->
       <div class="data-status-bar" id="dataStatusBar">
         <span class="dot"></span>
@@ -577,10 +573,19 @@
       </div>
 
       <!-- 第二行：执行操作 -->
-      <div id="actionRow" style="display:flex;gap:5px;align-items:center">
-        <button class="btn btn-primary" id="updateAndScreenBtn" onclick="startUpdateAndScreen()" title="先强制刷新K线数据，再执行筛选（最完整）" style="flex:1">更新后筛选</button>
-        <button class="btn btn-download" id="onlyUpdateBtn" onclick="startOnlyUpdate()" title="仅下载/更新K线数据，不执行筛选" style="flex:1">只更新</button>
-        <button class="btn btn-fast" id="onlyScreenBtn" onclick="startOnlyScreen()" title="使用现有缓存数据直接筛选（最快）" style="flex:1">只筛选</button>
+      <div id="actionRow" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" id="startScreenBtn" onclick="doStartScreen(false, false)" title="增量更新后筛选（只下载新/过期数据）" style="flex:1">开始筛选</button>
+        <button class="btn btn-primary" id="forceScreenBtn" onclick="doStartScreen(true, false)" title="强制刷新后筛选（重新下载全部数据）" style="flex:1;background:var(--orange)">强制刷新</button>
+        <button class="btn btn-fast" id="onlyScreenBtn" onclick="doStartScreen(false, true)" title="使用现有缓存直接筛选（最快）" style="flex:1">只筛选</button>
+      </div>
+
+      <!-- 第三行：实时数据开关 -->
+      <div class="toggle-wrap" style="margin-top:5px">
+        <label class="toggle-switch">
+          <input type="checkbox" id="realtimeToggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:12px;color:var(--muted)">使用盘中实时数据</span>
       </div>
 
       <!-- 停止按钮（执行中显示） -->
@@ -1175,7 +1180,14 @@ async function fetchDataStatus() {
 function updateDataStatusUI(data, isRunning) {
   const bar = document.getElementById('dataStatusBar');
   const txt = document.getElementById('dataStatusText');
+  const timeDiv = document.getElementById('dataUpdateTime');
   if (!bar || !txt) return;
+
+  // 显示数据更新时间
+  if (timeDiv && data.last_update) {
+    timeDiv.textContent = '数据更新: ' + data.last_update;
+  }
+
   const count = data.cached_count || 0;
   const total = data.total_stocks || 0;
   const totalStr = total > 0 ? total : '-';
@@ -1301,6 +1313,13 @@ async function startUpdateAndScreen() {
   const market = document.getElementById('marketSelect').value;
   const topN = parseInt(document.getElementById('topnSelect').value);
   startScreenTask(market, topN, true, false);
+}
+
+// 按钮入口：获取market和topN后调用startScreenTask
+async function doStartScreen(forceRefresh, skipDownload) {
+  const market = document.getElementById('marketSelect').value;
+  const topN = parseInt(document.getElementById('topnSelect').value);
+  await startScreenTask(market, topN, forceRefresh, skipDownload);
 }
 
 // 通用筛选入口：force_refresh=true 先下载最新数据
@@ -2383,7 +2402,7 @@ function renderPortfolio(data) {
     </div>
     <div class="info-card">
       <div class="label">🏆 已实现盈亏</div>
-      <div class="value" style="color:${(stats.total_realized_pnl||0)>=0?'var(--green)':'var(--red)'}">${(stats.total_realized_pnl||0)>=0?'+':'#820'}¥${Math.abs(stats.total_realized_pnl||0).toLocaleString()}</div>
+      <div class="value" style="color:${(stats.total_realized_pnl||0)>=0?'var(--green)':'var(--red)'}">${(stats.total_realized_pnl||0)>=0?'+':''}¥${Math.abs(stats.total_realized_pnl||0).toLocaleString()}</div>
       <div class="sub">${stats.profit_factor||0} 盈亏比</div>
     </div>
   </div>
