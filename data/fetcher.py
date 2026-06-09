@@ -388,10 +388,13 @@ class MarketScanner:
                     # 不在内存，尝试从本地缓存加载
                     cache = _get_cache()
                     local_df = cache.get_cached_kline(c)
-                    if not local_df.empty:
+                    meta = cache._load_meta()
+                    # 检查缓存是否有效（数据不为空且记录数>0）
+                    cache_info = meta.get(c, {})
+                    records = cache_info.get("records", 0)
+                    if not local_df.empty and records > 0:
                         # 检查缓存时间戳
-                        meta = cache._load_meta()
-                        last_update = meta.get(c, {}).get("last_update", "")
+                        last_update = cache_info.get("last_update", "")
                         last_date = str(local_df["date"].iloc[-1]).split()[0]
                         self._kline_cache[c] = local_df
                         self._cache_days[c] = days
@@ -405,14 +408,23 @@ class MarketScanner:
                             # 非交易时间但不是收盘价：需要更新获取收盘价
                             need_fetch.append(c)
                     else:
+                        # 缓存无效（空文件），需要下载
                         need_fetch.append(c)
                     continue
                 # 检查内存缓存的最新日期
                 cached = self._kline_cache[c]
+                if cached.empty:
+                    need_fetch.append(c)
+                    continue
                 last_date = str(cached["date"].iloc[-1]).split()[0]
                 # 检查缓存时间戳
                 meta = cache._load_meta()
-                last_update = meta.get(c, {}).get("last_update", "")
+                cache_info = meta.get(c, {})
+                records = cache_info.get("records", 0)
+                if records <= 0:
+                    need_fetch.append(c)
+                    continue
+                last_update = cache_info.get("last_update", "")
                 if in_market:
                     # 交易时间：强制更新到最新
                     if last_date != today_str:
