@@ -18,15 +18,39 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # 延迟导入
+_local_cache = None
+
+
+def _get_cache():
+    global _local_cache
+    if _local_cache is None:
+        from . import local_cache
+        _local_cache = local_cache
+    return _local_cache
+
+# 延迟导入
 _realtime_source = None
 _baostock_source = None
+
+# 是否使用腾讯批量（默认开启）
+_USE_TENCENT_BATCH = True
 
 
 def _get_realtime_source():
     global _realtime_source
     if _realtime_source is None:
-        from .data_sources import data_manager
-        _realtime_source = data_manager
+        if _USE_TENCENT_BATCH:
+            try:
+                from . import tencent_realtime
+                _realtime_source = tencent_realtime
+                logger.info("使用腾讯批量实时数据源")
+            except Exception as e:
+                logger.warning(f"腾讯批量加载失败，使用默认: {e}")
+                from .data_sources import data_manager
+                _realtime_source = data_manager
+        else:
+            from .data_sources import data_manager
+            _realtime_source = data_manager
     return _realtime_source
 
 
@@ -238,16 +262,80 @@ class DataFetcher:
 
     def get_batch(self, codes: list, days: int = 60) -> dict:
         """
-        批量获取，自动判断每只股票需要什么类型的数据
+        批量获取，使用腾讯批量实时接口优化性能
         """
-        from . import local_cache
+        # 直接使用批量实时接口
+        try:
+            realtime_data = self._realtime.get_realtime_batch(codes)
+            if realtime_data:
+                results = {}
+                for code6, data in realtime_data.items():
+                    if data.get("price", 0) > 0:
+                        df = self._convert_realtime_to_kline(code6, data, days)
+                        if not df.empty:
+                            results[code6] = df
+                if results:
+                    logger.info(f"批量实时获取: {len(results)}/{len(codes)} 只")
+                    return results
+        except Exception as e:
+            logger.warning(f"批量实时失败: {e}")
 
-        results = {}
-        for code6 in codes:
-            df = self.get_kline(code6, days)
-            if not df.empty:
-                results[code6] = df
-        return results
+        # 无结果
+        return {}
+
+    def _convert_realtime_to_kline(self, code: str, realtime: dict, days: int) -> pd.DataFrame:
+        """将实时数据转换为K线格式"""
+        from datetime import datetime
+
+        price = realtime.get("price", 0)
+        if price <= 0:
+            return pd.DataFrame()
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # 从本地缓存获取历史数据
+        local_cache = _get_cache()
+        hist_df = local_cache.get_cached_kline(code)
+        if not hist_df.empty:
+            # 合并实时数据到历史
+            open_price = realtime.get("open", price)
+            high = realtime.get("high", price)
+            low = realtime.get("low", price)
+            volume = realtime.get("volume", 0)
+
+            # 估算全天成交量
+            now = datetime.now()
+            if now.hour < 11:
+                minutes_passed = max(0, (now.hour - 9) * 60 + now.minute - 30)
+            else:
+                minutes_passed = 120 + max(0, (now.hour - 13) * 60 + now.minute)
+
+            if minutes_passed > 0:
+                est_volume = volume * 240 / minutes_passed
+            else:
+                est_volume = volume
+
+            new_row = pd.DataFrame([{
+                "date": today,
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "close": price,
+                "volume": est_volume,
+            }])
+
+            combined = pd.concat([hist_df, new_row], ignore_index=True)
+            return combined.tail(days)
+
+        # 无历史数据，直接创建单行
+        return pd.DataFrame([{
+            "date": today,
+            "open": realtime.get("open", price),
+            "high": realtime.get("high", price),
+            "low": realtime.get("low", price),
+            "close": price,
+            "volume": realtime.get("volume", 0),
+        }])
 
 
 # 全局实例
