@@ -64,6 +64,15 @@ def is_market_open() -> bool:
     return False
 
 
+def is_market_break() -> bool:
+    """是否在午休时间（11:30-13:00）"""
+    now = datetime.now()
+    current_time = now.time()
+    break_start = datetime.strptime("11:30", "%H:%M").time()
+    break_end = datetime.strptime("13:00", "%H:%M").time()
+    return break_start <= current_time <= break_end
+
+
 def is_market_closed_today() -> bool:
     """今天是否已收盘（15:00后）"""
     now = datetime.now()
@@ -113,9 +122,8 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
 
     逻辑：
     1. 交易时间 → 必须实时
-    2. 非交易时间 → 看本地数据是否是昨天的
-       - 是昨天及以前的数据 → 无需更新（足够用于选股）
-       - 今天的但不是15:00后 → 需要收盘价
+    2. 午休时间（11:30-13:00）→ 需要上午收盘数据
+    3. 非交易非午休时间 → 有昨天数据就足够
 
     Args:
         code: 股票代码
@@ -126,13 +134,14 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
         DataUpdateDecision: 是否需要更新及类型
     """
     in_market = is_market_open()
+    in_break = is_market_break()
     today_str = get_today_str()
     yesterday = (datetime.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # 无本地数据，需要获取
     if not local_last_date:
-        if in_market:
-            return DataUpdateDecision("无数据，交易时间", DataUpdateDecision.REALTIME)
+        if in_market or in_break:
+            return DataUpdateDecision("无数据，需要获取", DataUpdateDecision.REALTIME)
         return DataUpdateDecision("无数据，非交易时间", DataUpdateDecision.CLOSE)
 
     # 有本地数据
@@ -144,13 +153,18 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
             return DataUpdateDecision(f"交易时间，本地是{local_date}，需要今天", DataUpdateDecision.REALTIME)
         return DataUpdateDecision("交易时间已是今天", DataUpdateDecision.NO_UPDATE)
 
-    # 场景2：非交易时间
-    # 非交易时间时，只要本地有昨天的数据就足够，不需要更新
+    # 场景2：午休时间（11:30-13:00）
+    if in_break:
+        if local_date != today_str:
+            return DataUpdateDecision(f"午休时间，本地是{local_date}，需要上午收盘", DataUpdateDecision.REALTIME)
+        return DataUpdateDecision("午休时间已是今天", DataUpdateDecision.NO_UPDATE)
+
+    # 场景3：非交易非午休时间
+    # 有昨天的数据就足够，不需要更新
     if local_date != today_str and local_date >= yesterday:
-        # 有昨天的数据，足够用于选股
         return DataUpdateDecision(f"非交易时间，本地是{local_date}，足够", DataUpdateDecision.NO_UPDATE)
 
-    # 不是今天的，需要获取收盘价
+    # 需要获取收盘价
     return DataUpdateDecision(f"非交易时间，上次{local_date}，需要收盘价", DataUpdateDecision.CLOSE)
 
 
