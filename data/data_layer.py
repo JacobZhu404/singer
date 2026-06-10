@@ -113,9 +113,9 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
 
     逻辑：
     1. 交易时间 → 必须实时
-    2. 非交易时间 → 看是否收盘
-       - 15:00后更新过 → 收盘数据，有效
-       - 15:00前更新 → 需要更新获取收盘价
+    2. 非交易时间 → 看本地数据是否是昨天的
+       - 是昨天及以前的数据 → 无需更新（足够用于选股）
+       - 今天的但不是15:00后 → 需要收盘价
 
     Args:
         code: 股票代码
@@ -127,7 +127,7 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
     """
     in_market = is_market_open()
     today_str = get_today_str()
-    market_close_time = datetime.strptime("15:00", "%H:%M").time()
+    yesterday = (datetime.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # 无本地数据，需要获取
     if not local_last_date:
@@ -145,17 +145,12 @@ def check_update_need(code: str, local_last_date: str, meta_last_update: str) ->
         return DataUpdateDecision("交易时间已是今天", DataUpdateDecision.NO_UPDATE)
 
     # 场景2：非交易时间
-    # 检查是否是收盘价（15:00后更新）
-    if meta_last_update:
-        try:
-            dt = datetime.strptime(meta_last_update, "%Y-%m-%d %H:%M:%S")
-            if dt.time() >= market_close_time:
-                # 15:00后更新的，是收盘价
-                return DataUpdateDecision(f"非交易时间，已在15:00后更新", DataUpdateDecision.NO_UPDATE)
-        except:
-            pass
+    # 非交易时间时，只要本地有昨天的数据就足够，不需要更新
+    if local_date != today_str and local_date >= yesterday:
+        # 有昨天的数据，足够用于选股
+        return DataUpdateDecision(f"非交易时间，本地是{local_date}，足够", DataUpdateDecision.NO_UPDATE)
 
-    # 不是收盘价，需要更新获取收盘价
+    # 不是今天的，需要获取收盘价
     return DataUpdateDecision(f"非交易时间，上次{local_date}，需要收盘价", DataUpdateDecision.CLOSE)
 
 
