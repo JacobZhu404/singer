@@ -11,7 +11,9 @@
       "Bash(curl -s http://127.0.0.1:5188/api/status)",
       "Bash(curl -s http://127.0.0.1:5188/api/data_status)",
       "Bash(curl -s http://127.0.0.1:5188/)",
-      "Bash(curl -s http://127.0.0.1:5188/api/result)"
+      "Bash(curl -s http://127.0.0.1:5188/api/result)",
+      "Bash(pkill -9 -f \"python.*main.py\")",
+      "Bash(python3 main.py web)"
     ]
   }
 }
