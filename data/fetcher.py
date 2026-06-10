@@ -86,11 +86,14 @@ def _get_tdx():
 
 def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
     """
-    获取单只股票历史K线
-    优先级：通达信离线 → 本地CSV缓存 → 网络多源降级
+    获取单只股票历史K线（双数据源设计）
+
+    优先级：
+    1. 通达信离线（最新）→ 2. 本地缓存（有效）→ 3. 网络（实时/收盘）
     """
-    cache = _get_cache()
-    manager = _get_manager()
+    from . import local_cache
+    from .data_layer import data_fetcher
+
     code6 = str(code).strip().replace("sh", "").replace("sz", "").replace("bj", "")
 
     # ── 第0层：通达信离线数据 ──
@@ -107,28 +110,23 @@ def get_stock_history(code: str, days: int = 60) -> pd.DataFrame:
             logger.debug(f"TDX命中: {code6}, 最新={last_date}, 距今{age_days}天")
             return tdx_df.reset_index(drop=True)
 
-    # ── 第1层：本地CSV缓存 ──
+    # ── 第1层：使用新的数据层（智能判断）──
+    df = data_fetcher.get_kline(code6, days)
+    if not df.empty:
+        return df.reset_index(drop=True)
+
+    # 兜底：通达信或本地缓存
+    if not tdx_df.empty:
+        logger.warning(f"网络失败，使用通达信离线数据: {code6}")
+        return tdx_df.tail(days).reset_index(drop=True)
+
+    cache = _get_cache()
     cached = cache.get_cached_kline(code6)
     if not cached.empty:
-        cached_days = len(cached)
-        # 缓存足够且有效，直接返回（跳过网络请求）
-        if cached_days >= days and not cache.needs_update(code6, max_age_hours=4):
-            return cached.tail(days).reset_index(drop=True)
-        # 缓存不够，需要请求网络补全
-        
-    df = manager.get_kline(code6, days)
-    if df.empty:
-        if not tdx_df.empty:
-            logger.warning(f"网络失败，使用通达信离线数据: {code6}")
-            return tdx_df.tail(days).reset_index(drop=True)
-        if not cached.empty:
-            logger.warning(f"网络失败，使用旧缓存: {code6}")
-            return cached.tail(days).reset_index(drop=True)
-        return pd.DataFrame()
+        logger.warning(f"网络失败，使用旧缓存: {code6}")
+        return cached.tail(days).reset_index(drop=True)
 
-
-    full_df = cache.merge_kline_to_cache(code6, df)
-    return full_df.tail(days).reset_index(drop=True)
+    return pd.DataFrame()
 
 
 def get_stock_realtime(code: str) -> dict:
@@ -363,23 +361,8 @@ class MarketScanner:
 
         all_codes = [to6(c) for c in codes]
 
-        # 智能更新：交易时间强制更新，收盘后检查是否是收盘价
-        from .fetcher import is_market_open
-        in_market = is_market_open()
-        today = datetime.now()
-        today_str = today.strftime("%Y-%m-%d")
-        # 15:00后为收盘价标记时间
-        market_close_time = datetime.strptime("15:00", "%H:%M").time()
-
-        def _is_close_price(last_update_str: str) -> bool:
-            """检查是否是收盘价（15:00后更新）"""
-            if not last_update_str:
-                return False
-            try:
-                dt = datetime.strptime(last_update_str, "%Y-%m-%d %H:%M:%S")
-                return dt.time() >= market_close_time
-            except:
-                return False
+        # 使用新的数据层进行智能判断
+        from .data_layer import check_update_need, DataUpdateDecision
 
         with self._lock:
             need_fetch = []
@@ -389,51 +372,48 @@ class MarketScanner:
                     cache = _get_cache()
                     local_df = cache.get_cached_kline(c)
                     meta = cache._load_meta()
-                    # 检查缓存是否有效（数据不为空且记录数>0）
                     cache_info = meta.get(c, {})
                     records = cache_info.get("records", 0)
+
                     if not local_df.empty and records > 0:
-                        # 检查缓存时间戳
-                        last_update = cache_info.get("last_update", "")
-                        last_date = str(local_df["date"].iloc[-1]).split()[0]
                         self._kline_cache[c] = local_df
                         self._cache_days[c] = days
-                        if in_market:
-                            # 交易时间：强制更新
-                            need_fetch.append(c)
-                        elif _is_close_price(last_update):
-                            # 收盘后且是收盘价：缓存有效
+
+                        # 使用智能判断
+                        last_update = cache_info.get("last_update", "")
+                        local_last_date = str(local_df["date"].iloc[-1]).split()[0]
+                        decision = check_update_need(c, local_last_date, last_update)
+
+                        if decision.update_type == DataUpdateDecision.NO_UPDATE:
                             continue
                         else:
-                            # 非交易时间但不是收盘价：需要更新获取收盘价
                             need_fetch.append(c)
                     else:
-                        # 缓存无效（空文件），需要下载
+                        # 缓存无效，需要下载
                         need_fetch.append(c)
                     continue
-                # 检查内存缓存的最新日期
+
+                # 检查内存缓存
                 cached = self._kline_cache[c]
                 if cached.empty:
                     need_fetch.append(c)
                     continue
-                last_date = str(cached["date"].iloc[-1]).split()[0]
-                # 检查缓存时间戳
+
                 meta = cache._load_meta()
                 cache_info = meta.get(c, {})
                 records = cache_info.get("records", 0)
                 if records <= 0:
                     need_fetch.append(c)
                     continue
+
+                # 使用智能判断
                 last_update = cache_info.get("last_update", "")
-                if in_market:
-                    # 交易时间：强制更新到最新
-                    if last_date != today_str:
-                        need_fetch.append(c)
-                elif _is_close_price(last_update):
-                    # 收盘后且是收盘价：缓存有效
+                last_date = str(cached["date"].iloc[-1]).split()[0]
+                decision = check_update_need(c, last_date, last_update)
+
+                if decision.update_type == DataUpdateDecision.NO_UPDATE:
                     continue
-                elif self._cache_days.get(c, 0) < days:
-                    # 需要更新获取收盘价
+                else:
                     need_fetch.append(c)
 
         if not need_fetch:
@@ -510,39 +490,21 @@ class MarketScanner:
             if stop_event and stop_event.is_set():
                 return code6, None
             try:
-                if force_refresh:
-                    manager = _get_manager()
-                    df = manager.get_kline(code6, days)
-                    for i, delay in enumerate((0.5, 1.0, 2.0)):
-                        if df is not None and not df.empty:
-                            break
-                        if stop_event and stop_event.is_set():
-                            return code6, None
-                        # wait 在 stop_event.set() 时立即返回，替代 time.sleep
-                        if stop_event:
-                            stop_event.wait(timeout=delay)
-                            if stop_event.is_set():
-                                return code6, None
-                        else:
-                            time.sleep(delay)
-                        df = manager.get_kline(code6, days)
+                # 使用新的数据层（智能判断）
+                from .data_layer import data_fetcher
+                df = data_fetcher.get_kline(code6, days)
+                for i, delay in enumerate((0.5, 1.0, 2.0)):
                     if df is not None and not df.empty:
-                        cache = _get_cache()
-                        cache.merge_kline_to_cache(code6, df)
-                else:
-                    df = get_stock_history(code6, days)
-                    for i, delay in enumerate((0.5, 1.0, 2.0)):
-                        if df is not None and not df.empty:
-                            break
-                        if stop_event and stop_event.is_set():
+                        break
+                    if stop_event and stop_event.is_set():
+                        return code6, None
+                    if stop_event:
+                        stop_event.wait(timeout=delay)
+                        if stop_event.is_set():
                             return code6, None
-                        if stop_event:
-                            stop_event.wait(timeout=delay)
-                            if stop_event.is_set():
-                                return code6, None
-                        else:
-                            time.sleep(delay)
-                        df = get_stock_history(code6, days)
+                    else:
+                        time.sleep(delay)
+                    df = data_fetcher.get_kline(code6, days)
             except Exception:
                 pass
             finally:
