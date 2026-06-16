@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from __future__ import annotations
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -11,12 +12,12 @@ class FactorValue(BaseModel):
 
 class StockSignal(BaseModel):
     """股票信号"""
-    code: str
-    name: str
-    score: float           # 综合评分 0-100
-    factors: list[FactorValue] = []
-    signals: list[str] = []  # 触发信号 ["MACD金叉", "RSI超卖"]
-    reason: Optional[str] = None
+    code: str = Field(description="股票代码")
+    name: str = Field(description="股票名称")
+    score: float = Field(ge=0, le=100, description="综合评分 0-100")
+    factors: list[FactorValue] = Field(default_factory=list, description="因子列表")
+    signals: list[str] = Field(default_factory=list, description="触发信号")
+    reason: Optional[str] = Field(default=None, description="推荐理由")
 
 
 class ScreenResult(BaseModel):

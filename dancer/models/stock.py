@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from __future__ import annotations
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -13,14 +14,13 @@ class StockInfo(BaseModel):
 
 class KLine(BaseModel):
     """K线数据"""
-    code: str
-    date: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    amount: Optional[float] = None
+    date: datetime = Field(description="交易日期")
+    open: float = Field(description="开盘价")
+    high: float = Field(description="最高价")
+    low: float = Field(description="最低价")
+    close: float = Field(description="收盘价")
+    volume: float = Field(description="成交量")
+    amount: Optional[float] = Field(default=None, description="成交额")
 
 
 class StockData(BaseModel):
