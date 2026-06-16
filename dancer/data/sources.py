@@ -11,11 +11,15 @@ class AKShareSource:
     @staticmethod
     def get_stock_list() -> list[dict]:
         """获取股票列表"""
-        df = ak.stock_info_a_code_name()
-        return df.to_dict('records')
+        try:
+            df = ak.stock_info_a_code_name()
+            return df.to_dict('records')
+        except Exception as e:
+            logger.warning(f"获取股票列表失败: {e}")
+            return []
 
     @staticmethod
-    def get_kline_daily(code: str, days: int = 250) -> Optional[dict]:
+    def get_kline_daily(code: str, days: int = 250) -> Optional[list[dict]]:
         """获取日K线"""
         try:
             df = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="qfq", days=days)
@@ -42,7 +46,7 @@ class DataSource:
                 logger.warning(f"数据源失败: {e}")
         return []
 
-    def get_kline(self, code: str, days: int = 250):
+    def get_kline(self, code: str, days: int = 250) -> Optional[list[dict]]:
         """获取K线"""
         for source in self.sources:
             try:
