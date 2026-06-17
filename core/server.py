@@ -769,7 +769,14 @@ def api_portfolio_signals():
             # 获取K线（MarketScanner会复用缓存）
             try:
                 kl = market_scanner.get_history(code, days=60)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"持仓详情获取K线失败 {code}: {e}（用空表兜底）")
+                try:
+                    obs.warn("web.portfolio", "fetch_history",
+                             f"获取K线失败: {e}",
+                             context={"code": code, "action": "用空 DataFrame 兜底"})
+                except Exception:
+                    pass
                 kl = pd.DataFrame()
             return {
                 "pos": pos,
