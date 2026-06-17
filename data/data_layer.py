@@ -210,9 +210,13 @@ class DataFetcher:
         self._realtime = _get_realtime_source()
         self._baostock = _get_baostock_source()
 
-    def get_kline(self, code: str, days: int = 60) -> pd.DataFrame:
+    def get_kline(self, code: str, days: int = 60, meta: Optional[dict] = None) -> pd.DataFrame:
         """
         获取K线数据，自动判断需要什么类型
+
+        Args:
+            meta: 可选的预加载 meta dict，避免每次重新读 meta.json（763KB）。
+                  批量场景应一次性加载并复用，单只场景可省略。
 
         Returns:
             DataFrame: date, open, high, low, close, volume
@@ -222,7 +226,8 @@ class DataFetcher:
         code6 = str(code).strip()
 
         # 1. 检查本地缓存和更新决策
-        meta = local_cache._load_meta()
+        if meta is None:
+            meta = local_cache._load_meta()
         cache_info = meta.get(code6, {})
         local_last_date = cache_info.get("end_date", "")
         meta_last_update = cache_info.get("last_update", "")

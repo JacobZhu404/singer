@@ -75,6 +75,7 @@ def get_realtime_batch(codes: List[str], max_workers: int = 3) -> Dict[str, dict
 
     results = {}
     batch_size = 90  # 腾讯批量上限
+    total_batches = (len(tencent_codes) + batch_size - 1) // batch_size
 
     # 分批获取
     for i in range(0, len(tencent_codes), batch_size):
@@ -102,8 +103,9 @@ def get_realtime_batch(codes: List[str], max_workers: int = 3) -> Dict[str, dict
         except Exception as e:
             logger.debug(f"腾讯批量请求失败: {e}")
 
-        # 间隔防封
-        time.sleep(0.3)
+        # 间隔防封：单批不需要 sleep；最后一批也不必 sleep
+        if total_batches > 1 and (i + batch_size) < len(tencent_codes):
+            time.sleep(0.15)
 
     return results
 
