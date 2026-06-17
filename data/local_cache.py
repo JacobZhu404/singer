@@ -43,11 +43,19 @@ def _kline_path(code: str) -> str:
 
 
 def _load_meta() -> Dict:
+    """加载元数据缓存，跳过损坏的文件"""
     with _lock:
         if os.path.exists(_META_FILE):
             try:
                 with open(_META_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    content = f.read()
+                    if not content.strip():
+                        return {}
+                    return json.loads(content)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                # 损坏的JSON文件，直接跳过加载
+                logger.warning(f"元数据缓存损坏: {e}，跳过加载")
+                return {}
             except Exception as e:
                 logger.warning(f"读取元数据缓存失败: {e}")
     return {}

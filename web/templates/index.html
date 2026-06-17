@@ -615,6 +615,7 @@
 
     <!-- ── 筛选区域 ── -->
     <div id="screenArea">
+      <!-- 结果默认隐藏，通过 JS 显示 -->
       <div id="emptyState" class="empty">
         <div class="empty-icon">📊</div>
         <div style="font-size:16px;font-weight:600;margin-bottom:8px">选择策略，开始筛选</div>
@@ -757,7 +758,9 @@ async function restoreLastResult() {
     const j = await r.json();
     if (j.code === 0 && j.data && !j.data.error) {
       lastResult = j.data;
+      // 显式控制显示
       document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('resultArea').style.display = 'block';
       renderResult(j.data);
     }
   } catch (e) {
@@ -1674,7 +1677,13 @@ function stockNameHtml(code, name) {
 // ── Render Result ──
 function renderResult(data) {
   const area = document.getElementById('resultArea');
+  const empty = document.getElementById('emptyState');
+  const loading = document.getElementById('loadingState');
+
+  // 显示结果区域，隐藏空状态和加载状态
   area.style.display = 'block';
+  empty.style.display = 'none';
+  loading.style.display = 'none';
 
   const picks = data.comprehensive_picks || [];
   const details = data.strategy_details || {};
@@ -2685,7 +2694,7 @@ function exportCSV() {
   let picks = [];
   let headers = [];
   let rows = [];
-  let tradeDate = new Date().toISOString().slice(0, 10);
+  let tradeDate = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-');
 
   if (tab === 'merged') {
     if (!lastResult || !lastResult.comprehensive_picks || !lastResult.comprehensive_picks.length) {

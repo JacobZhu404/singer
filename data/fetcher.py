@@ -61,8 +61,13 @@ def normalize_stock_columns(df: pd.DataFrame) -> pd.DataFrame:
 def _get_cache():
     global _lazy_cache
     if _lazy_cache is None:
-        from . import local_cache
-        _lazy_cache = local_cache
+        try:
+            from . import local_cache
+            _lazy_cache = local_cache
+        except Exception as e:
+            raise RuntimeError(f"local_cache 导入失败: {e}") from e
+    if _lazy_cache is None:
+        raise RuntimeError("_lazy_cache 仍未初始化")
     return _lazy_cache
 
 
@@ -279,7 +284,7 @@ class MarketScanner:
         self._indicator_cache: Dict[str, Dict[str, Any]] = {}  # 代码 → 预计算指标
         self._lock = threading.Lock()
         self._include_realtime: bool = True
-        self._max_cache_size: int = 4000   # 内存缓存上限，覆盖全市场A股（约3300+只）
+        self._max_cache_size: int = 6500   # 内存缓存上限，覆盖全市场A股（约5500+只）
         # 批量实时行情临时缓存（预计算阶段使用，避免逐只请求限流）
         self._realtime_batch: Dict[str, dict] = {}
         self._last_update_time: Optional[datetime] = None  # 最后更新时间
@@ -363,13 +368,14 @@ class MarketScanner:
 
         # 使用新的数据层进行智能判断
         from .data_layer import check_update_need, DataUpdateDecision
+        # 预先获取cache实例，避免循环中重复调用
+        cache = _get_cache()
 
         with self._lock:
             need_fetch = []
             for c in all_codes:
                 if c not in self._kline_cache:
                     # 不在内存，尝试从本地缓存加载
-                    cache = _get_cache()
                     local_df = cache.get_cached_kline(c)
                     meta = cache._load_meta()
                     cache_info = meta.get(c, {})
@@ -389,7 +395,7 @@ class MarketScanner:
                         else:
                             need_fetch.append(c)
                     else:
-                        # 缓存无效，需要下载
+                        # 缓存无效，需��下载
                         need_fetch.append(c)
                     continue
 
@@ -505,8 +511,8 @@ class MarketScanner:
                     else:
                         time.sleep(delay)
                     df = data_fetcher.get_kline(code6, days)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"fetch_one {code6} failed: {e}")
             finally:
                 with lock:
                     done_count += 1
@@ -647,7 +653,10 @@ class MarketScanner:
             return {}
 
         close = df["close"]
-        vol = df["vol"]
+        # 兼容：vol 列可能为 NaN，尝试用 volume 列填充
+        vol = df["vol"] if "vol" in df.columns else pd.Series(0, index=df.index)
+        if "volume" in df.columns:
+            vol = vol.fillna(df["volume"])
 
         try:
             macd = ind.calc_macd(close)

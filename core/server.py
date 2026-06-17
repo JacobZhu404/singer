@@ -6,6 +6,7 @@ Flask Web 服务器 - 股票筛选工具后端
 import json
 import logging
 import os
+import time
 import threading
 import queue
 from concurrent.futures import ThreadPoolExecutor
@@ -50,6 +51,8 @@ _engine: Optional[ScreenEngine] = None
 _engine_lock = threading.Lock()
 _last_result: Optional[dict] = None
 _is_running = False
+_task_start_time = 0.0
+_task_timeout = 900.0  # 15分钟超时
 _stop_event = threading.Event()
 _screen_progress: dict = {
     "phase": "idle",
@@ -105,9 +108,23 @@ def _load_last_result() -> Optional[dict]:
     return None
 
 
+def _clean_nan(obj):
+    """递归清理 NaN/Inf 值，转为 None"""
+    import math
+    if isinstance(obj, dict):
+        return {k: _clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nan(v) for v in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
+
+
 def _save_last_result(result: dict):
     """筛选完成后保存结果到文件"""
     try:
+        # 清理 NaN 值
+        result = _clean_nan(result)
         with open(_RESULT_FILE, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -122,6 +139,8 @@ if _last_result:
 
 def _broadcast_sse(event: str, data: dict):
     """向所有 SSE 连接广播事件"""
+    # 清理 NaN 值
+    data = _clean_nan(data)
     payload = json.dumps(data, ensure_ascii=False)
     msg = f"event: {event}\ndata: {payload}\n\n"
     with _sse_queues_lock:
@@ -199,7 +218,11 @@ def api_screen():
                 _screen_progress["strategies"] = dict(engine.get_progress().get("strategies", {}))
 
         try:
+            # 超时检测：防止异常导致任务卡住
+            if _is_running and (time.time() - _task_start_time) < _task_timeout:
+                return jsonify({"code": 1, "msg": "任务正在进行中，请稍后重试"})
             _is_running = True
+            _task_start_time = time.time()
             _stop_event.clear()
             # 重置进度和部分结果
             with _progress_lock:
@@ -373,7 +396,11 @@ def api_download():
     def download_task():
         global _is_running
         try:
+            # 超时检测：防止异常导致任务卡住
+            if _is_running and (time.time() - _task_start_time) < _task_timeout:
+                return
             _is_running = True
+            _task_start_time = time.time()
             _stop_event.clear()
             with _progress_lock:
                 _screen_progress["phase"] = "prefetch"
@@ -427,18 +454,19 @@ def api_result():
             partial = dict(_partial_results)
         with _current_strategies_lock:
             strategies_run = list(_current_strategies_run)
-        return jsonify({
-            "code": 2,
-            "msg": "筛选中...",
-            "data": {
-                "strategies_run": strategies_run,
-                "strategy_details": partial,
-                "comprehensive_picks": [],
-            }
-        })
+        data = {
+            "strategies_run": strategies_run,
+            "strategy_details": partial,
+            "comprehensive_picks": [],
+        }
+        # 清理 NaN
+        data = _clean_nan(data)
+        return jsonify({"code": 2, "msg": "筛选中...", "data": data})
     if _last_result is None:
         return jsonify({"code": 1, "msg": "尚无筛选结果，请先调用 /api/screen", "data": None})
-    return jsonify({"code": 0, "msg": "ok", "data": _last_result})
+    # 清理 NaN
+    result = _clean_nan(_last_result)
+    return jsonify({"code": 0, "msg": "ok", "data": result})
 
 
 @app.route("/api/status", methods=["GET"])

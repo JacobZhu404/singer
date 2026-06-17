@@ -32,6 +32,9 @@ class VolumeBreakoutStrategy(BaseStrategy):
     description = "量比>2倍+价格突破+回踩确认，有效突破信号"
     base_win_rate = 0.58  # 优化：提高胜率预估
 
+    def __init__(self, top_n: int = 20):
+        super().__init__(top_n)
+
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         try:
             indicators = scanner.get_indicators(code, days=120)
@@ -39,28 +42,81 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 raise self._SkipStock()
 
             kline = indicators["kline"]
-            close = kline["close"]
-            high = kline["high"]
-            vol = kline["vol"]
-            vol_ratio_series = indicators["vol_ratio"]
-            
-            # 用今日最高价（而非收盘价）判断是否突破
-            today_high = float(high.iloc[-1])
-            price = float(close.iloc[-1])       # 收盘价用于收阳判断
-            prev_price = float(close.iloc[-2])
+            close = kline["close"].astype(float)
+            high = kline["high"].astype(float)
 
-            vol_ratio = float(vol_ratio_series.iloc[-1]) if not pd.isna(vol_ratio_series.iloc[-1]) else 1.0
-            vol_ratio_prev = float(vol_ratio_series.iloc[-2]) if len(vol_ratio_series) >= 2 and not pd.isna(vol_ratio_series.iloc[-2]) else 1.0
-            
-            if pd.isna(vol_ratio) or vol_ratio <= 0:
+            # 兼容：vol 列可能为 NaN，尝试用 volume 列填充
+            if "vol" in kline.columns:
+                vol = kline["vol"]
+            else:
+                vol = pd.Series(0.0, index=kline.index)
+            if "volume" in kline.columns:
+                vol = vol.fillna(kline["volume"])
+            # 确保vol是数值类型
+            vol = vol.astype(float)
+
+            # === 检测休市状态：用最后有效数据 ===
+            last_idx = len(kline) - 1
+            if pd.isna(vol.iloc[-1]) or vol.iloc[-1] == 0:
+                valid_idx = vol.last_valid_index()
+                if valid_idx is None:
+                    raise self._SkipStock()
+                last_idx = kline.index.get_loc(valid_idx)
+
+            # 用有效索引的数据
+            today_high = float(high.iloc[last_idx])
+            price = float(close.iloc[last_idx])
+            prev_price = float(close.iloc[last_idx - 1]) if last_idx >= 1 else price
+            latest_vol = float(vol.iloc[last_idx])
+
+            # 跳过异常价格（如数据被污染时，A股价格一般在0.1-500范围）
+            if price > 500 or today_high > 500 or price < 0.1:
                 raise self._SkipStock()
-            
-            # 保留 20 日均量供 extra 展示
-            vol_ma20 = vol.rolling(20).mean().iloc[-1]
-            
-            # 突破判断用最高价，而非收盘价
-            high_30 = high.iloc[-31:-1].max() if len(high) >= 31 else high.iloc[:-1].max()
-            high_5 = high.iloc[-6:-1].max() if len(high) >= 6 else high.iloc[:-1].max()
+
+            # === 找到被污染数据的起始位置（A股价格正常范围0.1-500）===
+            # 用close和vol同时判断
+            # 正常成交量范围：100万-1亿
+            valid_start = 0
+            for i in range(len(close)):
+                if (close.iloc[i] > 0.1 and close.iloc[i] < 500 and
+                    vol.iloc[i] > 100000 and vol.iloc[i] < 100000000):
+                    valid_start = i
+                    break
+
+            # 如果数据被严重污染，跳过
+            if valid_start >= last_idx - 5:
+                raise self._SkipStock()
+
+            # 使用有效数据范围计算
+            valid_close = close.iloc[valid_start:last_idx+1]
+            valid_high = high.iloc[valid_start:last_idx+1]
+            valid_vol = vol.iloc[valid_start:last_idx+1]
+
+            # 过滤掉成交量异常的数据（被污染的vol都是几千万到几亿）
+            # 正常A股日成交量一般在100万-1亿范围
+            normal_mask = (valid_vol > 100000) & (valid_vol < 100000000)
+            valid_vol = valid_vol[normal_mask]
+            valid_close = valid_close[normal_mask]
+            valid_high = valid_high[normal_mask]
+
+            if len(valid_vol) < 5:
+                raise self._SkipStock()
+
+            # 计算量比
+            latest_vol = float(valid_vol.iloc[-1])
+            recent_5_vols = valid_vol.iloc[-5:]
+            avg_vol = recent_5_vols.mean()
+            vol_ratio = latest_vol / (avg_vol + 1e-8) if avg_vol > 0 else 1.0
+
+            # === 突破判断 ===
+            if len(valid_high) >= 31:
+                high_30 = valid_high.iloc[:-1].max()
+            else:
+                high_30 = valid_high.max()
+            if len(valid_high) >= 6:
+                high_5 = valid_high.iloc[:-1].max()
+            else:
+                high_5 = valid_high.max()
 
             signals = []
             score = 0
@@ -91,8 +147,8 @@ class VolumeBreakoutStrategy(BaseStrategy):
                     score += 10
 
             # 突破60日高点给更高分
-            if len(high) >= 61:
-                high_60 = high.iloc[-61:-1].max()
+            if len(valid_high) >= 61:
+                high_60 = valid_high.iloc[-61:-1].max()
                 if today_high > high_60:
                     signals.append(f"突破60日高点({round(high_60, 2)})")
                     score += 30
@@ -111,14 +167,16 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 signals.append("放量上涨")
                 score += 10
 
-            if vol_ratio >= 1.5 and vol_ratio_prev >= 1.3:
-                signals.append("量能持续放大")
-                score += 10
+            if len(valid_vol) >= 2:
+                vol_ratio_prev = valid_vol.iloc[-2] / (valid_vol.iloc[-5:-2].mean() + 1e-8) if valid_vol.iloc[-5:-2].mean() > 0 else 1.0
+                if vol_ratio >= 1.5 and vol_ratio_prev >= 1.3:
+                    signals.append("量能持续放大")
+                    score += 10
 
             # ── 优化1: 加入价格位置过滤 ──
             ma20 = indicators["ma"].get("ma20")
             ma60 = indicators["ma"].get("ma60")
-            
+
             # 价格在MA20上方（确认短期趋势）
             if ma20 is not None and not pd.isna(ma20.iloc[-1]):
                 if price > ma20.iloc[-1]:
@@ -127,7 +185,7 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 else:
                     signals.append("价格在MA20下方")
                     score -= 5  # 趋势未确认
-            
+
             # 价格不在过高位置（避免在MA60的110%以上追高）
             if ma60 is not None and not pd.isna(ma60.iloc[-1]):
                 if price > ma60.iloc[-1] * 1.10:
@@ -138,21 +196,16 @@ class VolumeBreakoutStrategy(BaseStrategy):
                     score += 10
 
             # ── 优化3: 加入突破后回踩确认 ──
-            # 检查是否在突破后有回踩MA5/MA10，然后继续上涨
-            if len(close) >= 10 and has_breakout:
-                # 查找近10日是否有突破
+            if len(valid_close) >= 10 and has_breakout:
                 for j in range(-10, -1):
-                    # 某日突破20日新高
-                    if high.iloc[j] > high.iloc[j-20:j].max():
-                        # 突破后是否有回踩（价格回落到MA10附近）
-                        ma10_at_j = close.rolling(10).mean().iloc[j]
-                        
-                        # 回踩后继续上涨
-                        if (close.iloc[-1] > close.iloc[j] and
-                            min(close.iloc[j+1:]) < ma10_at_j * 1.02):
-                            signals.append("突破后回踩确认")
-                            score += 20  # 强信号
-                            break
+                    if len(valid_high) > abs(j) + 20:
+                        if valid_high.iloc[j] > valid_high.iloc[j-20:j].max():
+                            ma10_at_j = valid_close.iloc[j-10:j].mean()
+                            if (valid_close.iloc[-1] > valid_close.iloc[j] and
+                                min(valid_close.iloc[j+1:]) < ma10_at_j * 1.02):
+                                signals.append("突破后回踩确认")
+                                score += 20  # 强信号
+                                break
 
             # 必须同时满足放量(>=2.0) + 突破
             if not (has_volume and has_breakout):
@@ -176,10 +229,11 @@ class VolumeBreakoutStrategy(BaseStrategy):
                 trade_date=trade_date,
                 extra={
                     "vol_ratio": round(float(vol_ratio), 2),
-                    "vol_ma20": round(float(vol_ma20), 0),
                     "high_30": round(float(high_30), 2),
                 },
             )
 
+        except self._SkipStock:
+            raise
         except Exception as e:
             logger.debug(f"[量价突破] {code} 计算失败: {e}")
