@@ -12,6 +12,8 @@ import logging
 from typing import List, Callable, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from ..core.constants import MAX_WORKERS_PRECALC
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +55,11 @@ def precalc_indicators(
         return {"total": len(codes), "success": len(codes), "failed": 0}
 
     def _calc_one(code: str) -> tuple:
+        # 跳过不在内存缓存的股票，避免触发磁盘/网络I/O
+        with scanner._lock:
+            in_memory = code in scanner._kline_cache
+        if not in_memory:
+            return code, False
         try:
             indicators = scanner.get_indicators(code, days=days)
             if indicators and "kline" in indicators:
@@ -63,8 +70,7 @@ def precalc_indicators(
             logger.debug(f"预计算指标失败 {code}: {e}")
             return code, False
 
-    # [优化] 并发数从8提升到16
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS_PRECALC) as executor:
         futures = {executor.submit(_calc_one, code): code for code in codes_to_calc}
         for idx, future in enumerate(as_completed(futures), 1):
             code = futures[future]

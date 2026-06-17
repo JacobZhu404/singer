@@ -14,6 +14,7 @@ from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
 from ..utils.indicators import calc_risk_flags
 from ..utils.market_trend import get_market_trend, get_market_trend_strength
 from ..utils.sell_signals import detect_sell_signals, assess_buy_risk
+from .constants import MAX_WORKERS_PREFETCH, PREFETCH_KLINE_DAYS
 
 from datetime import datetime
 
@@ -121,8 +122,8 @@ class ScreenEngine:
         if cb:
             try:
                 cb(phase, current, current_index, total)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"progress callback raised: {e}")
 
     def _set_strategy_progress(self, name: str, status: str, pct: int = 0, hits: int = 0,
                                 phase: str = "", scanned: int = 0, total_stocks: int = 0):
@@ -367,7 +368,8 @@ class ScreenEngine:
             self._set_progress("prefetch_fetch", f"下载K线 {done}/{total_codes}...", done, total_codes)
 
         fetch_result = market_scanner.prefetch_batch(
-            codes, days=120, max_workers=50, progress_callback=_on_fetch,
+            codes, days=PREFETCH_KLINE_DAYS, max_workers=MAX_WORKERS_PREFETCH,
+            progress_callback=_on_fetch,
             force_refresh=force_refresh,
             stop_event=self._stop_event,  # ← 传递停止事件
         )
@@ -870,17 +872,30 @@ class ScreenEngine:
         # 避免预计算阶段逐只请求触发限流
         _orig_include = market_scanner._include_realtime
         if _orig_include and not skip_download:
-            stock_list = self._load_stock_list()
-            code_col, _ = self._get_code_name_cols(stock_list)
-            all_codes = stock_list[code_col].astype(str).tolist()
-            logger.info(f"批量获取实时行情: {len(all_codes)}只")
-            realtime_map = market_scanner.get_realtime_batch(all_codes)
-            market_scanner._realtime_batch = realtime_map
-            logger.info(f"实时行情获取完成: {len(realtime_map)}只")
+            existing = getattr(market_scanner, "_realtime_batch", None) or {}
+            if existing:
+                logger.info(f"复用 prefetch 阶段实时行情: {len(existing)}只，跳过重复获取")
+            else:
+                stock_list = self._load_stock_list()
+                code_col, _ = self._get_code_name_cols(stock_list)
+                if self.market != "全部市场":
+                    filtered = self._filter_by_market(stock_list[code_col].astype(str).tolist())
+                    fetch_codes = filtered
+                else:
+                    fetch_codes = stock_list[code_col].astype(str).tolist()
+                logger.info(f"批量获取实时行情: {len(fetch_codes)}只")
+                realtime_map = market_scanner.get_realtime_batch(fetch_codes)
+                market_scanner._realtime_batch = realtime_map
+                logger.info(f"实时行情获取完成: {len(realtime_map)}只")
 
         market_scanner._include_realtime = True
         try:
             stock_list = self._load_stock_list()
+            # 按市场过滤，确保预计算范围与下载范围一致
+            if self.market != "全部市场":
+                code_col, _ = self._get_code_name_cols(stock_list)
+                filtered_codes = self._filter_by_market(stock_list[code_col].astype(str).tolist())
+                stock_list = stock_list[stock_list[code_col].astype(str).isin(filtered_codes)]
             _t2 = datetime.now()
             # 检查停止事件
             if self._stop_event and self._stop_event.is_set():

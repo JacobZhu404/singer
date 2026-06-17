@@ -127,27 +127,37 @@ class BaseStrategy(ABC):
 
         candidates: List[StockSignal] = []
         scanned = 0
+        errors = 0
+        last_err: Optional[str] = None
 
         def _eval_one(code: str) -> tuple:
-            """评估单只，返回 (signal_or_none, evaluated_flag)"""
+            """评估单只，返回 (signal_or_none, evaluated_flag, err_or_none)"""
             try:
                 sig = self._evaluate_single_stock(code, scanner, name_map, trade_date)
-                return sig, True
+                return sig, True, None
             except self._SkipStock:
-                return None, False
+                return None, False, None
             except Exception as e:
                 logger.debug(f"[{self.name}] {code} 计算失败: {e}")
-                return None, False
+                return None, False, f"{type(e).__name__}: {e}"
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(_eval_one, c): c for c in codes}
             for idx, future in enumerate(as_completed(futures), 1):
-                sig, evaluated = future.result()
+                sig, evaluated, err = future.result()
                 if evaluated:
                     scanned += 1
+                if err is not None:
+                    errors += 1
+                    last_err = err
                 if sig is not None:
                     candidates.append(sig)
                 self._report_progress("executing", idx, total)
+
+        if errors > 0:
+            err_pct = errors / total * 100 if total else 0
+            level = logger.warning if err_pct > 5 else logger.info
+            level(f"[{self.name}] 评估错误 {errors}/{total} ({err_pct:.1f}%), last={last_err}")
 
         return self._build_result(candidates, trade_date, scanned)
 

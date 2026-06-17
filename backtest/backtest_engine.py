@@ -23,22 +23,36 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# [修复] 使用相对导入，避免依赖 stock_screener 包名
-from utils.indicators import calc_risk_flags
-from strategies.registry import STRATEGY_REGISTRY
+from stock_screener.utils.indicators import calc_risk_flags
+from stock_screener.strategies.registry import STRATEGY_REGISTRY
 
 logger = logging.getLogger(__name__)
 
 # 使用 constants.py 中的配置（如果可用，否则回退到默认值）
 try:
-    from core.constants import HOLD_PERIODS as _HP, BACKTEST_SCORE_THRESHOLD as _ST
+    from stock_screener.core.constants import (
+        HOLD_PERIODS as _HP,
+        BACKTEST_SCORE_THRESHOLD as _ST,
+        BACKTEST_SLIPPAGE_PCT as _SL,
+        BACKTEST_COMMISSION_PCT as _CM,
+        BACKTEST_BENCHMARK_CODE as _BC,
+    )
     HOLD_PERIODS = _HP
     SCORE_THRESHOLD = _ST
+    SLIPPAGE_PCT = _SL
+    COMMISSION_PCT = _CM
+    BENCHMARK_CODE = _BC
 except ImportError:
     HOLD_PERIODS = [2, 5, 10, 30]
     SCORE_THRESHOLD = 40
+    SLIPPAGE_PCT = 0.0010
+    COMMISSION_PCT = 0.0003
+    BENCHMARK_CODE = "000001"
+
+# 双边交易成本：买入 +slip +comm，卖出 -slip -comm
+ROUND_TRIP_COST_PCT = (SLIPPAGE_PCT + COMMISSION_PCT) * 2 * 100
 
 # 缓存目录（本地 CSV 文件）
 _CACHE_DIR = os.path.join(
@@ -74,6 +88,8 @@ class PeriodStats:
     avg_return: float = 0.0
     avg_drawdown: float = 0.0
     win_rate: float = 0.0
+    benchmark_return: float = 0.0  # 同期 benchmark 平均收益（已扣成本）
+    alpha: float = 0.0              # avg_return - benchmark_return
 
 
 @dataclass
@@ -83,6 +99,38 @@ class BacktestResult:
     total_trades: int = 0
     period_stats: Dict[int, PeriodStats] = field(default_factory=dict)
     trades: List[BacktestTrade] = field(default_factory=list)
+
+
+def _benchmark_period_returns(trade_dates: List[str]) -> Dict[int, Dict[str, float]]:
+    """
+    为每个 trade_date 计算基准（上证）在各持有期的收益（已扣成本）。
+    Returns: {period: {trade_date: pct_return}}
+    """
+    df = _load_cached_df(BENCHMARK_CODE)
+    if df.empty:
+        try:
+            from stock_screener.data.fetcher import get_stock_history
+            df = get_stock_history(BENCHMARK_CODE, days=400)
+        except Exception:
+            return {p: {} for p in HOLD_PERIODS}
+    if df.empty:
+        return {p: {} for p in HOLD_PERIODS}
+
+    df["date_str"] = df["date"].dt.strftime("%Y%m%d")
+    out = {p: {} for p in HOLD_PERIODS}
+    for td in trade_dates:
+        if td not in df["date_str"].values:
+            continue
+        idx = df[df["date_str"] == td].index[0]
+        entry = float(df.iloc[idx]["close"])
+        for period in HOLD_PERIODS:
+            end = idx + period
+            if end >= len(df):
+                continue
+            exit_p = float(df.iloc[end]["close"])
+            gross = (exit_p - entry) / entry * 100
+            out[period][td] = gross - ROUND_TRIP_COST_PCT
+    return out
 
 
 # ─── 工具函数 ─────────────────────────────────────────────────────────────────
@@ -130,7 +178,9 @@ def _calc_future_returns(df: pd.DataFrame, entry_idx: int) -> tuple:
             continue
         exit_p = prices[-1]
         exits[period] = exit_p
-        returns[period] = (exit_p - entry_price) / entry_price * 100
+        gross_pct = (exit_p - entry_price) / entry_price * 100
+        # 扣除双边滑点 + 手续费
+        returns[period] = gross_pct - ROUND_TRIP_COST_PCT
         # 最大回撤
         peak = entry_price
         max_dd = 0.0
@@ -543,59 +593,76 @@ class BacktestEngine:
                 all_trades.sort(key=lambda t: t.score, reverse=True)
                 results[strategy].trades.extend(all_trades[:top_n])
 
+        bench = _benchmark_period_returns(trade_dates)
         for r in results.values():
-            _calc_stats(r)
+            _calc_stats(r, bench)
 
         return results
 
 
-def _calc_stats(result: BacktestResult):
-    """计算回测统计指标"""
+def _calc_stats(result: BacktestResult, benchmark: Optional[Dict[int, Dict[str, float]]] = None):
+    """计算回测统计指标，附带 benchmark 同期收益与 alpha"""
     trades = result.trades
     result.total_trades = len(trades)
     if not trades:
         return
 
+    benchmark = benchmark or {}
     for period in HOLD_PERIODS:
-        rets = [t.returns[period] for t in trades if period in t.returns]
-        dds  = [t.max_drawdowns[period] for t in trades if period in t.max_drawdowns]
+        period_trades = [t for t in trades if period in t.returns]
+        rets = [t.returns[period] for t in period_trades]
+        dds  = [t.max_drawdowns[period] for t in period_trades if period in t.max_drawdowns]
         if not rets:
             continue
         wins = sum(1 for r in rets if r > 0)
+        avg_ret = float(np.mean(rets))
+        # 与 benchmark 同期对照（按交易日匹配）
+        bench_p = benchmark.get(period, {})
+        bench_aligned = [bench_p[t.buy_date] for t in period_trades if t.buy_date in bench_p]
+        bench_avg = float(np.mean(bench_aligned)) if bench_aligned else 0.0
         result.period_stats[period] = PeriodStats(
             period=period,
             total=len(rets),
             wins=wins,
-            avg_return=float(np.mean(rets)),
+            avg_return=avg_ret,
             avg_drawdown=float(np.mean(dds)) if dds else 0.0,
             win_rate=wins / len(rets) if rets else 0.0,
+            benchmark_return=bench_avg,
+            alpha=avg_ret - bench_avg,
         )
 
 
 def print_report(results: Dict[str, BacktestResult]):
-    """打印回测报告"""
-    print("\n" + "="*100)
-    print(" " * 30 + "📊 歌者策略回测报告")
-    print("="*100)
+    """打印回测报告（已扣双边滑点+手续费 ≈ {:.2f}%，含 benchmark/alpha）""".format(ROUND_TRIP_COST_PCT)
+    width = 24 + 9 + len(HOLD_PERIODS) * 36
+    print("\n" + "=" * width)
+    print(" " * (width // 2 - 12) + "📊 歌者策略回测报告")
+    print(f"成本: 单边 slip={SLIPPAGE_PCT*100:.2f}% + comm={COMMISSION_PCT*100:.2f}% (双边 {ROUND_TRIP_COST_PCT:.2f}%)")
+    print(f"基准: {BENCHMARK_CODE}（已扣同等成本）")
+    print("=" * width)
     print(f"\n{'策略':<18} {'交易数':>7}", end="")
     for p in HOLD_PERIODS:
-        print(f"  {p}日胜率  {p}日均收益", end="")
+        print(f"  {p}日胜率  {p}日策略  {p}日基准  {p}日 α", end="")
     print()
-    print("-"*100)
+    print("-" * width)
 
-    for name, r in sorted(results.items(), key=lambda x: x[1].period_stats.get(10, PeriodStats(10)).win_rate, reverse=True):
+    for name, r in sorted(
+        results.items(),
+        key=lambda x: x[1].period_stats.get(10, PeriodStats(10)).alpha,
+        reverse=True,
+    ):
         meta = STRATEGY_REGISTRY.get(name, {})
         label = meta.get("name", name)
         print(f"{label:<18} {r.total_trades:>7}", end="")
         for p in HOLD_PERIODS:
             st = r.period_stats.get(p)
             if st:
-                print(f"  {st.win_rate*100:>6.1f}%  {st.avg_return:>+8.2f}%", end="")
+                print(f"  {st.win_rate*100:>6.1f}%  {st.avg_return:>+7.2f}%  {st.benchmark_return:>+7.2f}%  {st.alpha:>+6.2f}%", end="")
             else:
-                print(f"  {'N/A':>7}  {'N/A':>9}", end="")
+                print(f"  {'N/A':>7}  {'N/A':>8}  {'N/A':>8}  {'N/A':>7}", end="")
         print()
 
-    print("="*100)
+    print("=" * width)
 
 
 def save_results(results: Dict[str, BacktestResult], output_dir: str = None):
@@ -610,11 +677,23 @@ def save_results(results: Dict[str, BacktestResult], output_dir: str = None):
         data[name] = {
             "total_trades": r.total_trades,
             "period_stats": {
-                str(p): {"win_rate": st.win_rate, "avg_return": st.avg_return,
-                         "avg_drawdown": st.avg_drawdown, "total": st.total}
+                str(p): {
+                    "win_rate": st.win_rate,
+                    "avg_return": st.avg_return,
+                    "avg_drawdown": st.avg_drawdown,
+                    "benchmark_return": st.benchmark_return,
+                    "alpha": st.alpha,
+                    "total": st.total,
+                }
                 for p, st in r.period_stats.items()
-            }
+            },
         }
+    data["__meta__"] = {
+        "slippage_pct": SLIPPAGE_PCT,
+        "commission_pct": COMMISSION_PCT,
+        "round_trip_cost_pct": ROUND_TRIP_COST_PCT,
+        "benchmark_code": BENCHMARK_CODE,
+    }
     path = os.path.join(output_dir, f"backtest_{ts}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
