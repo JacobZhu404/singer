@@ -202,7 +202,8 @@ class BaseStrategy(ABC):
         """获取实时行情，带异常兜底"""
         try:
             return scanner.get_realtime(code)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"实时行情兜底 {code}: {e}")
             return {"涨跌幅": 0.0, "最新价": default_price, "换手率": 0.0}
 
     def _build_result(self, candidates: List[StockSignal], trade_date: str,

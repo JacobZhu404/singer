@@ -80,7 +80,8 @@ def precalc_indicators(
                     success += 1
                 else:
                     failed += 1
-            except Exception:
+            except Exception as e:
+                logger.warning(f"指标预计算异常 {code}: {e}")
                 failed += 1
 
             if progress_callback and (idx % 50 == 0 or idx == len(codes_to_calc)):
