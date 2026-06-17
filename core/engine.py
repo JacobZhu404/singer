@@ -11,10 +11,9 @@ import pandas as pd
 from ..strategies.base import ScreenResult, StockSignal
 from ..strategies.registry import get_strategy, STRATEGY_REGISTRY
 from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
-from ..utils.indicators import calc_risk_flags
 from ..utils.market_trend import get_market_trend, get_market_trend_strength
-from ..utils.sell_signals import detect_sell_signals, assess_buy_risk
 from .constants import MAX_WORKERS_PREFETCH, PREFETCH_KLINE_DAYS
+from . import risk_scanner
 
 from datetime import datetime
 
@@ -732,116 +731,16 @@ class ScreenEngine:
         final_list.sort(key=lambda x: (x["n_strategies"], x["composite_score"]), reverse=True)
         return final_list[:top_n]
 
+    # 风险扫描 / 卖出信号 / 买入风险评估 — 已抽到 core/risk_scanner.py
+    # 这里保留薄包装，向后兼容已有调用方与可能的子类覆写。
     def _quick_risk_scan(self, code: str, df: Optional[pd.DataFrame] = None):
-        """
-        轻量风险扫描：利用已缓存的K线快速判断是否存在卖出风险。
-        不发任何新网络请求——仅读取内存缓存。
-
-        Args:
-            code: 股票代码
-            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
-        Returns:
-            (risk_tag, risk_reasons, risk_score, risk_flags)
-        """
-        try:
-            if df is None:
-                df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < _Thresholds.RISK_SCAN_MIN_BARS:
-                return "unknown", [], 0, []
-
-            close = df["close"].astype(float)
-            high = df["high"].astype(float)
-            low = df["low"].astype(float)
-            vol = df["vol"].astype(float)
-            pct_col = "pct_chg" if "pct_chg" in df.columns else "daily_chg"
-            pct_chg = df[pct_col].astype(float) if pct_col in df.columns else pd.Series(0, index=close.index)
-
-            flags = calc_risk_flags(close, high, low, vol, pct_chg)
-
-            score = sum(25 if f["level"] == "danger" else 12 for f in flags)
-            score = min(score, 100)
-            reasons = [f["desc"] for f in flags]
-
-            if score >= 50:
-                tag = "high_risk"
-            elif score >= 28:
-                tag = "conflict"
-            elif score >= 12:
-                tag = "watch"
-            else:
-                tag = "safe"
-
-            return tag, reasons, score, flags
-
-        except Exception as e:
-            logger.debug(f"风险扫描 {code} 失败: {e}")
-            return "unknown", [], 0, []
+        return risk_scanner.quick_risk_scan(code, df)
 
     def _quick_sell_scan(self, code: str, df: Optional[pd.DataFrame] = None) -> dict:
-        """
-        卖出信号快速扫描：利用已缓存的K线检测卖出信号
-
-        Args:
-            code: 股票代码
-            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
-        Returns:
-            detect_sell_signals() 的返回值
-        """
-        try:
-            if df is None:
-                df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < _Thresholds.SELL_SCAN_MIN_BARS:
-                return {
-                    "has_sell_signal": False,
-                    "sell_signals": [],
-                    "sell_score": 0,
-                    "stop_loss_price": None,
-                    "take_profit_price": None,
-                    "risk_level": "unknown",
-                }
-
-            return detect_sell_signals(df)
-
-        except Exception as e:
-            logger.debug(f"卖出信号扫描 {code} 失败: {e}")
-            return {
-                "has_sell_signal": False,
-                "sell_signals": [],
-                "sell_score": 0,
-                "stop_loss_price": None,
-                "take_profit_price": None,
-                "risk_level": "unknown",
-            }
+        return risk_scanner.quick_sell_scan(code, df)
 
     def _quick_buy_risk_assess(self, code: str, df: Optional[pd.DataFrame] = None) -> dict:
-        """
-        买入风险评估：基于卖出信号评估买入风险
-
-        Args:
-            code: 股票代码
-            df: 可选，已获取的K线DataFrame。传入可避免重复获取。
-        Returns:
-            assess_buy_risk() 的返回值
-        """
-        try:
-            if df is None:
-                df = market_scanner.get_history(code, days=60)
-            if df is None or df.empty or len(df) < _Thresholds.BUY_RISK_MIN_BARS:
-                return {
-                    "buy_risk": "unknown",
-                    "risk_reasons": [],
-                    "adjustment": 0,
-                }
-
-            return assess_buy_risk(df)
-
-        except Exception as e:
-            logger.debug(f"买入风险评估 {code} 失败: {e}")
-            return {
-                "buy_risk": "unknown",
-                "risk_reasons": [],
-                "adjustment": 0,
-            }
+        return risk_scanner.quick_buy_risk_assess(code, df)
 
     def get_recommendation(
         self,
