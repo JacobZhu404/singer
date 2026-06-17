@@ -13,6 +13,9 @@ import struct
 import glob
 import datetime
 import csv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ── 配置 ─────────────────────────────────────
 _TDX_ROOT  = "/Users/jacob/Downloads/hsjday_extracted"
@@ -27,7 +30,8 @@ def parse_day_file(filepath):
     try:
         with open(filepath, "rb") as f:
             raw = f.read()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"读取 TDX .day 文件失败 {filepath}: {e}")
         return None
 
     n = len(raw) // 32

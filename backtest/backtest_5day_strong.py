@@ -126,8 +126,8 @@ def check_strong_5day(df, idx):
         if idx >= 1 and macd_bar.iloc[idx] > macd_bar.iloc[idx-1]:
             signals.append("MACD柱放大")
             score += 10
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"MACD 计算失败: {e}（跳过 MACD 加分）")
     
     # 过滤3：RSI < 70（非超买）
     try:
@@ -138,8 +138,8 @@ def check_strong_5day(df, idx):
         if 50 <= rsi <= 70:
             signals.append("RSI强势区间(%.0f)" % rsi)
             score += 10
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"RSI 计算失败: {e}（跳过 RSI 加分）")
     
     # 过滤4：今日最低价不破5日线太多（支撑强）
     if low.iloc[idx] < ma5.iloc[idx] * 0.97:

@@ -146,7 +146,8 @@ def get_last_trading_date() -> Optional[date]:
         if trade_dates:
             return datetime.strptime(trade_dates[-1], "%Y-%m-%d").date()
         return None
-    except:
+    except Exception as e:
+        logger.warning(f"baostock 查询交易日失败: {e}")
         return None
 
 
