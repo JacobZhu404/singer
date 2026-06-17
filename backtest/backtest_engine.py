@@ -142,15 +142,25 @@ def _benchmark_period_returns(trade_dates: List[str]) -> Dict[int, Dict[str, flo
 # ─── 工具函数 ─────────────────────────────────────────────────────────────────
 
 def _load_stock_names() -> Dict[str, str]:
-    """从 stocks.json 加载 代码→名称 映射"""
+    """从 stocks.json 加载 代码→名称 映射
+
+    兼容新（ts_code/name）和旧（代码/名称）两种 schema。
+    """
     path = os.path.join(os.path.dirname(_CACHE_DIR), "stocks.json")
     if not os.path.exists(path):
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return {str(item.get("代码", "")): item.get("名称", "") for item in data if item.get("代码")}
-    except Exception:
+        out: Dict[str, str] = {}
+        for item in data:
+            code = item.get("ts_code") or item.get("代码")
+            name = item.get("name") or item.get("名称")
+            if code:
+                out[str(code)] = str(name or "")
+        return out
+    except Exception as e:
+        logger.warning(f"加载 stocks.json 失败: {e}")
         return {}
 
 
@@ -163,7 +173,8 @@ def _load_cached_df(code: str) -> pd.DataFrame:
         df = pd.read_csv(path, encoding="utf-8")
         df["date"] = pd.to_datetime(df["date"])
         return df.sort_values("date").reset_index(drop=True)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"读取缓存 {code}.csv 失败: {e}")
         return pd.DataFrame()
 
 
@@ -223,7 +234,8 @@ def _chanlun_check(df: pd.DataFrame) -> tuple:
             return 0, []
         score, signals, extra = _compute_score(analysis)
         return score, signals
-    except Exception:
+    except Exception as e:
+        logger.warning(f"chanlun 评分异常: {e}（视为不合格，跳过）")
         return 0, []
 
 
@@ -354,7 +366,8 @@ def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
                 score, signals, _ = _compute_score(analysis) if analysis else (0, [], {})
                 if score < 40:
                     return 0, []
-            except Exception:
+            except Exception as e:
+                logger.warning(f"chanlun_strict 评分异常: {e}（视为不合格，跳过）")
                 return 0, []
 
         elif strategy_name == "golden_cross":

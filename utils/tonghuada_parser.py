@@ -40,7 +40,8 @@ def detect_tonghuada_format(file_path: str) -> str:
                 
                 if 1990 <= year <= 2030 and 1 <= month <= 12 and 1 <= day <= 31:
                     return "standard"  # 标准格式
-            except:
+            except ValueError:
+                # 非整数解析失败 → 不是标准日期格式，返回 unknown 即可
                 pass
         
         # 如果不是标准格式，可能是其他格式
