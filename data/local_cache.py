@@ -112,8 +112,15 @@ def save_kline_to_cache(code: str, df: pd.DataFrame):
                     existing = pd.read_csv(path, encoding="utf-8")
                     if not existing.empty and "date" in existing.columns:
                         existing["date"] = pd.to_datetime(existing["date"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"读取本地 K 线 CSV 失败 {path}: {e}（视为无旧数据，使用新数据覆盖）")
+                    try:
+                        from ..core.observability import obs
+                        obs.warn("data.cache", "read_existing_csv",
+                                 f"读取本地 CSV 失败 {code6}: {e}",
+                                 context={"path": path, "action": "视为空，新数据直接写入"})
+                    except Exception:
+                        pass
             if not existing.empty:
                 combined = pd.concat([existing, df], ignore_index=True)
                 combined = combined.drop_duplicates(subset=["date"], keep="last")

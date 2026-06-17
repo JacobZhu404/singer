@@ -141,8 +141,15 @@ def get_realtime_fast(codes: List[str], max_workers: int = 5) -> Dict[str, dict]
             try:
                 batch_result = future.result()
                 results.update(batch_result)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"腾讯批量 future 异常: {e}")
+                try:
+                    from ..core.observability import obs
+                    obs.warn("data.tencent_batch", "fetch_batch_future",
+                             f"腾讯批量 future 异常: {e}",
+                             context={"action": "跳过该批"})
+                except Exception:
+                    pass
 
     return results
 
