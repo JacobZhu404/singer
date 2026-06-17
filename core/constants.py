@@ -104,5 +104,7 @@ BACKTEST_SCORE_THRESHOLD = 40
 BACKTEST_SLIPPAGE_PCT = 0.0010
 # 回测单边手续费（券商佣金 + 印花税平均估计，卖出印花税 0.05%）
 BACKTEST_COMMISSION_PCT = 0.0003
-# 回测基准指数代码（上证综指）
-BACKTEST_BENCHMARK_CODE = "000001"
+# 回测基准指数代码：沪深300 ETF（510300，宽基代表，避免与平安银行 000001 混淆）
+# 注：A股普通股代码 000001 是平安银行，上证综指应为 sh000001（带前缀），
+# 但本系统按 6 位纯代码寻址，故改用 510300 ETF 作为可寻址的宽基基准。
+BACKTEST_BENCHMARK_CODE = "510300"

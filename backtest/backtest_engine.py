@@ -103,17 +103,23 @@ class BacktestResult:
 
 def _benchmark_period_returns(trade_dates: List[str]) -> Dict[int, Dict[str, float]]:
     """
-    为每个 trade_date 计算基准（上证）在各持有期的收益（已扣成本）。
+    为每个 trade_date 计算基准（沪深300 ETF）在各持有期的收益（已扣成本）。
     Returns: {period: {trade_date: pct_return}}
     """
     df = _load_cached_df(BENCHMARK_CODE)
     if df.empty:
+        # 尝试通过 data_layer 下载并入缓存
         try:
-            from stock_screener.data.fetcher import get_stock_history
-            df = get_stock_history(BENCHMARK_CODE, days=400)
-        except Exception:
+            from stock_screener.data.data_layer import data_fetcher
+            df = data_fetcher.get_kline(BENCHMARK_CODE, days=400)
+            if df.empty:
+                from stock_screener.data.fetcher import get_stock_history
+                df = get_stock_history(BENCHMARK_CODE, days=400)
+        except Exception as e:
+            logger.warning(f"基准 {BENCHMARK_CODE} 下载失败: {e}")
             return {p: {} for p in HOLD_PERIODS}
     if df.empty:
+        logger.warning(f"基准 {BENCHMARK_CODE} 无数据，alpha 将退化为 avg_return")
         return {p: {} for p in HOLD_PERIODS}
 
     df["date_str"] = df["date"].dt.strftime("%Y%m%d")
