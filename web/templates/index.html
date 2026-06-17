@@ -167,6 +167,43 @@
   .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
   .section-title .badge { font-size: 12px; background: var(--accent); color: #000; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
 
+  /* ── Diagnostics Panel ── */
+  .diag-btn {
+    font-size: 11px; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--muted); cursor: pointer; margin-top: 4px;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .diag-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .diag-btn .err-count { background: rgba(248,81,73,0.2); color: var(--red); padding: 1px 5px; border-radius: 6px; font-weight: 700; }
+  .diag-btn .warn-count { background: rgba(210,153,34,0.2); color: var(--yellow); padding: 1px 5px; border-radius: 6px; font-weight: 700; }
+  .diag-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; }
+  .diag-modal.show { display: flex; align-items: center; justify-content: center; }
+  .diag-box { background: var(--bg, #0d1117); border: 1px solid var(--border); border-radius: 10px;
+              width: 80%; max-width: 1100px; height: 80vh; display: flex; flex-direction: column; }
+  .diag-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .diag-head h3 { margin: 0; font-size: 16px; }
+  .diag-toolbar { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+  .diag-toolbar select, .diag-toolbar input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+  .diag-summary { padding: 8px 16px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; gap: 16px; flex-wrap: wrap; }
+  .diag-events { flex:1; overflow-y: auto; padding: 8px 16px; font-family: monospace; font-size: 12px; }
+  .diag-row { padding: 6px 8px; margin: 4px 0; border-radius: 4px; border-left: 3px solid var(--border); background: rgba(255,255,255,0.02); }
+  .diag-row.error { border-left-color: var(--red); background: rgba(248,81,73,0.05); }
+  .diag-row.warn { border-left-color: var(--yellow); background: rgba(210,153,34,0.05); }
+  .diag-row.info { border-left-color: var(--accent); }
+  .diag-row.debug { border-left-color: var(--muted); opacity: 0.7; }
+  .diag-row .head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .diag-row .lvl { font-weight: 700; padding: 1px 6px; border-radius: 4px; font-size: 10px; }
+  .diag-row .lvl.error { background: var(--red); color:#000; }
+  .diag-row .lvl.warn { background: var(--yellow); color:#000; }
+  .diag-row .lvl.info { background: var(--accent); color:#000; }
+  .diag-row .lvl.debug { background: var(--muted); color:#000; }
+  .diag-row .src { color: var(--accent); }
+  .diag-row .ts { color: var(--muted); font-size: 11px; }
+  .diag-row .dur { color: var(--yellow); }
+  .diag-row .ctx { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .diag-row .tb { color: #f85149; font-size: 11px; margin-top: 4px; white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+
   /* ── Tabs ── */
   .top-tabs { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); padding-bottom: 0; }
   .top-tab { padding: 10px 20px; font-size: 14px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
@@ -592,6 +629,42 @@
       <div id="stopRow" style="display:none;gap:5px;margin-top:5px">
         <button class="btn btn-dangerous" id="stopBtn" onclick="stopScreening()" style="flex:1">停止</button>
       </div>
+
+      <!-- 诊断按钮 -->
+      <button class="diag-btn" id="diagBtn" onclick="openDiagnostics()" title="查看错误/重试/耗时事件">
+        <span>🔍 诊断</span>
+        <span id="diagBadgeContainer" style="display:flex;gap:4px"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Diagnostics Modal -->
+  <div class="diag-modal" id="diagModal" onclick="if(event.target===this)closeDiagnostics()">
+    <div class="diag-box">
+      <div class="diag-head">
+        <h3>🔍 系统诊断 <span style="font-size:11px;color:var(--muted);margin-left:8px">错误 / 重试 / 耗时</span></h3>
+        <div>
+          <button class="btn btn-secondary" onclick="clearDiagnostics()" style="font-size:11px;padding:4px 10px">清空</button>
+          <button class="btn btn-secondary" onclick="refreshDiagnostics()" style="font-size:11px;padding:4px 10px">刷新</button>
+          <button class="btn btn-secondary" onclick="closeDiagnostics()" style="font-size:11px;padding:4px 10px">关闭</button>
+        </div>
+      </div>
+      <div class="diag-toolbar">
+        等级:
+        <select id="diagFilterLevel" onchange="refreshDiagnostics()">
+          <option value="">全部</option>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+        来源:
+        <input type="text" id="diagFilterSource" placeholder="如 data.fetch" oninput="refreshDiagnostics()" style="width:160px"/>
+        <label style="margin-left:8px"><input type="checkbox" id="diagAutoRefresh" /> 自动刷新（3s）</label>
+        <span id="diagRefreshTime" style="margin-left:auto;color:var(--muted)"></span>
+      </div>
+      <div class="diag-summary" id="diagSummary"></div>
+      <div class="diag-events" id="diagEvents">加载中...</div>
     </div>
   </div>
 
@@ -2817,6 +2890,143 @@ function exportCol(col) {
     notify(`${label} 已复制`, 'success');
   });
 }
+
+// ── Diagnostics Panel ──
+let _diagAutoTimer = null;
+
+function openDiagnostics() {
+  document.getElementById('diagModal').classList.add('show');
+  refreshDiagnostics();
+  if (document.getElementById('diagAutoRefresh').checked) startDiagAutoRefresh();
+}
+
+function closeDiagnostics() {
+  document.getElementById('diagModal').classList.remove('show');
+  stopDiagAutoRefresh();
+}
+
+function startDiagAutoRefresh() {
+  stopDiagAutoRefresh();
+  _diagAutoTimer = setInterval(refreshDiagnostics, 3000);
+}
+
+function stopDiagAutoRefresh() {
+  if (_diagAutoTimer) { clearInterval(_diagAutoTimer); _diagAutoTimer = null; }
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'diagAutoRefresh') {
+    if (e.target.checked) startDiagAutoRefresh(); else stopDiagAutoRefresh();
+  }
+});
+
+async function refreshDiagnostics() {
+  const level = document.getElementById('diagFilterLevel').value;
+  const source = document.getElementById('diagFilterSource').value.trim();
+  const params = new URLSearchParams();
+  if (level) params.set('level', level);
+  if (source) params.set('source', source);
+  params.set('n', 200);
+  try {
+    const resp = await fetch('/api/diagnostics?' + params.toString());
+    const j = await resp.json();
+    if (j.code !== 0) throw new Error(j.msg || 'unknown');
+    renderDiagnostics(j.data);
+    document.getElementById('diagRefreshTime').textContent = '更新: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('diagEvents').textContent = '加载失败: ' + e.message;
+  }
+}
+
+function renderDiagnostics(data) {
+  const summary = data.summary || {};
+  const sumEl = document.getElementById('diagSummary');
+  const byLevel = summary.by_level || {};
+  const errSrc = summary.errors_by_source || {};
+  const slow = summary.slow_ops_top5 || [];
+  const sumParts = [
+    `事件总数: ${summary.total_events || 0}/${summary.capacity || 0}`,
+    `错误: ${byLevel.error || 0}`,
+    `警告: ${byLevel.warn || 0}`,
+    `信息: ${byLevel.info || 0}`,
+  ];
+  const errSrcStr = Object.keys(errSrc).length
+    ? Object.entries(errSrc).map(([k,v]) => `${k}=${v}`).join(', ')
+    : '无';
+  sumParts.push(`错误来源: ${errSrcStr}`);
+  if (slow.length) {
+    const slowStr = slow.map(s => `${s.source}/${s.op} ${s.duration_ms}ms`).join('; ');
+    sumParts.push(`慢操作: ${slowStr}`);
+  }
+  sumEl.innerHTML = sumParts.map(s => `<span>${escHtml(s)}</span>`).join('');
+
+  const events = data.events || [];
+  const ev = document.getElementById('diagEvents');
+  if (!events.length) {
+    ev.innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px">暂无匹配事件</div>';
+    return;
+  }
+  ev.innerHTML = events.map(e => {
+    const ctxStr = e.context && Object.keys(e.context).length
+      ? Object.entries(e.context).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(' ')
+      : '';
+    const dur = e.duration_ms != null ? `<span class="dur">${e.duration_ms.toFixed(0)}ms</span>` : '';
+    const tb = e.traceback ? `<div class="tb">${escHtml(e.traceback)}</div>` : '';
+    return `<div class="diag-row ${e.level}">
+      <div class="head">
+        <span class="lvl ${e.level}">${e.level.toUpperCase()}</span>
+        <span class="ts">${e.ts_human}</span>
+        <span class="src">${escHtml(e.source)}/${escHtml(e.op)}</span>
+        ${dur}
+      </div>
+      <div>${escHtml(e.message)}</div>
+      ${ctxStr ? `<div class="ctx">${escHtml(ctxStr)}</div>` : ''}
+      ${tb}
+    </div>`;
+  }).join('');
+
+  // Update sidebar badge
+  updateDiagBadge(byLevel.error || 0, byLevel.warn || 0);
+}
+
+function updateDiagBadge(errs, warns) {
+  const c = document.getElementById('diagBadgeContainer');
+  if (!c) return;
+  const parts = [];
+  if (errs > 0) parts.push(`<span class="err-count">${errs}</span>`);
+  if (warns > 0) parts.push(`<span class="warn-count">${warns}</span>`);
+  c.innerHTML = parts.join('');
+}
+
+async function clearDiagnostics() {
+  try {
+    await fetch('/api/diagnostics/clear', { method: 'POST' });
+    await refreshDiagnostics();
+  } catch (e) {
+    notify('清空失败: ' + e.message, 'error');
+  }
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[ch]);
+}
+
+// 后台轻量轮询：保持 sidebar 徽章新鲜（每 30s 拉一次摘要）
+async function pollDiagSummary() {
+  try {
+    const resp = await fetch('/api/diagnostics?summary=1');
+    const j = await resp.json();
+    if (j.code === 0) {
+      const byLevel = (j.data.summary || {}).by_level || {};
+      updateDiagBadge(byLevel.error || 0, byLevel.warn || 0);
+    }
+  } catch {}
+}
+setInterval(pollDiagSummary, 30000);
+setTimeout(pollDiagSummary, 2000);
 
 // ── Boot ──
 init();

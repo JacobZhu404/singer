@@ -343,8 +343,8 @@ class ScreenEngine:
         try:
             from ..data import tdx_offline
             tdx_available = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"通达信离线模块不可用: {e}")
 
         tdx_msg = f"通达信离线数据{'可用' if tdx_available else '不可用'}，开始下载..."
         self._set_progress("prefetch_tdx", tdx_msg, 50, total)
@@ -367,12 +367,15 @@ class ScreenEngine:
             pct = int(done / total_codes * 100) if total_codes > 0 else 0
             self._set_progress("prefetch_fetch", f"下载K线 {done}/{total_codes}...", done, total_codes)
 
-        fetch_result = market_scanner.prefetch_batch(
-            codes, days=PREFETCH_KLINE_DAYS, max_workers=MAX_WORKERS_PREFETCH,
-            progress_callback=_on_fetch,
-            force_refresh=force_refresh,
-            stop_event=self._stop_event,  # ← 传递停止事件
-        )
+        from .observability import obs
+        with obs.timer("engine.download", "prefetch_klines",
+                       context={"total": total, "force_refresh": force_refresh}):
+            fetch_result = market_scanner.prefetch_batch(
+                codes, days=PREFETCH_KLINE_DAYS, max_workers=MAX_WORKERS_PREFETCH,
+                progress_callback=_on_fetch,
+                force_refresh=force_refresh,
+                stop_event=self._stop_event,  # ← 传递停止事件
+            )
 
         # ── 子阶段3.5：批量合并今日实时行情到内存缓存 ──
         logger.info(f"prefetch_merge 开始，缓存股票数: {len(market_scanner._kline_cache)}")
@@ -380,12 +383,18 @@ class ScreenEngine:
 
         # 批量获取实时行情，并写入 _realtime_batch 缓存
         try:
-            rb = market_scanner.get_realtime_batch(codes)
+            with obs.timer("engine.download", "realtime_batch",
+                           context={"total": len(codes)}):
+                rb = market_scanner.get_realtime_batch(codes)
             if rb:
                 market_scanner._realtime_batch = rb
                 logger.info(f"prefetch_merge: 获取实时行情 {len(rb)} 只")
         except Exception as e:
             logger.warning(f"prefetch_merge: 批量获取实时行情失败: {e}")
+            obs.error("engine.download", "realtime_batch",
+                      f"批量实时行情失败: {e}",
+                      context={"action": "跳过实时合并，使用历史收盘价"},
+                      exc=e)
 
         self._set_progress("prefetch_merge", "正在合并今日实时行情到内存...", 50, total)
 

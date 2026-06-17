@@ -290,8 +290,14 @@ def api_screen_progress():
             eng_progress = engine.get_progress()
             if eng_progress.get("strategies"):
                 progress["strategies"] = dict(eng_progress["strategies"])
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            from .observability import obs
+            obs.error("web.api", "screen_progress",
+                      f"读取进度失败: {e}",
+                      context={"action": "返回上次快照"}, exc=e)
+        except Exception:
+            pass
     return jsonify({"code": 0, "data": progress})
 
 
@@ -489,6 +495,42 @@ def api_status():
     })
 
 
+@app.route("/api/diagnostics", methods=["GET"])
+def api_diagnostics():
+    """
+    可观测性接口：返回最近的事件、错误统计、慢操作等。
+
+    Query params:
+        n        : 返回事件条数上限，默认 200
+        level    : 过滤等级 debug/info/warn/error
+        source   : 过滤源前缀，如 "data.fetch"
+        summary  : 1 = 只返回摘要（不带事件列表）
+    """
+    try:
+        from .observability import obs
+        n = int(request.args.get("n", 200))
+        level = request.args.get("level") or None
+        source = request.args.get("source") or None
+        only_summary = request.args.get("summary") in ("1", "true")
+        data = {"summary": obs.summary()}
+        if not only_summary:
+            data["events"] = obs.recent(n=n, level=level, source_prefix=source)
+        return jsonify({"code": 0, "data": data})
+    except Exception as e:
+        return jsonify({"code": 1, "msg": str(e)}), 500
+
+
+@app.route("/api/diagnostics/clear", methods=["POST"])
+def api_diagnostics_clear():
+    """清空可观测性事件（不影响主流程）"""
+    try:
+        from .observability import obs
+        obs.clear()
+        return jsonify({"code": 0})
+    except Exception as e:
+        return jsonify({"code": 1, "msg": str(e)}), 500
+
+
 @app.route("/api/screen/events")
 def api_screen_events():
     """SSE 端点：实时推送策略完成事件"""
@@ -575,8 +617,14 @@ def api_portfolio():
                     price = quote.get("最新价", 0)
                     if price > 0:
                         return code, price
-                except Exception:
-                    pass
+                except Exception as e:
+                    try:
+                        from .observability import obs
+                        obs.warn("web.portfolio", "fetch_price",
+                                 f"获取实时价失败: {e}",
+                                 context={"code": code, "action": "回退到 current_price"})
+                    except Exception:
+                        pass
                 return code, pos.get("current_price", 0)
 
             with ThreadPoolExecutor(max_workers=min(10, len(pf.positions))) as pool:
