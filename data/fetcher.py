@@ -370,6 +370,8 @@ class MarketScanner:
         from .data_layer import check_update_need, DataUpdateDecision
         # 预先获取cache实例，避免循环中重复调用
         cache = _get_cache()
+        # 一次性加载 meta（763KB JSON，循环内反复加载会拖慢初始化）
+        meta_snapshot = cache._load_meta()
 
         with self._lock:
             need_fetch = []
@@ -377,8 +379,7 @@ class MarketScanner:
                 if c not in self._kline_cache:
                     # 不在内存，尝试从本地缓存加载
                     local_df = cache.get_cached_kline(c)
-                    meta = cache._load_meta()
-                    cache_info = meta.get(c, {})
+                    cache_info = meta_snapshot.get(c, {})
                     records = cache_info.get("records", 0)
 
                     if not local_df.empty and records > 0:
@@ -395,7 +396,7 @@ class MarketScanner:
                         else:
                             need_fetch.append(c)
                     else:
-                        # 缓存无效，需��下载
+                        # 缓存无效，需要下载
                         need_fetch.append(c)
                     continue
 
@@ -405,8 +406,7 @@ class MarketScanner:
                     need_fetch.append(c)
                     continue
 
-                meta = cache._load_meta()
-                cache_info = meta.get(c, {})
+                cache_info = meta_snapshot.get(c, {})
                 records = cache_info.get("records", 0)
                 if records <= 0:
                     need_fetch.append(c)
@@ -454,8 +454,25 @@ class MarketScanner:
             need_fetch = failed
             if round_idx + 1 < len(concurrency_levels):
                 logger.warning(f"{label} 失败 {len(failed)} 只，降级到并发 {concurrency_levels[round_idx+1]}")
+                try:
+                    from ..core.observability import obs
+                    obs.warn("data.fetch", "concurrency_downgrade",
+                             f"{label} 失败 {len(failed)}，降级到并发 {concurrency_levels[round_idx+1]}",
+                             context={"failed_count": len(failed),
+                                      "next_workers": concurrency_levels[round_idx+1],
+                                      "samples": failed[:5]})
+                except Exception:
+                    pass
             else:
                 logger.warning(f"{label} 失败 {len(failed)} 只，进入串行兜底")
+                try:
+                    from ..core.observability import obs
+                    obs.warn("data.fetch", "serial_fallback",
+                             f"{label} 失败 {len(failed)}，进入串行兜底",
+                             context={"failed_count": len(failed),
+                                      "samples": failed[:5]})
+                except Exception:
+                    pass
 
         # 最终串行兜底
         if failed:
@@ -468,6 +485,15 @@ class MarketScanner:
 
         if failed:
             logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
+            try:
+                from ..core.observability import obs
+                obs.error("data.fetch", "final_failure",
+                          f"K线最终失败 {len(failed)} 只",
+                          context={"failed_count": len(failed),
+                                   "samples": failed[:20],
+                                   "action": "标记失败，使用本地旧缓存兜底"})
+            except Exception:
+                pass
 
         cache = _get_cache()
         with self._lock:
@@ -489,6 +515,10 @@ class MarketScanner:
         failed_codes = []
         lock = threading.Lock()
 
+        # 一次性加载 meta，传给 data_fetcher 复用，避免每只股票重新读 763KB JSON
+        cache = _get_cache()
+        meta_snapshot = cache._load_meta()
+
         def _fetch_one(code6: str):
             nonlocal done_count
             df = None
@@ -498,7 +528,7 @@ class MarketScanner:
             try:
                 # 使用新的数据层（智能判断）
                 from .data_layer import data_fetcher
-                df = data_fetcher.get_kline(code6, days)
+                df = data_fetcher.get_kline(code6, days, meta=meta_snapshot)
                 for i, delay in enumerate((0.5, 1.0, 2.0)):
                     if df is not None and not df.empty:
                         break
@@ -510,9 +540,18 @@ class MarketScanner:
                             return code6, None
                     else:
                         time.sleep(delay)
-                    df = data_fetcher.get_kline(code6, days)
+                    df = data_fetcher.get_kline(code6, days, meta=meta_snapshot)
             except Exception as e:
                 logger.debug(f"fetch_one {code6} failed: {e}")
+                try:
+                    from ..core.observability import obs
+                    obs.error("data.fetch", "fetch_one",
+                              f"获取K线失败: {e}",
+                              context={"code": code6, "round": round_label,
+                                       "action": "进入下一轮重试"},
+                              exc=e)
+                except Exception:
+                    pass
             finally:
                 with lock:
                     done_count += 1
@@ -553,10 +592,27 @@ class MarketScanner:
                                 self._cache_days[code6] = days
                         else:
                             failed_codes.append(code6)
-                    except Exception:
-                        failed_codes.append(futures.get(future, 'unknown'))
-            except Exception:
-                pass
+                    except Exception as e:
+                        code = futures.get(future, 'unknown')
+                        failed_codes.append(code)
+                        try:
+                            from ..core.observability import obs
+                            obs.error("data.fetch", "future_result",
+                                      f"future 收集异常: {e}",
+                                      context={"code": code, "round": round_label,
+                                               "action": "标记为失败"},
+                                      exc=e)
+                        except Exception:
+                            pass
+            except Exception as e:
+                try:
+                    from ..core.observability import obs
+                    obs.error("data.fetch", "as_completed_loop",
+                              f"as_completed 循环异常: {e}",
+                              context={"round": round_label, "action": "退出本轮"},
+                              exc=e)
+                except Exception:
+                    pass
 
         return failed_codes
 
@@ -756,8 +812,16 @@ class MarketScanner:
                     r = future.result()
                     if r is not None:
                         results.append(r)
-                except Exception:
-                    pass
+                except Exception as e:
+                    code = futures.get(future, 'unknown')
+                    try:
+                        from ..core.observability import obs
+                        obs.error("data.evaluate", "evaluate_batch",
+                                  f"评估异常: {e}",
+                                  context={"code": code, "action": "跳过该股"},
+                                  exc=e)
+                    except Exception:
+                        pass
         return results
 
     def _merge_today_realtime(self, df: pd.DataFrame, code6: str) -> pd.DataFrame:
