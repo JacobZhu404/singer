@@ -15,18 +15,19 @@ import json
 import glob
 import logging
 import threading
+import multiprocessing as mp
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from stock_screener.utils.indicators import calc_risk_flags
-from stock_screener.strategies.registry import STRATEGY_REGISTRY
+from stock_screener.strategies.registry import STRATEGY_REGISTRY, get_strategy
+from stock_screener.backtest.pit_scanner import PointInTimeScanner
 
 logger = logging.getLogger(__name__)
 
@@ -224,234 +225,89 @@ def _check_sell_signal(risk_flags: list) -> bool:
     )
 
 
-def _chanlun_check(df: pd.DataFrame) -> tuple:
-    """缠论策略评分（直接使用策略模块）"""
+# ─── 单股评估（线程/进程路径共用，单一事实来源）──────────────────────────────
+
+def _eval_trade(code: str, name: str, strategy_obj, trade_date: str,
+                scanner: PointInTimeScanner, df: pd.DataFrame) -> Optional[BacktestTrade]:
+    """用 as_of 时点 scanner 跑真实策略，再算未来收益。df 为该股完整 K 线。"""
+    if df is None or df.empty or len(df) < 60:
+        return None
+
+    date_str = df["date"].dt.strftime("%Y%m%d")
+    match = df.index[date_str == trade_date]
+    if len(match) == 0:
+        return None
+    full_idx = int(match[0])
+    if full_idx < 30:
+        return None
+
     try:
-        # [修复2] 改为正确的模块名 chanlun_strict，使用内部函数
-        from stock_screener.strategies.chanlun_strict import _analyze, _compute_score
-        analysis = _analyze(df)
-        if analysis is None:
-            return 0, []
-        score, signals, extra = _compute_score(analysis)
-        return score, signals
+        sig = strategy_obj._evaluate_single_stock(code, scanner, {code: name}, trade_date)
+    except strategy_obj._SkipStock:
+        return None
     except Exception as e:
-        logger.warning(f"chanlun 评分异常: {e}（视为不合格，跳过）")
-        return 0, []
+        logger.debug(f"[{strategy_obj.name}] 回测评估失败 {code}: {e}")
+        return None
+    if sig is None or sig.score < SCORE_THRESHOLD:
+        return None
+
+    has_risk = _check_sell_signal(sig.risk_flags or [])
+    rets, exits, dds = _calc_future_returns(df, full_idx)
+
+    return BacktestTrade(
+        buy_date=trade_date,
+        code=code,
+        name=name,
+        strategy=strategy_obj.name,
+        buy_price=float(df.iloc[full_idx]["close"]),
+        score=min(sig.score, 100),
+        signals=sig.signals,
+        has_risk=has_risk,
+        returns=rets,
+        exit_prices=exits,
+        max_drawdowns=dds,
+    )
 
 
-def _strategy_check(strategy_name: str, df: pd.DataFrame) -> tuple:
-    """
-    通用策略条件检查。
-    Returns: (score, signals) or (0, []) if not qualified
-    """
+# ─── 进程池工作单元 ───────────────────────────────────────────────────────────
+# 回测对每只股票的评估彼此独立（embarrassingly parallel），但策略逻辑是 CPU 密集
+# 的纯 Python，受 GIL 限制下线程几乎无法并行。改用进程池实现真并行。
+#
+# 设计要点（为「不拖垮前台」服务）：
+#   - 每进程一份 scanner/策略实例（threading.Lock 不可 pickle，故用 initializer 在
+#     子进程内构造，而非跨进程传递）。
+#   - 子进程 os.nice(+N) 降优先级：前台任务永远抢占 CPU，回测只吃空闲算力。
+#   - 任务按「(日期, 策略, 一批股票)」分块，大幅降低 IPC（只回传命中的交易）。
+#   - 用 spawn 上下文，规避 macOS 上 fork + numpy/Accelerate 的已知崩溃。
+
+_WK: dict = {}  # 每个子进程的私有状态：scanner / 策略实例 / 当前 as_of 日期
+
+
+def _pool_init(strategy_names: List[str], top_n: int, niceness: int):
     try:
-        from stock_screener.utils.indicators import (
-            calc_macd, calc_rsi, calc_bollinger, calc_ma,
-            calc_volume_ratio, td_sequential_count, calc_skdj
-        )
-        close = df["close"]
-        high  = df["high"]
-        low   = df["low"]
-        vol   = df["vol"]
-        open_ = df["open"] if "open" in df.columns else close
-        i = len(df) - 1
-        if i < 30:
-            return 0, []
+        os.nice(niceness)  # 降低子进程优先级，保证前台交互流畅
+    except Exception:
+        pass
+    logging.disable(logging.CRITICAL)  # 子进程内静音日志，避免多进程抢 stderr
+    _WK["scanner"] = PointInTimeScanner()
+    _WK["strats"] = {s: get_strategy(s, top_n=top_n) for s in strategy_names}
+    _WK["cur_date"] = None
 
-        score, signals = 0, []
 
-        if strategy_name == "chanlun":
-            return _chanlun_check(df)
-
-        elif strategy_name == "macd_bull":
-            dif, dea, macd_bar = calc_macd(close)
-            mas = calc_ma(close, [5, 10, 20, 60])
-            ma5, ma10, ma20, ma60 = (mas[k].iloc[i] for k in ("ma5", "ma10", "ma20", "ma60"))
-            if mas["ma5"].iloc[i-1] <= mas["ma10"].iloc[i-1] and ma5 > ma10:
-                signals.append("MA5上穿MA10金叉"); score += 25
-            elif ma5 > ma10:
-                signals.append("MA5>MA10多头"); score += 15
-            if ma5 > ma10 > ma20 > ma60:
-                signals.append("均线多头排列"); score += 20
-            if dif.iloc[i] > 0: signals.append("DIF零轴以上"); score += 15
-            if dea.iloc[i] > 0: signals.append("DEA零轴以上"); score += 15
-            if dif.iloc[i] > dea.iloc[i]: signals.append("DIF>DEA金叉"); score += 15
-            if score < 50: return 0, []
-
-        elif strategy_name == "strong_stock":
-            vol_ratio = calc_volume_ratio(vol, 5)
-            red = close > open_
-            dif, _, _ = calc_macd(close)
-            if vol_ratio.iloc[i] > 1.5 and red.iloc[i]:
-                signals.append(f"放量上涨(量比{vol_ratio.iloc[i]:.1f}x)"); score += 20
-            n = min(10, i+1)
-            up_vol = sum(vol.iloc[i-j] for j in range(n) if red.iloc[i-j])
-            dn_vol = sum(vol.iloc[i-j] for j in range(n) if not red.iloc[i-j])
-            if dn_vol > 0 and up_vol / dn_vol > 1.5:
-                signals.append("红肥绿瘦"); score += 20
-            if i >= 4:
-                pct = close.pct_change() * 100
-                if all(red.iloc[i-k] for k in range(5)) and all(abs(pct.iloc[i-k]) <= 3 for k in range(5)):
-                    signals.append("五连小阳"); score += 20
-            if i > 0 and low.iloc[i] > high.iloc[i-1]:
-                signals.append("跳空缺口"); score += 20
-            if dif.iloc[i] > 0: signals.append("MACD零轴以上"); score += 20
-            if score < 50: return 0, []
-
-        elif strategy_name == "td_sequential":
-            td = td_sequential_count(close, high=high, low=low)
-            dif, dea, _ = calc_macd(close)
-            cnt = int(td.iloc[i])
-            if cnt == 9:
-                signals.append("九转完成(=9)"); score += 50
-            elif cnt in (7, 8):
-                signals.append(f"九转进行中({cnt})"); score += 25
-            else:
-                return 0, []
-            if i >= 5 and vol.iloc[i] > vol.iloc[i-5:i].mean() * 1.2:
-                signals.append("成交量放大确认"); score += 15
-
-        elif strategy_name == "right_side":
-            mas = calc_ma(close, [5, 20, 60])
-            vr = calc_volume_ratio(vol, 5).iloc[i]
-            rsi = calc_rsi(close, 14).iloc[i]
-            dif, _, _ = calc_macd(close)
-            c = close.iloc[i]
-            if i >= 20 and c > high.iloc[i-20:i].max():
-                signals.append("突破20日新高"); score += 25
-            if vr > 1.5: signals.append(f"突破放量({vr:.1f}x)"); score += 20
-            if c > mas["ma60"].iloc[i]: signals.append("股价站上MA60"); score += 15
-            if 50 <= rsi <= 70: signals.append(f"RSI强势区({rsi:.0f})"); score += 10
-            if dif.iloc[i] > 0: signals.append("MACD零轴以上"); score += 10
-            if score < 40: return 0, []
-
-        elif strategy_name == "rsi_oversold":
-            rsi = calc_rsi(close, 14)
-            rv, rp = rsi.iloc[i], rsi.iloc[i-1]
-            if rv > 60: return 0, []
-            if rv < 30: signals.append(f"RSI({rv:.0f})<30超卖"); score += 50
-            elif rp < 30 <= rv < 40: signals.append("RSI底部回升"); score += 25
-            elif 30 <= rv < 40: signals.append(f"RSI({rv:.0f})低位"); score += 15
-            if close.iloc[i] < close.rolling(20).mean().iloc[i]:
-                signals.append("价格<20日均线"); score += 10
-            if score < 40: return 0, []
-
-        elif strategy_name == "bollinger_bands":
-            mid = close.rolling(20).mean()
-            std = close.rolling(20).std()
-            lower = (mid - 2 * std).iloc[i]
-            if pd.isna(lower) or lower == 0: return 0, []
-            price = close.iloc[i]
-            pct = (price - lower) / lower * 100
-            if pct <= 3: signals.append(f"触及布林下轨({pct:.1f}%)"); score += 40
-            if close.iloc[i-1] <= lower * 1.02 and price > close.iloc[i-1]:
-                signals.append("布林下轨反弹"); score += 30
-            if score < 40: return 0, []
-
-        elif strategy_name == "volume_breakout":
-            vm20 = vol.rolling(20).mean().iloc[i]
-            if pd.isna(vm20) or vm20 <= 0: return 0, []
-            vr = vol.iloc[i] / vm20
-            price = close.iloc[i]
-            h30 = high.iloc[max(0, i-30):i].max()  # 突破应基于最高价
-            if vr >= 2.0: signals.append(f"量比{vr:.1f}x放量"); score += 35
-            elif vr >= 1.5: signals.append(f"温和放量{vr:.1f}x"); score += 20
-            if price > h30: signals.append("突破30日高点"); score += 30
-            if score < 40: return 0, []
-
-        elif strategy_name == "chanlun_strict":
-            try:
-                from stock_screener.strategies.chanlun_strict import _analyze, _compute_score
-                analysis = _analyze(df)
-                score, signals, _ = _compute_score(analysis) if analysis else (0, [], {})
-                if score < 40:
-                    return 0, []
-            except Exception as e:
-                logger.warning(f"chanlun_strict 评分异常: {e}（视为不合格，跳过）")
-                return 0, []
-
-        elif strategy_name == "golden_cross":
-            dif, dea, _ = calc_macd(close)
-            mas = calc_ma(close, [5, 10, 20])
-            rsi = calc_rsi(close, 14)
-            ma5 = mas["ma5"].iloc[i]
-            ma10 = mas["ma10"].iloc[i]
-            ma20 = mas["ma20"].iloc[i]
-            m5_prev = mas["ma5"].iloc[i-1] if i >= 1 else ma5
-            m10_prev = mas["ma10"].iloc[i-1] if i >= 1 else ma10
-            if any(pd.isna(x) for x in [ma5, ma10, ma20]):
-                return 0, []
-            if ma5 > ma10 and m5_prev <= m10_prev:
-                signals.append("MA金叉"); score += 40
-            elif ma5 > ma10:
-                signals.append("MA多头"); score += 20
-            if ma5 > ma10 > ma20:
-                signals.append("均线多头"); score += 25
-            c = close.iloc[i]
-            if c > ma5:
-                signals.append("站上MA5"); score += 15
-            r = float(rsi.iloc[i]) if not pd.isna(rsi.iloc[i]) else 50
-            if 50 <= r <= 65:
-                signals.append(f"RSI确认({r:.0f})"); score += 10
-            elif r < 50:
-                score -= 10
-            d = float(dif.iloc[i]) if not pd.isna(dif.iloc[i]) else 0
-            if d > 0:
-                signals.append("MACD零轴上"); score += 10
-            if score < 70:
-                return 0, []
-
-        elif strategy_name == "chan20":
-            dif, dea, _ = calc_macd(close)
-            sk, sd = calc_skdj(close, high, low)
-            mas = calc_ma(close, [5, 10, 20])
-
-            # 检测零轴下金叉
-            crosses = []
-            for ci in range(1, len(dif)):
-                if pd.isna(dif.iloc[ci]) or pd.isna(dea.iloc[ci]):
-                    continue
-                if dif.iloc[ci - 1] <= dea.iloc[ci - 1] and dif.iloc[ci] > dea.iloc[ci]:
-                    if dif.iloc[ci] < 0 and dea.iloc[ci] < 0:
-                        crosses.append(ci)
-
-            # tightened
-            if len(crosses) >= 2 and (i - crosses[-1]) <= 3:
-                signals.append("MACD零轴下二次金叉"); score += 40
-            elif len(crosses) >= 1 and (i - crosses[-1]) <= 2:
-                signals.append("MACD零轴下金叉"); score += 25
-            else:
-                return 0, []
-
-            skv, sdv = sk.iloc[i], sd.iloc[i]
-            skp, sdp = sk.iloc[i - 1], sd.iloc[i - 1]
-            if skp <= sdp and skv > sdv:
-                if skv < 25:
-                    signals.append("SKDJ低位金叉"); score += 30
-                else:
-                    signals.append("SKDJ金叉"); score += 15
-            if skv < 20:
-                signals.append("SKDJ超卖"); score += 15
-            elif skv < 25:
-                signals.append("SKDJ低位"); score += 10
-
-            ma5 = mas["ma5"].iloc[i]
-            if not pd.isna(ma5) and close.iloc[i] > ma5:
-                signals.append("站上5日线"); score += 10
-            vr = calc_volume_ratio(vol, 5).iloc[i]
-            if vr > 1.2:
-                signals.append("温和放量"); score += 5
-            if score < 55:
-                return 0, []
-
-        else:
-            return 0, []
-
-        return score, signals
-
-    except Exception as e:
-        logger.debug(f"策略检查失败 [{strategy_name}]: {e}")
-        return 0, []
+def _pool_worker(args: Tuple[str, str, list]) -> List[BacktestTrade]:
+    trade_date, strategy_name, code_chunk = args
+    scanner: PointInTimeScanner = _WK["scanner"]
+    # 同一进程内换日才 set_as_of（清指标缓存）；同日多策略/多块共享缓存
+    if _WK["cur_date"] != trade_date:
+        scanner.set_as_of(trade_date)
+        _WK["cur_date"] = trade_date
+    strat = _WK["strats"][strategy_name]
+    out: List[BacktestTrade] = []
+    for code, name in code_chunk:
+        t = _eval_trade(code, name, strat, trade_date, scanner, scanner._full_df(code))
+        if t is not None:
+            out.append(t)
+    return out
 
 
 # ─── 回测引擎 ─────────────────────────────────────────────────────────────────
@@ -519,57 +375,25 @@ class BacktestEngine:
                 dates.append(grp.iloc[-1]["date"].strftime("%Y%m%d"))
         return sorted(dates)
 
-    def _process_one(self, code: str, name: str, strategy: str, trade_date: str) -> Optional[BacktestTrade]:
-        """处理单只股票"""
-        df = self._get_df(code)
-        if df.empty or len(df) < 60:
-            return None
+    def _process_one(self, code: str, name: str, strategy_obj, trade_date: str,
+                     scanner: PointInTimeScanner) -> Optional[BacktestTrade]:
+        """处理单只股票（线程路径）：委托给共用的 _eval_trade。"""
+        return _eval_trade(code, name, strategy_obj, trade_date, scanner, self._get_df(code))
 
-        df["date_str"] = df["date"].dt.strftime("%Y%m%d")
-        if trade_date not in df["date_str"].values:
-            return None
-
-        idx = df[df["date_str"] == trade_date].index[0]
-        if idx < 30:
-            return None
-
-        hist = df.iloc[:idx+1].copy()
-        score, signals = _strategy_check(strategy, hist)
-        if score < SCORE_THRESHOLD:
-            return None
-
-        close = hist["close"]
-        high  = hist["high"]
-        low   = hist["low"]
-        vol   = hist["vol"]
-        pct   = close.pct_change() * 100
-        risk_flags = calc_risk_flags(close, high, low, vol, pct)
-        has_risk = _check_sell_signal(risk_flags)
-
-        # 未来收益（基于完整 df，不仅是 hist）
-        full_idx = df[df["date_str"] == trade_date].index[0]
-        rets, exits, dds = _calc_future_returns(df, full_idx)
-
-        return BacktestTrade(
-            buy_date=trade_date,
-            code=code,
-            name=name,
-            strategy=strategy,
-            buy_price=float(hist["close"].iloc[-1]),
-            score=min(score, 100),
-            signals=signals,
-            has_risk=has_risk,
-            returns=rets,
-            exit_prices=exits,
-            max_drawdowns=dds,
-        )
+    @staticmethod
+    def _default_workers() -> int:
+        """保守默认：约 60% 内核，至少留 2 个给前台任务，保证机器不卡。"""
+        cpu = os.cpu_count() or 4
+        return max(1, min(cpu - 2, int(cpu * 0.6)))
 
     def run(
         self,
         strategy_names: Optional[List[str]] = None,
         top_n: int = 10,
         filter_sell: bool = True,
-        max_workers: int = 20,
+        max_workers: Optional[int] = None,
+        use_processes: bool = True,
+        niceness: int = 10,
     ) -> Dict[str, BacktestResult]:
         """
         执行回测
@@ -578,10 +402,14 @@ class BacktestEngine:
             strategy_names: 策略列表，None = 所有注册策略
             top_n: 每日每策略最多选股数
             filter_sell: 是否过滤危险风险标志
-            max_workers: 并发线程数
+            max_workers: 并行度；None = 保守默认（约 60% 内核，至少留 2 个给前台）
+            use_processes: True = 进程池真并行（推荐）；False/1 worker = 退回线程
+            niceness: 子进程 nice 增量（越大优先级越低，越不抢前台 CPU）
         """
         if strategy_names is None:
             strategy_names = list(STRATEGY_REGISTRY.keys())
+        if max_workers is None:
+            max_workers = self._default_workers()
 
         trade_dates = self._get_trade_dates()
         name_map    = _load_stock_names()
@@ -591,32 +419,72 @@ class BacktestEngine:
         all_codes = [(os.path.splitext(os.path.basename(f))[0]) for f in csv_files]
         all_codes = [(c, name_map.get(c, c)) for c in all_codes]
 
-        logger.info(f"回测: {len(trade_dates)}个交易日 × {len(strategy_names)}个策略 × {len(all_codes)}只股票")
+        logger.info(f"回测: {len(trade_dates)}个交易日 × {len(strategy_names)}个策略 × "
+                    f"{len(all_codes)}只股票 | workers={max_workers} "
+                    f"({'进程' if use_processes and max_workers > 1 else '线程'})")
 
         results = {s: BacktestResult(strategy=s) for s in strategy_names}
 
-        for date_idx, trade_date in enumerate(trade_dates):
-            logger.info(f"进度 {date_idx+1}/{len(trade_dates)} - {trade_date}")
-            for strategy in strategy_names:
-                tasks = [(code, name, strategy, trade_date) for code, name in all_codes]
-
-                all_trades = []
-                with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                    for t in pool.map(lambda a: self._process_one(*a), tasks):
-                        if t:
-                            all_trades.append(t)
-
-                if filter_sell:
-                    all_trades = [t for t in all_trades if not t.has_risk]
-
-                all_trades.sort(key=lambda t: t.score, reverse=True)
-                results[strategy].trades.extend(all_trades[:top_n])
+        if use_processes and max_workers > 1:
+            self._run_processes(strategy_names, all_codes, trade_dates, top_n,
+                                filter_sell, max_workers, niceness, results)
+        else:
+            self._run_threads(strategy_names, all_codes, trade_dates, top_n,
+                              filter_sell, max_workers, results)
 
         bench = _benchmark_period_returns(trade_dates)
         for r in results.values():
             _calc_stats(r, bench)
-
         return results
+
+    def _run_threads(self, strategy_names, all_codes, trade_dates, top_n,
+                     filter_sell, max_workers, results):
+        """线程路径（兼容/回退；CPU 密集下不真并行）。"""
+        strategy_objs = {s: get_strategy(s, top_n=top_n) for s in strategy_names}
+        scanner = PointInTimeScanner()
+        for date_idx, trade_date in enumerate(trade_dates):
+            logger.info(f"进度 {date_idx+1}/{len(trade_dates)} - {trade_date}")
+            scanner.set_as_of(trade_date)
+            for strategy in strategy_names:
+                strat = strategy_objs[strategy]
+                tasks = [(code, name, strat, trade_date, scanner) for code, name in all_codes]
+                all_trades = []
+                with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+                    for t in pool.map(lambda a: self._process_one(*a), tasks):
+                        if t:
+                            all_trades.append(t)
+                if filter_sell:
+                    all_trades = [t for t in all_trades if not t.has_risk]
+                all_trades.sort(key=lambda t: t.score, reverse=True)
+                results[strategy].trades.extend(all_trades[:top_n])
+
+    def _run_processes(self, strategy_names, all_codes, trade_dates, top_n,
+                       filter_sell, max_workers, niceness, results):
+        """进程池路径：真并行 + 低优先级 + 分块降 IPC。"""
+        # 按股票分块：任务数 = 日期 × 策略 × 块数；块越大 IPC 越少，内存峰值越高
+        chunk = max(100, len(all_codes) // (max_workers * 4))
+        code_chunks = [all_codes[i:i + chunk] for i in range(0, len(all_codes), chunk)]
+        ctx = mp.get_context("spawn")  # 规避 macOS fork + numpy 崩溃
+
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            mp_context=ctx,
+            initializer=_pool_init,
+            initargs=(strategy_names, top_n, niceness),
+        ) as pool:
+            for date_idx, trade_date in enumerate(trade_dates):
+                logger.info(f"进度 {date_idx+1}/{len(trade_dates)} - {trade_date}")
+                tasks = [(trade_date, s, ch) for s in strategy_names for ch in code_chunks]
+                per_strategy = {s: [] for s in strategy_names}
+                for trades in pool.map(_pool_worker, tasks):
+                    for t in trades:
+                        per_strategy[t.strategy].append(t)
+                for s in strategy_names:
+                    tl = per_strategy[s]
+                    if filter_sell:
+                        tl = [t for t in tl if not t.has_risk]
+                    tl.sort(key=lambda t: t.score, reverse=True)
+                    results[s].trades.extend(tl[:top_n])
 
 
 def _calc_stats(result: BacktestResult, benchmark: Optional[Dict[int, Dict[str, float]]] = None):
