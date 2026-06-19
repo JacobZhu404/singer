@@ -1010,10 +1010,17 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
 
 def run_server(host: str = "0.0.0.0", port: int = 5188, debug: bool = False):
     logger.info(f"启动股票筛选工具服务: http://{host}:{port}")
-    # 启动自检：交易日历是否快用完，提醒手动补充节假日
+    # 启动自检：交易日历是否快用完。覆盖不足时先尝试 baostock 直连自动补全
+    # （3.7.5 可用，不依赖 akshare），补全后仍不足才提醒手动更新节假日。
     try:
-        from stock_screener.data.market_calendar import check_calendar_coverage
+        from stock_screener.data.market_calendar import (
+            check_calendar_coverage, refresh_calendar_from_baostock,
+        )
         _cal_warn = check_calendar_coverage()
+        if _cal_warn:
+            logger.info(f"[交易日历] {_cal_warn} 尝试 baostock 自动补全…")
+            if refresh_calendar_from_baostock():
+                _cal_warn = check_calendar_coverage()  # 补全后复查
         if _cal_warn:
             logger.warning(f"[交易日历] {_cal_warn}")
             obs.warn("data.calendar", "coverage", _cal_warn,
