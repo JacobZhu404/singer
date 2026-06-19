@@ -260,7 +260,13 @@ def api_screen():
             logger.info("筛选任务被用户中断")
             _last_result = {"error": "用户中断了筛选"}
         except Exception as e:
-            logger.error(f"筛选失败: {e}")
+            logger.error(f"筛选失败: {e}", exc_info=True)
+            try:
+                from .observability import obs
+                obs.error("web.api", "run_task", f"筛选任务异常: {e}",
+                          context={"action": "任务终止"}, exc=e)
+            except Exception:
+                pass
             _last_result = {"error": str(e)}
         finally:
             _is_running = False
@@ -303,11 +309,68 @@ def api_screen_progress():
 
 @app.route("/api/screen/stop", methods=["POST"])
 def api_screen_stop():
-    """停止正在进行的筛选任务"""
+    """
+    停止正在进行的筛选任务。
+
+    行为：
+      1. 发出停止信号（_stop_event）
+      2. 最多等 5s 让工作线程自然退出（看到 _is_running 变 False）
+      3. 若仍未退出（多半卡在网络 I/O），强制重置状态标志，但后台线程会在
+         自身网络调用结束后自然退出。返回 code=2 + forced=true 提示用户。
+
+    返回：
+      - code=0: 任务已实际停止
+      - code=1: 当前无运行中任务
+      - code=2: 信号已发但任务未在 5s 内响应，已强制重置状态（forced=true）
+    """
+    global _is_running
+
+    try:
+        from .observability import obs
+    except Exception:
+        obs = None
+
     if not _is_running:
         return jsonify({"code": 1, "msg": "当前没有正在运行的筛选任务"})
+
     _stop_event.set()
-    return jsonify({"code": 0, "msg": "停止信号已发送，请稍候..."})
+    stop_requested_at = time.time()
+    if obs:
+        obs.warn("web.api", "screen_stop", "收到用户停止请求，已置 stop_event",
+                 context={"task_age_sec": round(stop_requested_at - _task_start_time, 1)})
+
+    # 轮询等待自然退出（最多 5s）
+    deadline = stop_requested_at + 5.0
+    while time.time() < deadline:
+        if not _is_running:
+            elapsed = time.time() - stop_requested_at
+            if obs:
+                obs.info("web.api", "screen_stop",
+                         f"任务在 {elapsed:.1f}s 内自然退出")
+            return jsonify({
+                "code": 0,
+                "msg": f"✅ 已成功停止（耗时 {elapsed:.1f}s）",
+                "stopped": True,
+            })
+        time.sleep(0.2)
+
+    # 5s 仍未退出 —— 强制重置标志位，让前端可以重新发起筛选
+    # 注意：后台线程会在自身阻塞的网络调用结束后走到 finally 自然退出
+    _is_running = False
+    with _progress_lock:
+        _screen_progress["phase"] = "done"
+        _screen_progress["current"] = "已强制中止（后台请求可能仍在完成）"
+        _screen_progress["pct"] = 0
+    if obs:
+        obs.error("web.api", "screen_stop",
+                  "任务在 5s 内未响应停止信号，已强制重置 _is_running",
+                  context={"hint": "工作线程可能卡在网络请求；后台会在请求结束后自然退出"})
+    return jsonify({
+        "code": 2,
+        "msg": "⚠️ 任务 5 秒内未响应停止（多半卡在网络请求），已强制重置状态。后台线程会在请求结束后自然退出。",
+        "stopped": False,
+        "forced": True,
+    })
 
 
 @app.route("/api/data_status", methods=["GET"])
@@ -947,4 +1010,14 @@ def _strategy_result_to_summary(name: str, sr) -> dict:
 
 def run_server(host: str = "0.0.0.0", port: int = 5188, debug: bool = False):
     logger.info(f"启动股票筛选工具服务: http://{host}:{port}")
+    # 启动自检：交易日历是否快用完，提醒手动补充节假日
+    try:
+        from stock_screener.data.market_calendar import check_calendar_coverage
+        _cal_warn = check_calendar_coverage()
+        if _cal_warn:
+            logger.warning(f"[交易日历] {_cal_warn}")
+            obs.warn("data.calendar", "coverage", _cal_warn,
+                     context={"action": "更新 data/market_calendar.py 的 _STATIC_HOLIDAYS"})
+    except Exception as e:
+        logger.warning(f"交易日历自检失败: {e}")
     app.run(host=host, port=port, debug=debug, use_reloader=False)
