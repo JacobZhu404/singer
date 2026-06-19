@@ -152,38 +152,6 @@ def merge_kline_to_cache(code: str, new_df: pd.DataFrame) -> pd.DataFrame:
     return get_cached_kline(code)
 
 
-def needs_update(code: str, max_age_hours: int = 4) -> bool:
-    """
-    智能缓存过期判断：
-    - 交易时间：强制更新（用户要最新数据）
-    - 收盘后：检查最新价格是否是收盘价，不是则更新
-    """
-    from .fetcher import is_market_open
-    meta = _load_meta()
-    code6 = _to_code6(code)
-    entry = meta.get(code6, {})
-    last = entry.get("last_update", "")
-    if not last:
-        return True
-
-    # 交易时间：必须实时更新
-    if is_market_open():
-        return True
-
-    try:
-        dt = datetime.strptime(last, "%Y-%m-%d %H:%M:%S")
-        # 收盘后：检查是否15:00后的收盘价
-        # 15点后更新 = 收盘价，缓存有效
-        market_close = datetime.strptime("15:00", "%H:%M").time()
-        if dt.time() >= market_close:
-            # 15:00后更新的，是收盘价，长期有效
-            return False
-        # 15点前更新的，可能是盘中数据，需要更新
-        return True
-    except ValueError:
-        return True
-
-
 def get_cached_stock_list() -> pd.DataFrame:
     if os.path.exists(_STOCKS_FILE):
         try:
@@ -195,10 +163,19 @@ def get_cached_stock_list() -> pd.DataFrame:
 
 
 def save_stock_list(df: pd.DataFrame):
+    """原子写 stocks.json：先写临时文件再 os.replace，避免并发/中断产生
+    "Extra data" 半截 JSON（曾把缓存写坏成无法解析）。空列表拒绝写入，
+    避免一次失败把好缓存覆盖成 []。"""
     _ensure_dirs()
+    records = df.to_dict(orient="records") if df is not None else []
+    if not records:
+        logger.warning("save_stock_list: 空列表，拒绝写入（避免覆盖好缓存）")
+        return
     try:
-        with open(_STOCKS_FILE, "w", encoding="utf-8") as f:
-            json.dump(df.to_dict(orient="records"), f, ensure_ascii=False, indent=2)
+        tmp = f"{_STOCKS_FILE}.tmp.{os.getpid()}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _STOCKS_FILE)  # 原子替换
     except Exception as e:
         logger.warning(f"保存股票列表缓存失败: {e}")
 

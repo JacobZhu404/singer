@@ -432,6 +432,19 @@ class MarketScanner:
         else:
             logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
 
+        # ─── §C1 快速路径 ───────────────────────────────────────────────
+        # 分类：REALTIME（只缺今日一行） vs CLOSE/其它（需要拉历史 bar）
+        # REALTIME 走腾讯批量（90 只/请求），把今日 quote merge 到本地历史；
+        # CLOSE 才进入下面的 _fetch_round 单只多源链路。
+        if not force_refresh:
+            need_fetch = self._batch_realtime_path(
+                need_fetch, days, meta_snapshot,
+                progress_callback=progress_callback,
+                stop_event=stop_event,
+            )
+            if not need_fetch:
+                logger.info("批量快速路径完成全部 REALTIME，无需进入单只链路")
+
         # 并发自适应降级：20 → 10 → 5 → 串行（降低并发避免卡死）
         concurrency_levels = [max_workers, 20, 10, 5]
         failed = []
@@ -506,6 +519,98 @@ class MarketScanner:
 
         return {"cached": mem_count, "failed": failed or [], "total": len(all_codes)}
 
+    def _batch_realtime_path(
+        self,
+        codes: List[str],
+        days: int,
+        meta_snapshot: dict,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
+        stop_event: Optional[threading.Event] = None,
+    ) -> List[str]:
+        """
+        §C1 快速路径：把所有"只缺今日一行"的 code 用腾讯批量接口（90/HTTP）一次性补完。
+
+        Returns: 未走完快速路径、需要 _fetch_round 处理的 code 列表（CLOSE 类）。
+        """
+        from .data_layer import check_update_need, DataUpdateDecision
+        from .realtime_merge import merge_realtime_into_history
+        from .tencent_batch import get_realtime_fast
+        from . import local_cache
+
+        realtime_codes: List[str] = []
+        residual: List[str] = []  # 非 REALTIME 决策的 code（CLOSE 等）
+
+        for c in codes:
+            cache_info = meta_snapshot.get(c, {})
+            local_last_date = cache_info.get("end_date", "")
+            meta_last_update = cache_info.get("last_update", "")
+            decision = check_update_need(c, local_last_date, meta_last_update)
+            if decision.update_type == DataUpdateDecision.REALTIME:
+                realtime_codes.append(c)
+            else:
+                residual.append(c)
+
+        if not realtime_codes:
+            return residual
+
+        if stop_event and stop_event.is_set():
+            return codes  # 已停止，全部退回，不做事
+
+        logger.info(f"快速路径: {len(realtime_codes)} 只走批量实时，{len(residual)} 只走 CLOSE 链路")
+        if progress_callback:
+            progress_callback("批量实时", 0, len(realtime_codes))
+
+        # 一次性批量补今日报价（内部按 90/HTTP × 5 并发分批）
+        try:
+            from ..core.observability import obs
+            with obs.timer("data.fetch", "batch_realtime",
+                           context={"codes": len(realtime_codes)}):
+                quote_map = get_realtime_fast(realtime_codes, max_workers=5)
+        except Exception as e:
+            logger.warning(f"批量实时失败，退回单只链路: {e}")
+            try:
+                from ..core.observability import obs
+                obs.error("data.fetch", "batch_realtime_failed",
+                          f"批量实时彻底失败: {e}",
+                          context={"codes": len(realtime_codes),
+                                   "action": "退回 _fetch_round 单只链路"},
+                          exc=e)
+            except Exception:
+                pass
+            return codes  # 全部退回单只链路兜底
+
+        if stop_event and stop_event.is_set():
+            return residual + [c for c in realtime_codes if c not in self._kline_cache]
+
+        # 把 quote merge 到本地历史，写入内存缓存
+        merged_count = 0
+        no_quote: List[str] = []
+        for idx, c in enumerate(realtime_codes, 1):
+            if stop_event and stop_event.is_set():
+                break
+            quote = quote_map.get(c)
+            if not quote:
+                no_quote.append(c)
+                continue
+            history = local_cache.get_cached_kline(c)
+            if history is None or history.empty:
+                # 无本地历史 → 这只必须走 CLOSE 单只链路去拉历史 bar
+                no_quote.append(c)
+                continue
+            merged = merge_realtime_into_history(history, quote)
+            if merged is None or merged.empty:
+                no_quote.append(c)
+                continue
+            with self._lock:
+                self._kline_cache[c] = merged
+                self._cache_days[c] = days
+            merged_count += 1
+            if progress_callback and (idx % 200 == 0 or idx == len(realtime_codes)):
+                progress_callback("批量实时", idx, len(realtime_codes))
+
+        logger.info(f"批量实时合并完成: 成功 {merged_count}/{len(realtime_codes)}, 缺报价或无历史 {len(no_quote)} 只退回单只链路")
+        return residual + no_quote
+
     def _fetch_round(self, codes: List[str], days: int, workers: int,
                      round_label: str, callback=None, force_refresh: bool = False,
                      stop_event: Optional[threading.Event] = None) -> List[str]:
@@ -562,7 +667,12 @@ class MarketScanner:
                 return code6, df
             return code6, None
 
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        # 注意：不用 `with ThreadPoolExecutor() as pool:`，因为它的 __exit__
+        # 会调 shutdown(wait=True)，等所有正在跑的 HTTP 请求自然结束。
+        # 我们需要"停止时立刻撒手"的语义 —— 手工管理 + 手动取消未启动 future + shutdown(wait=False)。
+        # （cancel_futures 参数是 Python 3.9+，本项目跑在 3.7，故手动 future.cancel()）
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
             # 分批提交，每批前检查停止事件
             futures = {}
             for c in codes:
@@ -571,19 +681,14 @@ class MarketScanner:
                 f = pool.submit(_fetch_one, c)
                 futures[f] = c
 
-            # 收集已完成的
-            done_futures = set()
+            stopped = False
             try:
                 for future in as_completed(list(futures.keys())):
                     if stop_event and stop_event.is_set():
-                        # 停止：取消所有未完成的任务
-                        for f in futures:
-                            if not f.done():
-                                f.cancel()
+                        stopped = True
                         break
                     try:
                         code6, result = future.result()
-                        done_futures.add(future)
                         if code6 is None:
                             continue
                         if result is not None and not (hasattr(result, 'empty') and result.empty):
@@ -613,6 +718,25 @@ class MarketScanner:
                               exc=e)
                 except Exception:
                     pass
+
+            if stopped:
+                logger.info(f"{round_label}: 收到停止信号，撒手未完成的 future（不等 HTTP 回包）")
+                try:
+                    from ..core.observability import obs
+                    pending = sum(1 for f in futures if not f.done())
+                    obs.warn("data.fetch", "round_stopped",
+                             f"{round_label} 停止，{pending} 个 future 在后台自然结束",
+                             context={"pending": pending, "round": round_label})
+                except Exception:
+                    pass
+        finally:
+            # 手动取消尚未启动的 future（等价于 3.9+ 的 cancel_futures=True）；
+            # wait=False 不等已启动的 HTTP 回包——已启动线程会在 HTTP timeout（≤10s）后自然死亡，
+            # 不阻塞当前调用栈。
+            for f in futures:
+                if not f.done():
+                    f.cancel()
+            pool.shutdown(wait=False)
 
         return failed_codes
 
@@ -702,46 +826,16 @@ class MarketScanner:
                 return self._indicator_cache[cache_key]
 
         # 延迟导入避免循环依赖
-        from ..utils import indicators as ind
+        from ..utils.indicators import compute_indicator_bundle
 
         df = self.get_history(code, days, pure=pure)
-        if df.empty or len(df) < 20:
+        result = compute_indicator_bundle(df)
+        if not result:
             return {}
 
-        close = df["close"]
-        # 兼容：vol 列可能为 NaN，尝试用 volume 列填充
-        vol = df["vol"] if "vol" in df.columns else pd.Series(0, index=df.index)
-        if "volume" in df.columns:
-            vol = vol.fillna(df["volume"])
-
-        try:
-            macd = ind.calc_macd(close)
-            rsi = ind.calc_rsi(close, 14)
-            ma = ind.calc_ma(close, [5, 10, 20, 60])
-            bb_upper, bb_mid, bb_lower = ind.calc_bollinger(close)
-            vr = ind.calc_volume_ratio(vol, 5)
-            high = df["high"] if "high" in df.columns else close
-            low = df["low"] if "low" in df.columns else close
-            td = ind.td_sequential_count(close, high=high, low=low)
-            sk, sd = ind.calc_skdj(close, high, low)
-
-            result = {
-                "kline": df,
-                "macd": macd,
-                "rsi": rsi,
-                "ma": ma,
-                "bollinger": {"upper": bb_upper, "mid": bb_mid, "lower": bb_lower},
-                "vol_ratio": vr,
-                "td_count": td,
-                "skdj": (sk, sd),
-            }
-
-            with self._lock:
-                self._indicator_cache[cache_key] = result
-
-            return result
-        except Exception:
-            return {}
+        with self._lock:
+            self._indicator_cache[cache_key] = result
+        return result
 
     def get_cached_codes(self) -> List[str]:
         """
@@ -826,77 +920,17 @@ class MarketScanner:
 
     def _merge_today_realtime(self, df: pd.DataFrame, code6: str) -> pd.DataFrame:
         """
-        将实时行情合成到K线末尾，让策略能基于当天盘中数据计算。
-        仅在交易日盘中有效，非交易日不合并。
-        优先使用批量实时行情缓存（预计算阶段），没有再单只查询。
+        将实时行情合成到 K线末尾，让策略基于当天盘中数据计算。
+        优先用批量实时缓存（_realtime_batch），缺则单只查询。
+        合并细节统一走 data/realtime_merge.merge_realtime_into_history。
         """
-        if df is None or df.empty or "date" not in df.columns:
-            return df if df is not None else pd.DataFrame()
-        today = datetime.now().strftime("%Y-%m-%d")
-        # 兼容 date 列是 Timestamp 或字符串
-        last_date_val = df["date"].iloc[-1]
-        if hasattr(last_date_val, "strftime"):
-            last_date = last_date_val.strftime("%Y-%m-%d")
-        else:
-            last_date = str(last_date_val).split()[0]
-        if last_date == today:
-            return df
-        # 优先使用批量实时行情缓存，避免逐只请求限流
+        from .realtime_merge import merge_realtime_into_history
+
         quote = self._realtime_batch.get(code6)
         if quote is None:
             quote = self.get_realtime(code6)
-        if not quote:
-            return df
-        price = quote.get("最新价", 0)
-        if price <= 0:
-            return df
-        vol = quote.get("成交量", 0) * 100   # 实时行情成交量单位是"手"，转"股"
-        pct = quote.get("涨跌幅", 0)
-        if vol <= 0 and abs(pct) < 0.01:
-            return df
-        open_price = quote.get("今开", price)
-        high_price = quote.get("最高价", max(open_price, price))
-        low_price = quote.get("最低价", min(open_price, price))
-        est_vol = self._estimate_full_day_volume(vol)
-        # date 用 Timestamp 保持类型一致，避免 concat 后变成 object
-        row = {"date": pd.Timestamp(today), "open": open_price, "close": price,
-               "high": high_price, "low": low_price, "vol": est_vol}
-        for col in df.columns:
-            if col not in row:
-                if col in ("pct_chg", "daily_chg"):
-                    row[col] = pct
-                else:
-                    row[col] = 0.0
-        new_row = pd.DataFrame([row])
-        # 保持 date 列类型一致
-        if df["date"].dtype != "object":
-            new_row["date"] = pd.to_datetime(new_row["date"])
-        df = pd.concat([df, new_row], ignore_index=True)
-        return df
-
-    @staticmethod
-    def _estimate_full_day_volume(current_vol: float) -> float:
-        """
-        按A股交易时间比例预估全天成交量。
-        9:30-11:30(120min), 13:00-15:00(120min), 共240min。
-        """
-        if current_vol <= 0:
-            return 0.0
-        now = datetime.now().time()
-        morning_start = datetime.strptime("09:30", "%H:%M").time()
-        morning_end = datetime.strptime("11:30", "%H:%M").time()
-        afternoon_start = datetime.strptime("13:00", "%H:%M").time()
-        afternoon_end = datetime.strptime("15:00", "%H:%M").time()
-
-        if morning_start <= now <= morning_end:
-            minutes = (now.hour - 9) * 60 + (now.minute - 30)
-        elif afternoon_start <= now <= afternoon_end:
-            minutes = 120 + (now.hour - 13) * 60 + now.minute
-        else:
-            return current_vol
-        if minutes <= 0:
-            return current_vol
-        return current_vol * 240 / minutes
+        # data_sources 返回的 quote 用中文 keys，成交量单位是"手"
+        return merge_realtime_into_history(df, quote, volume_unit_is_lots=True)
 
 
 # 全局扫描器（所有策略共享）
@@ -905,73 +939,5 @@ market_scanner = MarketScanner()
 
 # ── 智能更新判断 ─────────────────────────────────────────────────────────
 
-def is_market_open() -> bool:
-    """判断当前是否在A股交易时间"""
-    now = datetime.now()
-    weekday = now.weekday()
-
-    # 周六日休市
-    if weekday >= 5:
-        return False
-
-    current_time = now.time()
-    morning_start = datetime.strptime("09:30", "%H:%M").time()
-    morning_end = datetime.strptime("11:30", "%H:%M").time()
-    afternoon_start = datetime.strptime("13:00", "%H:%M").time()
-    afternoon_end = datetime.strptime("15:00", "%H:%M").time()
-
-    if morning_start <= current_time <= morning_end:
-        return True
-    if afternoon_start <= current_time <= afternoon_end:
-        return True
-    return False
-
-
-def get_last_trading_date() -> Optional[datetime]:
-    """获取最近一个有A股交易的日期"""
-    now = datetime.now()
-    today = now.date()
-
-    # 如果现在在交易时间，返回今天
-    if is_market_open():
-        return now
-
-    # 否则找上一个交易日
-    for days_ago in range(1, 8):
-        check_date = now.date() - timedelta(days=days_ago)
-        weekday = check_date.weekday()
-        if weekday < 5:  # 周一到周五
-            return datetime.combine(check_date, datetime.min.time())
-    return None
-
-
-def check_data_freshness(code: str, cache_days: Dict[str, Any], max_age_minutes: int = 5) -> Dict:
-    """
-    检查缓存数据是否需要更新
-    返回: {"need_update": bool, "reason": str, "last_update": datetime}
-    """
-    code6 = str(code).strip()
-    if len(code6) > 2 and code6[:2].lower() in ("sh", "sz", "bj"):
-        code6 = code6[2:]
-
-    # 检查缓存时间戳
-    cache_time = cache_days.get(code6)
-    if not cache_time:
-        return {"need_update": True, "reason": "无缓存", "last_update": None}
-
-    # 如果在交易时间，需要更新
-    if is_market_open():
-        return {"need_update": True, "reason": "交易时间", "last_update": cache_time}
-
-    # 休市后，检查是否是最近交易日的收盘数据
-    last_trading = get_last_trading_date()
-    if not last_trading:
-        return {"need_update": True, "reason": "无法确定交易日", "last_update": cache_time}
-
-    # 缓存时间是否来自最近交易日
-    if cache_time.date() == last_trading.date():
-        # 同一天的数据已经是收盘价，不需要更新
-        return {"need_update": False, "reason": f"数据为{last_trading.strftime('%Y-%m-%d')}收盘价，无需更新", "last_update": cache_time}
-    else:
-        # 不是最新交易日，需要更新
-        return {"need_update": True, "reason": f"缓存为{cache_time.strftime('%Y-%m-%d')}，需要更新到最新", "last_update": cache_time}
+# 交易时间/交易日判断的唯一来源
+from .market_calendar import is_market_open  # noqa: F401  re-export
