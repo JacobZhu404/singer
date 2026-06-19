@@ -38,9 +38,15 @@ def calc_macd(
 
 def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     """计算RSI"""
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    d = close.diff().to_numpy()
+    nan_mask = np.isnan(d)
+    gain_arr = np.where(d > 0, d, 0.0)
+    loss_arr = np.where(d < 0, -d, 0.0)
+    # 保留首根 NaN（与 Series.clip 一致），确保 ewm(adjust=False) 的种子点不变
+    gain_arr[nan_mask] = np.nan
+    loss_arr[nan_mask] = np.nan
+    gain = pd.Series(gain_arr, index=close.index)
+    loss = pd.Series(loss_arr, index=close.index)
     avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
     avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
     rs = avg_gain / (avg_loss + 1e-8)
@@ -114,62 +120,53 @@ def td_sequential_count(close: pd.Series, high: pd.Series = None, low: pd.Series
     Returns:
         Series: 正数=买入计数, 负数=卖出计数, 0=无活跃序列
     """
-    diff = close - close.shift(4)
-    count = pd.Series(0, index=close.index, dtype=int)
-    # 记录当前序列方向: 1=买入, -1=卖出, 0=无活跃序列
-    direction = pd.Series(0, index=close.index, dtype=int)
+    n = len(close)
+    close_arr = close.to_numpy(dtype=float)
+    diff_arr = close_arr - np.concatenate([np.full(4, np.nan), close_arr[:-4]]) if n > 4 \
+        else np.full(n, np.nan)
+    count_arr = np.zeros(n, dtype=np.int64)
 
-    for i in range(4, len(close)):
-        if pd.isna(diff.iloc[i]):
+    # ── 主递推：count[i] 依赖 count[i-1]/direction[i-1]，无法向量化，但用 numpy 标量索引 ──
+    prev_dir = 0
+    prev_count = 0
+    for i in range(4, n):
+        d = diff_arr[i]
+        if np.isnan(d):
+            prev_dir = 0
+            prev_count = 0
             continue
-
-        d = diff.iloc[i]
-        prev_dir = direction.iloc[i - 1] if i > 4 else 0
 
         if d < 0:          # 买入条件：今 < 4天前
             if prev_dir <= 0:
-                # 新买入序列启动（prev_dir<=0 时，count 强制重置到 0 后+1=1）
-                # 注意：prev_dir==1 说明刚中断卖出序列，需先清零再启动买入
-                count.iloc[i] = 1
-                direction.iloc[i] = 1
+                # 新买入序列启动（prev_dir<=0 时强制重置后 +1=1）
+                cur_count, cur_dir = 1, 1
             else:
-                # 当前已是买入序列，延续计数，到9后归零重计
-                count.iloc[i] = min(count.iloc[i - 1] + 1, 9)
-                direction.iloc[i] = 1
-
+                # 延续买入计数，封顶 9
+                cur_count, cur_dir = (prev_count + 1 if prev_count < 9 else 9), 1
         elif d > 0:         # 卖出条件：今 > 4天前
             if prev_dir >= 0:
-                # 新卖出序列启动（prev_dir>=0 时，count 强制重置到 0 后-1=-1）
-                # 注意：prev_dir==1 说明刚中断买入序列，需先清零再启动卖出
-                count.iloc[i] = -1
-                direction.iloc[i] = -1
+                cur_count, cur_dir = -1, -1
             else:
-                # 当前已是卖出序列，延续计数，到-9后归零重计
-                count.iloc[i] = max(count.iloc[i - 1] - 1, -9)
-                direction.iloc[i] = -1
-
+                cur_count, cur_dir = (prev_count - 1 if prev_count > -9 else -9), -1
         else:               # 中性，重置
-            count.iloc[i] = 0
-            direction.iloc[i] = 0
+            cur_count, cur_dir = 0, 0
 
-    # ── 完美Bar校验：买入9要求收盘 < 前1根最低，卖出9要求收盘 > 前1根最高 ──
-    if len(close) > 4:
-        for i in range(4, len(close)):
-            if count.iloc[i] == 9:
-                bar9_close = close.iloc[i]
-                # 优先用 low 参数，严格校验；无 low 时降级为前一根收盘
-                bar8_low = low.iloc[i - 1] if low is not None else close.iloc[i - 1]
-                if bar9_close >= bar8_low:
-                    count.iloc[i] = 8
-                    direction.iloc[i] = 1
-            elif count.iloc[i] == -9:
-                bar9_close = close.iloc[i]
-                bar8_high = high.iloc[i - 1] if high is not None else close.iloc[i - 1]
-                if bar9_close <= bar8_high:
-                    count.iloc[i] = -8
-                    direction.iloc[i] = -1
+        count_arr[i] = cur_count
+        prev_dir = cur_dir
+        prev_count = cur_count
 
-    return count
+    # ── 完美Bar校验（向量化）：买入9要求收盘 < 前1根最低，卖出9要求收盘 > 前1根最高 ──
+    if n > 4:
+        low_ref = (low.to_numpy(dtype=float) if low is not None else close_arr)
+        high_ref = (high.to_numpy(dtype=float) if high is not None else close_arr)
+        bar8_low = np.concatenate([close_arr[:1], low_ref[:-1]])   # 前1根最低（i=0 降级为自身收盘）
+        bar8_high = np.concatenate([close_arr[:1], high_ref[:-1]])
+        # 买入9不完美（收盘≥前1根最低）→ 回到 8
+        count_arr[(count_arr == 9) & (close_arr >= bar8_low)] = 8
+        # 卖出9不完美（收盘≤前1根最高）→ 回到 -8
+        count_arr[(count_arr == -9) & (close_arr <= bar8_high)] = -8
+
+    return pd.Series(count_arr, index=close.index, dtype=int)
 
 
 def calc_skdj(
@@ -431,3 +428,48 @@ def calc_relative_strength(close: pd.Series, benchmark_close: pd.Series = None, 
     
     # 如果没有基准数据，返回个股涨跌幅
     return stock_return
+
+
+def compute_indicator_bundle(df: pd.DataFrame) -> dict:
+    """
+    从 K 线 DataFrame 计算策略层通用的指标包（单一事实来源）。
+
+    fetcher.get_indicators（实盘扫描）与回测的 PointInTimeScanner 都调用本函数，
+    确保「策略看到的指标」在实盘与回测中完全一致，避免回测逻辑与实盘漂移。
+
+    入参 df 至少需含 close 列；vol 缺失会用 volume 兜底，high/low 缺失用 close 兜底。
+    数据不足（<20 行）或计算异常返回 {}。
+
+    返回 dict:
+        kline, macd(tuple), rsi, ma(dict), bollinger(dict), vol_ratio, td_count, skdj(tuple)
+    """
+    if df is None or df.empty or len(df) < 20 or "close" not in df.columns:
+        return {}
+
+    close = df["close"]
+    vol = df["vol"] if "vol" in df.columns else pd.Series(0, index=df.index)
+    if "volume" in df.columns:
+        vol = vol.fillna(df["volume"])
+    high = df["high"] if "high" in df.columns else close
+    low = df["low"] if "low" in df.columns else close
+
+    try:
+        macd = calc_macd(close)
+        rsi = calc_rsi(close, 14)
+        ma = calc_ma(close, [5, 10, 20, 60])
+        bb_upper, bb_mid, bb_lower = calc_bollinger(close)
+        vr = calc_volume_ratio(vol, 5)
+        td = td_sequential_count(close, high=high, low=low)
+        sk, sd = calc_skdj(close, high, low)
+        return {
+            "kline": df,
+            "macd": macd,
+            "rsi": rsi,
+            "ma": ma,
+            "bollinger": {"upper": bb_upper, "mid": bb_mid, "lower": bb_lower},
+            "vol_ratio": vr,
+            "td_count": td,
+            "skdj": (sk, sd),
+        }
+    except Exception:
+        return {}
