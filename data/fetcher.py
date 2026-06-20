@@ -432,6 +432,14 @@ class MarketScanner:
         else:
             logger.info(f"预加载K线: {len(need_fetch)}/{len(all_codes)} 只需网络获取")
 
+        # 立刻把进度分母从"全集 total"切到"真正需联网的 need_fetch"，
+        # 否则进度条会一直显示 0/总数(如 0/3480)，看上去像在下全部。
+        if progress_callback:
+            try:
+                progress_callback("", 0, len(need_fetch))
+            except Exception:
+                pass
+
         # ─── §C1 快速路径 ───────────────────────────────────────────────
         # 分类：REALTIME（只缺今日一行） vs CLOSE/其它（需要拉历史 bar）
         # REALTIME 走腾讯批量（90 只/请求），把今日 quote merge 到本地历史；
@@ -456,13 +464,30 @@ class MarketScanner:
                 logger.info("prefetch_batch: 收到停止信号，中止下载")
                 break
             label = f"第{round_idx+1}轮(并发{cur_workers})"
-            logger.info(f"{label}: 尝试 {len(need_fetch)} 只")
+            attempted = len(need_fetch)
+            logger.info(f"{label}: 尝试 {attempted} 只")
             failed = self._fetch_round(
                 need_fetch, days, cur_workers, label,
                 progress_callback, force_refresh=force_refresh,
                 stop_event=stop_event  # ← 传递停止事件
             )
             if not failed:
+                break
+            # 数据源整体不可用短路：第 1 轮在样本足够(>=20)的情况下失败率 >= 95%，
+            # 通常是 baostock/东财等同时连不上，再降级重试 2/3/4 轮也是空转，直接停。
+            if round_idx == 0 and attempted >= 20 and len(failed) / attempted >= 0.95:
+                logger.warning(
+                    f"{label} 失败 {len(failed)}/{attempted} (>=95%)，判定数据源整体不可用，"
+                    f"放弃后续降级重试"
+                )
+                try:
+                    from ..core.observability import obs
+                    obs.warn("data.fetch", "sources_unavailable",
+                             f"{label} 失败率 {len(failed)/attempted:.0%}，数据源整体不可用，已中止重试",
+                             context={"attempted": attempted, "failed_count": len(failed),
+                                      "samples": failed[:5]})
+                except Exception:
+                    pass
                 break
             need_fetch = failed
             if round_idx + 1 < len(concurrency_levels):
