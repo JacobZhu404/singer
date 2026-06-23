@@ -99,7 +99,7 @@ def calc_ma(close: pd.Series, periods: list = [5, 10, 20, 60]) -> dict:
 def calc_volume_ratio(vol: pd.Series, period: int = 5) -> pd.Series:
     """量比：当日量 / 过去N日平均量（含当日，统一标准）"""
     # 填充 NaN：用向前填充（用之前的有效值）
-    vol = vol.fillna(method='ffill').fillna(method='bfill')
+    vol = vol.ffill().bfill()
     avg_vol = vol.rolling(period, min_periods=1).mean()
     return vol / (avg_vol + 1e-8)
 

@@ -6,23 +6,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 「歌者」- 智能A股选股系统，基于同花顺/东方财富数据的全自动股票筛选工具，支持多策略并行扫描、综合评分推荐。
 
+## 环境与启动（重要）
+
+**运行时是 Python 3.11，必须用项目内 venv：`.venv/bin/python`。**
+系统默认 `python3` 是 3.7.5，缺 flask/akshare/talib 且 pandas 过旧，**用它启动必然失败**——
+任何人/任何大模型都不要用裸 `python3` 跑本项目。
+
+```bash
+# 首次：创建并安装依赖
+python3.11 -m venv .venv
+TA_INCLUDE_PATH="$(brew --prefix ta-lib)/include" \
+TA_LIBRARY_PATH="$(brew --prefix ta-lib)/lib" \
+  .venv/bin/python -m pip install -r requirements.txt
+
+# 之后所有命令都走 .venv/bin/python（或先 source .venv/bin/activate）
+.venv/bin/python -m pytest tests/ -q
+```
+
 ## 常用命令
 
 ```bash
 # 启动Web服务
-python3 main.py web [--port 5188]
+.venv/bin/python main.py web [--port 5188]
 
 # 命令行筛选
-python3 main.py screen -s macd_bull strong_stock -m 主板 -n 10
+.venv/bin/python main.py screen -s macd_bull strong_stock -m 主板 -n 10
 
 # 列出所有策略
-python3 main.py list
+.venv/bin/python main.py list
 
 # 输出JSON格式
-python3 main.py screen -s macd_bull --json
+.venv/bin/python main.py screen -s macd_bull --json
 
 # 回测快速测试
-python3 backtest/backtest_quick.py
+.venv/bin/python backtest/backtest_quick.py
 ```
 
 ## 架构概览
