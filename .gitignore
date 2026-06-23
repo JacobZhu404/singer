@@ -11,6 +11,7 @@ data/cache/temp/
 data/cache/meta.json
 data/last_screen_result.json
 data/portfolio.json
+data/tdx_vipdoc/
 *.sqlite
 
 # Environment
