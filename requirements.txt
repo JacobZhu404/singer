@@ -1,10 +1,23 @@
-fastapi>=0.100.0
-uvicorn>=0.23.0
-akshare>=1.12.0
-ta-lib
-pandas>=2.0.0
-numpy>=1.24.0
+# 运行时：Python 3.11（见 CLAUDE.md「环境与启动」）。请用项目 venv，勿用系统 python3(3.7)。
+# 关键版本钉死：pandas 钉 2.2.x、numpy 钉 1.26.x，避开 pandas3/numpy2 的 breaking 改动。
+
+# Web 服务（Flask，非 fastapi）
+Flask>=3.0,<4.0
+flask-cors>=4.0
+
+# 数据/计算
+pandas==2.2.3
+numpy==1.26.4
+scipy>=1.11
+TA-Lib>=0.6.0
+akshare>=1.18.0
+baostock>=0.9.0
+requests>=2.31
+httpx>=0.24.0
+
+# 工具
 pydantic>=2.0.0
 python-dotenv>=1.0.0
-httpx>=0.24.0
+
+# 测试
 pytest>=7.0.0
