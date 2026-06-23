@@ -1,50 +1,72 @@
 """
 大盘趋势判断工具
+
+指数代码无法通过 6 位数字推断市场（如 000001 既是上证综指又是平安银行），
+因此 market_scanner 的常规路由对指数失效。这里直接走腾讯指数 K 线接口，
+用显式前缀（sh/sz）绕开 data_sources 的数字推断。
 """
 
 import pandas as pd
 import logging
 from typing import Optional, Tuple
 
+from ..data.data_sources import _get, _TENCENT_SESSION
+
 logger = logging.getLogger(__name__)
 
-# 大盘指数代码
+# 大盘指数：腾讯接口符号（显式前缀，不可由数字推断）
 INDICES = {
-    "shanghai": "000001.SH",   # 上证指数
-    "shenzhen": "399001.SZ",   # 深证成指
-    "chinext": "399006.SZ",     # 创业板指
+    "shanghai": "sh000001",   # 上证指数
+    "shenzhen": "sz399001",   # 深证成指
+    "chinext": "sz399006",    # 创业板指
 }
 
 
-def _get_index_ma(scanner, code: str, days: int = 60) -> Optional[Tuple[float, float, float]]:
+def _fetch_index_close(symbol: str, days: int) -> Optional[pd.Series]:
+    """直接拉取指数日线收盘序列（腾讯 fqkline 接口）。返回 close Series 或 None。"""
+    resp = _get(_TENCENT_SESSION,
+                "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+                {"param": f"{symbol},day,,,{days},qfq"})
+    if not resp:
+        logger.warning(f"大盘指数 {symbol} 拉取失败")
+        return None
+    try:
+        node = resp.json().get("data", {}).get(symbol, {})
+        klines = node.get("day", []) or node.get("qfqday", [])
+        closes = [float(k[2]) for k in klines if isinstance(k, list) and len(k) >= 3]
+        if not closes:
+            logger.warning(f"大盘指数 {symbol} 无 K 线数据")
+            return None
+        return pd.Series(closes)
+    except Exception as e:
+        logger.warning(f"大盘指数 {symbol} 解析失败: {type(e).__name__}: {e}")
+        return None
+
+
+def _get_index_ma(scanner, symbol: str, days: int = 60) -> Optional[Tuple[float, float, float]]:
     """
     获取单只指数的历史K线并计算 MA20、MA60 和当前收盘价。
 
     Args:
-        scanner: MarketScanner 实例
-        code: 指数代码
+        scanner: 兼容旧签名，未使用（指数不走 scanner 路由）
+        symbol: 指数符号（如 sh000001）
         days: 历史天数
     Returns:
         (current_close, ma20, ma60) 或 None（数据不足时）
     """
-    try:
-        df = scanner.get_history(code, days=days)
-        if df is None or len(df) < days:
-            logger.warning(f"大盘指数 {code} 数据不足")
-            return None
-
-        close = df["close"]
-        ma20 = close.rolling(20).mean().iloc[-1]
-        ma60 = close.rolling(60).mean().iloc[-1]
-        current = close.iloc[-1]
-
-        if pd.isna(ma20) or pd.isna(ma60):
-            return None
-
-        return current, ma20, ma60
-    except Exception as e:
-        logger.error(f"判断大盘趋势失败 ({code}): {e}")
+    close = _fetch_index_close(symbol, days)
+    if close is None or len(close) < 60:
+        logger.warning(f"大盘指数 {symbol} 数据不足（{0 if close is None else len(close)} < 60）")
         return None
+
+    ma20 = close.rolling(20).mean().iloc[-1]
+    ma60 = close.rolling(60).mean().iloc[-1]
+    current = close.iloc[-1]
+
+    if pd.isna(ma20) or pd.isna(ma60):
+        return None
+
+    return current, ma20, ma60
 
 
 def get_market_trend(scanner, days: int = 60) -> str:
@@ -61,8 +83,8 @@ def get_market_trend(scanner, days: int = 60) -> str:
     bull_count = 0
     bear_count = 0
 
-    for name, code in INDICES.items():
-        result = _get_index_ma(scanner, code, days)
+    for name, symbol in INDICES.items():
+        result = _get_index_ma(scanner, symbol, days)
         if result is None:
             continue
 
@@ -92,8 +114,8 @@ def get_market_trend_strength(scanner, days: int = 60) -> float:
     """
     trends = []
 
-    for name, code in INDICES.items():
-        result = _get_index_ma(scanner, code, days)
+    for name, symbol in INDICES.items():
+        result = _get_index_ma(scanner, symbol, days)
         if result is None:
             continue
 
