@@ -7,7 +7,7 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Callable, Tuple, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 import pandas as pd
 
@@ -282,6 +282,11 @@ class MarketScanner:
         self._kline_cache: Dict[str, pd.DataFrame] = {}
         self._cache_days: Dict[str, int] = {}
         self._indicator_cache: Dict[str, Dict[str, Any]] = {}  # 代码 → 预计算指标
+        # get_indicators 命中/未命中计数，用于评估 precalc 实际复用率
+        self._indicator_stats: Dict[str, Any] = {
+            "hit": 0, "miss": 0,
+            "hit_by_days": {}, "miss_by_days": {},
+        }
         self._lock = threading.Lock()
         self._include_realtime: bool = True
         self._max_cache_size: int = 6500   # 内存缓存上限，覆盖全市场A股（约5500+只）
@@ -686,8 +691,8 @@ class MarketScanner:
                 with lock:
                     done_count += 1
                     cur = done_count
-            if callback and done_count % max(50, workers * 2) == 0:
-                callback(code6, done_count, total)
+            if callback and (cur == total or cur % 10 == 0):
+                callback(code6, cur, total)
             if df is not None and not df.empty:
                 return code6, df
             return code6, None
@@ -707,33 +712,57 @@ class MarketScanner:
                 futures[f] = c
 
             stopped = False
+            # 数据源 socket 可能无超时（如 baostock），单只卡死会让整轮 future 永不完成。
+            # 用 wait(FIRST_COMPLETED) 轮询替代 as_completed：①每 2s 检查停止事件，
+            # ②超过 STALL_TIMEOUT 无任何 future 完成 → 判定卡死，撒手剩余标记失败。
+            STALL_TIMEOUT = 30.0
             try:
-                for future in as_completed(list(futures.keys())):
+                pending = set(futures.keys())
+                last_progress = time.monotonic()
+                while pending:
                     if stop_event and stop_event.is_set():
                         stopped = True
                         break
-                    try:
-                        code6, result = future.result()
-                        if code6 is None:
-                            continue
-                        if result is not None and not (hasattr(result, 'empty') and result.empty):
-                            with self._lock:
-                                self._kline_cache[code6] = result
-                                self._cache_days[code6] = days
-                        else:
-                            failed_codes.append(code6)
-                    except Exception as e:
-                        code = futures.get(future, 'unknown')
-                        failed_codes.append(code)
+                    done_set, pending = wait(pending, timeout=2.0, return_when=FIRST_COMPLETED)
+                    if done_set:
+                        last_progress = time.monotonic()
+                    elif time.monotonic() - last_progress > STALL_TIMEOUT:
+                        stalled = [futures.get(f, 'unknown') for f in pending]
+                        failed_codes.extend(stalled)
+                        logger.warning(f"{round_label}: {len(stalled)} 个 future 卡死 "
+                                       f"{STALL_TIMEOUT:.0f}s 无响应，撒手标记失败（数据源 socket 无超时）")
                         try:
                             from ..core.observability import obs
-                            obs.error("data.fetch", "future_result",
-                                      f"future 收集异常: {e}",
-                                      context={"code": code, "round": round_label,
-                                               "action": "标记为失败"},
-                                      exc=e)
+                            obs.warn("data.fetch", "round_stalled",
+                                     f"{round_label} {len(stalled)} 只卡死 {STALL_TIMEOUT:.0f}s，撒手标记失败",
+                                     context={"stalled_count": len(stalled),
+                                              "samples": stalled[:10], "round": round_label})
                         except Exception:
                             pass
+                        break
+                    for future in done_set:
+                        try:
+                            code6, result = future.result()
+                            if code6 is None:
+                                continue
+                            if result is not None and not (hasattr(result, 'empty') and result.empty):
+                                with self._lock:
+                                    self._kline_cache[code6] = result
+                                    self._cache_days[code6] = days
+                            else:
+                                failed_codes.append(code6)
+                        except Exception as e:
+                            code = futures.get(future, 'unknown')
+                            failed_codes.append(code)
+                            try:
+                                from ..core.observability import obs
+                                obs.error("data.fetch", "future_result",
+                                          f"future 收集异常: {e}",
+                                          context={"code": code, "round": round_label,
+                                                   "action": "标记为失败"},
+                                          exc=e)
+                            except Exception:
+                                pass
             except Exception as e:
                 try:
                     from ..core.observability import obs
@@ -848,7 +877,11 @@ class MarketScanner:
         cache_key = f"{code}_{days}_{pure}"
         with self._lock:
             if cache_key in self._indicator_cache:
+                self._indicator_stats["hit"] += 1
+                self._indicator_stats["hit_by_days"][days] = self._indicator_stats["hit_by_days"].get(days, 0) + 1
                 return self._indicator_cache[cache_key]
+            self._indicator_stats["miss"] += 1
+            self._indicator_stats["miss_by_days"][days] = self._indicator_stats["miss_by_days"].get(days, 0) + 1
 
         # 延迟导入避免循环依赖
         from ..utils.indicators import compute_indicator_bundle
@@ -861,6 +894,25 @@ class MarketScanner:
         with self._lock:
             self._indicator_cache[cache_key] = result
         return result
+
+    def reset_indicator_stats(self) -> None:
+        """清零 get_indicators 的命中/未命中计数（precalc 前调用）。"""
+        with self._lock:
+            self._indicator_stats = {
+                "hit": 0, "miss": 0,
+                "hit_by_days": {}, "miss_by_days": {},
+            }
+
+    def get_indicator_stats(self) -> Dict[str, Any]:
+        """返回 get_indicators 调用统计，用于评估 precalc 复用率。"""
+        with self._lock:
+            return {
+                "hit": self._indicator_stats["hit"],
+                "miss": self._indicator_stats["miss"],
+                "hit_by_days": dict(self._indicator_stats["hit_by_days"]),
+                "miss_by_days": dict(self._indicator_stats["miss_by_days"]),
+                "cache_size": len(self._indicator_cache),
+            }
 
     def get_cached_codes(self) -> List[str]:
         """

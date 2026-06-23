@@ -18,9 +18,18 @@ _bs_conn = None
 def _ensure_login():
     global _bs_conn
     if _bs_conn is None:
-        _bs_conn = bs.login()
-        if _bs_conn.error_code != "0":
-            logger.error(f"baostock 登录失败: {_bs_conn.error_msg}")
+        # baostock 自身不给 socket 设超时，登录/查询若遇服务端不响应会永久阻塞。
+        # 在建连时给一个默认超时上限（登录用的持久 socket 会继承它），防止卡死整轮下载。
+        import socket
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(15)
+        try:
+            _bs_conn = bs.login()
+        finally:
+            socket.setdefaulttimeout(old_timeout)
+        if _bs_conn is None or _bs_conn.error_code != "0":
+            logger.error(f"baostock 登录失败: {getattr(_bs_conn, 'error_msg', 'None')}")
+            _bs_conn = None  # 重置，否则失败的连接对象会被缓存，后续调用误判为已登录
             return False
     return True
 
