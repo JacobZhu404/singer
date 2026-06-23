@@ -27,8 +27,8 @@ def precalc_indicators(
     遍历所有股票代码，预计算技术指标并缓存到 scanner._indicator_cache。
     使用线程池并行加速（默认 8 并发）。
 
-    默认 days=120 可覆盖所有策略需求（volume_breakout/rsi_oversold 用 60，
-    chanlun/chanlun_strict/macd_bull/chan20 用 120）。
+    默认 days=120 可覆盖大多数策略需求（rps_breakout 用 250，tail_market
+    用 80，chanlun_strict 自走 get_history 不走 get_indicators）。
 
     Args:
         codes: 股票代码列表

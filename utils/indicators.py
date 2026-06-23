@@ -5,7 +5,31 @@
 
 import pandas as pd
 import numpy as np
-from typing import Tuple
+import logging
+from typing import Tuple, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def get_limit_pct(code: str, name: Optional[str] = None) -> float:
+    """根据股票代码与名称返回当日涨停百分比阈值。
+
+    主板（沪 60xxxx / 深 00xxxx）±10%；ST/*ST ±5%。
+    创业板（300xxx / 301xxx）±20%。
+    科创板（688xxx）±20%。
+    北交所（4xxxxx / 8xxxxx，且非 60/00 开头）±30%。
+    """
+    code = (code or "").lstrip()
+    code6 = code.split(".")[0].zfill(6) if "." in code else code.zfill(6)
+    is_st = bool(name) and ("ST" in name.upper() or "*ST" in name.upper())
+
+    if code6.startswith(("300", "301")):
+        return 20.0
+    if code6.startswith("688"):
+        return 20.0
+    if code6.startswith(("4", "8")) and not code6.startswith(("60", "00")):
+        return 30.0
+    return 5.0 if is_st else 10.0
 
 
 def ema(series: pd.Series, period: int) -> pd.Series:
@@ -471,5 +495,15 @@ def compute_indicator_bundle(df: pd.DataFrame) -> dict:
             "td_count": td,
             "skdj": (sk, sd),
         }
-    except Exception:
+    except Exception as e:
+        # 不向上抛出（保持单只异常不打断全市场扫描），但必须可见——之前的 silent except
+        # 让指标 bug 完全不可观测；改为 warning + obs 双通道上报
+        rows = len(df) if df is not None else 0
+        logger.warning(f"compute_indicator_bundle 失败 (rows={rows}): {type(e).__name__}: {e}")
+        try:
+            from ..core.observability import obs
+            obs.error("indicators", "bundle", f"{type(e).__name__}: {e}",
+                      context={"rows": rows}, exc=e)
+        except Exception:
+            pass  # obs 不可用时不阻塞主流程
         return {}

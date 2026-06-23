@@ -19,7 +19,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 
 from .base import BaseStrategy, StockSignal, _compute_risk_flags
-from ..utils.indicators import calc_macd, calc_ma
+from ..utils.indicators import calc_macd, calc_ma, get_limit_pct
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +56,22 @@ class LimitUpGeneStrategy(BaseStrategy):
         signals = []
         score = 0
 
+        # 按板块取涨停阈值（科创/创业 20%，北交所 30%，主板 10%，ST 5%）
+        limit_pct = get_limit_pct(code, name_map.get(code))
+        # "接近涨停"按 0.8 × 涨停阈值认定（主板 8%、20% 板 16%、30% 板 24%）
+        near_limit = limit_pct * 0.8
+        # 用 0.95 × 涨停阈值兜底涨幅浮点误差（主板 9.5%、20% 板 19%）
+        hit_limit = limit_pct * 0.95
+
         today_pct = float(pct_chg_series.iloc[i]) if i >= 0 else 0
-        if today_pct >= 9.5:
-            signals.append(f"今日涨停({today_pct:.1f}%)")
+        if today_pct >= hit_limit:
+            signals.append(f"今日涨停({today_pct:.1f}%/{limit_pct:.0f}%)")
             score += 40
-        elif today_pct >= 8:
-            signals.append(f"接近涨停({today_pct:.1f}%)")
+        elif today_pct >= near_limit:
+            signals.append(f"接近涨停({today_pct:.1f}%/{limit_pct:.0f}%)")
             score += 25
 
-        limit_days = sum(1 for j in range(max(0, i - 30), i + 1) if pct_chg_series.iloc[j] >= 9.5)
+        limit_days = sum(1 for j in range(max(0, i - 30), i + 1) if pct_chg_series.iloc[j] >= hit_limit)
         if limit_days >= 1:
             signals.append(f"近30日涨停{limit_days}次")
             score += min(limit_days * 10, 20)
