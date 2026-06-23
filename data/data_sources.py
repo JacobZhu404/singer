@@ -109,6 +109,104 @@ def _safe_float(parts: list, idx: int, default: float = 0.0) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# 股票列表：多个「真正独立」的来源（纯抓取，绝不读写缓存）
+#
+# 历史教训：原先 3 个 source 的 get_stock_list 全都指向同一个东财 clist 端点，
+# 所谓"多源降级"是假的——该端点一挂，全军覆没。且抓取逻辑里夹带了写缓存，
+# 与 fetcher 层的 save_stock_list 形成双写，是 stocks.json "Extra data" 损坏的根因。
+# 现在：每个 fetcher 只负责"抓回 [{ts_code, name}]"，缓存读写统一收归 fetcher 层。
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _fetch_list_eastmoney() -> "pd.DataFrame":
+    """东财 clist 分页拉全市场 A 股。返回 [ts_code, name] 或空。纯抓取，不碰缓存。"""
+    EAST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+    FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
+    FIELDS = "f12,f14,f13"
+    all_stocks = {}
+    page, page_size = 1, 500
+    while True:
+        params = {"pn": page, "pz": page_size, "fs": FS, "fields": FIELDS}
+        try:
+            resp = _get(_EAST_SESSION, EAST_URL, params=params, timeout=15)
+            if not resp:
+                logger.warning(f"[东财] 股票列表无响应 (page={page})")
+                break
+            data = resp.json()
+            diff = data.get("data", {}).get("diff", {})
+            total = data.get("data", {}).get("total", 0)
+            if not diff:
+                break
+            for _, v in diff.items():
+                code = str(v.get("f12", "")).strip()
+                name = str(v.get("f14", "")).strip()
+                if code:
+                    all_stocks[code] = {"ts_code": code, "name": name}
+            if len(all_stocks) >= total:
+                break
+            page += 1
+            time.sleep(0.05)
+        except Exception as e:
+            logger.warning(f"[东财] 股票列表请求失败(page={page}): {e}")
+            break
+    return pd.DataFrame(list(all_stocks.values()))
+
+
+def _fetch_list_sina() -> "pd.DataFrame":
+    """新浪 getHQNodeData 分页拉 sh_a/sz_a/bj_a。与东财端点完全独立。返回 [ts_code, name]。"""
+    URL = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+           "Market_Center.getHQNodeData")
+    # 新浪每页上限 100（num 传更大也只返回 100），故固定 100 并翻页到空。
+    PAGE_NUM = 100
+    MAX_PAGES = 100  # 安全上限，单市场约 25~35 页
+    all_stocks = {}
+    for node in ("sh_a", "sz_a", "bj_a"):
+        for page in range(1, MAX_PAGES + 1):
+            params = {"page": page, "num": PAGE_NUM, "sort": "symbol", "asc": 1, "node": node}
+            try:
+                resp = _get(_SINA_SESSION, URL, params=params, timeout=15)
+                if not resp:
+                    break
+                rows = json.loads(resp.text.strip() or "[]")
+                if not rows:
+                    break
+                for r in rows:
+                    code = str(r.get("code", "")).strip()
+                    name = str(r.get("name", "")).strip()
+                    if code:
+                        all_stocks[code] = {"ts_code": code, "name": name}
+                if len(rows) < PAGE_NUM:
+                    break
+                time.sleep(0.03)
+            except Exception as e:
+                logger.warning(f"[新浪] 股票列表 {node} 第{page}页失败: {e}")
+                break
+    return pd.DataFrame(list(all_stocks.values()))
+
+
+def _fetch_list_meta_tencent() -> "pd.DataFrame":
+    """
+    离线兜底：以本地 meta.json 已知代码为股票池，用腾讯批量接口补名称。
+    不依赖任何"列表发现"端点——只要本地有过缓存 + 腾讯实时可用即可重建。
+    名称取不到的（停牌/退市）保留代码、名称留空。
+    """
+    import os
+    try:
+        from . import local_cache
+        from .tencent_batch import get_realtime_fast
+        meta = local_cache._load_meta()
+        codes = sorted(str(c).strip() for c in meta.keys() if str(c).strip())
+        if not codes:
+            return pd.DataFrame()
+        quotes = get_realtime_fast(codes, max_workers=5)
+        rows = [{"ts_code": c, "name": (quotes.get(c, {}).get("name") or "").strip()}
+                for c in codes]
+        return pd.DataFrame(rows)
+    except Exception as e:
+        logger.warning(f"[meta+腾讯] 重建股票列表失败: {e}")
+        return pd.DataFrame()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # 数据源实现
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -154,76 +252,8 @@ class SinaDataSource(DataSource):
         return TencentDataSource().get_realtime(code)
 
     def get_stock_list(self) -> pd.DataFrame:
-        """
-        通过东方财富接口获取全市场A股列表（SH + SZ + BJ）。
-        单次请求分页拉取，比新浪财经API更稳定。
-
-        返回标准化列名 [ts_code, name, market_flag]。
-        """
-        import time, os, json
-
-        EAST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
-        # fs: m:0+t:6(沪A) , m:0+t:80(深A) , m:1+t:2(北交所)
-        FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
-        FIELDS = "f12,f14,f13"  # f12=代码, f14=名称, f13=市场(1=沪,0=深)
-
-        cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                               "data", "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, "stocks.json")  # 统一文件名
-
-        all_stocks = {}
-        page, page_size = 1, 500
-
-        while True:
-            params = {"pn": page, "pz": page_size, "fs": FS, "fields": FIELDS}
-            try:
-                resp = _get(_EAST_SESSION, EAST_URL, params=params, timeout=15)
-                if not resp:
-                    logger.warning(f"东财股票列表API无响应 (page={page})")
-                    break
-                data = resp.json()
-                diff = data.get("data", {}).get("diff", {})
-                total = data.get("data", {}).get("total", 0)
-                if not diff:
-                    break
-                for k, v in diff.items():
-                    code = str(v.get("f12", "")).strip()
-                    name = str(v.get("f14", "")).strip()
-                    if code:
-                        all_stocks[code] = {"ts_code": code, "name": name}
-                logger.info(f"东财股票列表: 第{page}页 +{len(diff)}条, 累计={len(all_stocks)}/{total}")
-                if len(all_stocks) >= total:
-                    break
-                page += 1
-                time.sleep(0.05)
-            except Exception as e:
-                logger.warning(f"东财股票列表请求失败(page={page}): {e}")
-                break
-
-        if len(all_stocks) < 3000:
-            logger.warning(f"东财返回仅{len(all_stocks)}只（期望>=3000），回退缓存")
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
-                        cached = json.load(f)
-                    rows = [{"ts_code": str(r.get("ts_code", r.get("code", ""))).strip(),
-                             "name": str(r.get("name", "")).strip()}
-                            for r in cached if r.get("ts_code") or r.get("code")]
-                    if rows:
-                        logger.info(f"回退缓存: {len(rows)} 只")
-                        return pd.DataFrame(rows)
-                except Exception as e2:
-                    logger.error(f"读取缓存失败: {e2}")
-
-        rows = list(all_stocks.values())
-        try:
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(rows, f, ensure_ascii=False, indent=2)
-            logger.info(f"股票列表(东财API): {len(rows)} 只，已更新缓存")
-        except Exception as e:
-            logger.warning(f"更新股票列表缓存失败: {e}")
-        return pd.DataFrame(rows)
+        """新浪 getHQNodeData（与东财端点独立）。纯抓取，缓存由 fetcher 层统一负责。"""
+        return _fetch_list_sina()
 
 
 class TencentDataSource(DataSource):
@@ -306,7 +336,8 @@ class TencentDataSource(DataSource):
         return results
 
     def get_stock_list(self) -> pd.DataFrame:
-        return SinaDataSource().get_stock_list()
+        """腾讯无"列表发现"端点；以本地已知代码池 + 腾讯名称重建（离线兜底）。"""
+        return _fetch_list_meta_tencent()
 
 
 class EastmoneyDataSource(DataSource):
@@ -339,7 +370,7 @@ class EastmoneyDataSource(DataSource):
         return TencentDataSource().get_realtime(code)
 
     def get_stock_list(self) -> pd.DataFrame:
-        return SinaDataSource().get_stock_list()
+        return _fetch_list_eastmoney()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -450,14 +481,40 @@ class DataSourceManager:
         return results
 
     def get_stock_list(self) -> pd.DataFrame:
-        for source in self._sources:
+        """
+        融合多个「真正独立」的股票列表源，按顺序尝试，取第一个健康(>=3000)的结果。
+        全程不读写缓存——缓存读写统一由 fetcher 层负责（避免双写损坏 stocks.json）。
+
+        源顺序（互相独立，单点故障不再全军覆没）：
+          1. 东财 clist        — 字段最全，正常时首选
+          2. 新浪 getHQNodeData — 完全独立端点，东财挂了它通常还在
+          3. meta+腾讯名称      — 离线兜底，只要本地有过缓存 + 腾讯实时可用就能重建
+        """
+        HEALTHY = 3000
+        tiers = [
+            ("eastmoney", _fetch_list_eastmoney),
+            ("sina", _fetch_list_sina),
+            ("meta+tencent", _fetch_list_meta_tencent),
+        ]
+        best = pd.DataFrame()
+        for name, fetch in tiers:
             try:
-                df = source.get_stock_list()
-                if not df.empty:
-                    return df
+                df = fetch()
             except Exception as e:
-                logger.debug(f"[{source.name}] 股票列表失败: {e}")
-        return pd.DataFrame()
+                logger.warning(f"[{name}] 股票列表抓取异常: {e}")
+                self._mark_fail(name)
+                continue
+            n = 0 if df is None or df.empty else len(df)
+            logger.info(f"[{name}] 股票列表抓取 {n} 只")
+            if n >= HEALTHY:
+                self._mark_success(name)
+                return df
+            if n > len(best):
+                best = df  # 留作"全都不健康"时的最优残缺结果
+        # 没有任何源给出健康列表：返回最优的残缺结果（可能为空），让 fetcher 层决定是否回退缓存
+        if not best.empty:
+            logger.warning(f"所有列表源均未达 {HEALTHY} 只，返回最优残缺结果 {len(best)} 只")
+        return best
 
 
 # 全局单例
