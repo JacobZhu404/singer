@@ -82,3 +82,17 @@ def test_portfolio_route(client):
     assert rv.status_code == 200
     body = rv.get_json()
     assert body.get("code") == 0
+
+
+def test_screen_stop_when_idle(client):
+    """无任务运行时 stop 应返回 code=1 + 明确文案，不阻塞 5 秒。"""
+    import time
+    t0 = time.time()
+    rv = client.post("/api/screen/stop")
+    elapsed = time.time() - t0
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body.get("code") == 1
+    assert "没有正在运行" in body.get("msg", "")
+    # 空闲态必须立即返回，绝不能进入 5s 等待
+    assert elapsed < 0.5, f"空闲态 stop 不该等待，实际 {elapsed:.2f}s"

@@ -219,6 +219,13 @@ class ScreenEngine:
         if not codes:
             return
 
+        # 评估 precalc 实际收益：清零计数，让后续策略阶段的 get_indicators 命中/未命中可被测量
+        try:
+            market_scanner.reset_indicator_stats()
+        except Exception:
+            pass
+        cache_size_before = len(market_scanner._indicator_cache)
+
         # [优化] 检查指标缓存，如果大部分已有则跳过或减少计算
         cached_count = 0
         for c in codes[:100]:  # 抽检前100只
@@ -242,7 +249,11 @@ class ScreenEngine:
         precalc_indicators(codes, market_scanner, days=120, progress_callback=_on_precalc_progress)
 
         elapsed = (datetime.now() - t0).total_seconds()
-        logger.info(f"[耗时] _precalc: {elapsed:.1f}秒")
+        cache_size_after = len(market_scanner._indicator_cache)
+        logger.info(
+            f"[耗时] _precalc: {elapsed:.1f}秒 | 缓存条目 {cache_size_before}→{cache_size_after}"
+            f"（净增 {cache_size_after - cache_size_before}）"
+        )
 
     def run_single(self, strategy_name: str) -> ScreenResult:
         """执行单个策略"""
@@ -255,7 +266,7 @@ class ScreenEngine:
         strategy = get_strategy(strategy_name, top_n=self.top_n)
         market_scanner.load()
         logger.info(f"执行策略: {strategy_name}")
-        result = strategy.screen(stock_list, scanner=market_scanner)
+        result = strategy.screen(stock_list, scanner=market_scanner, stop_event=self._stop_event)
         return result
 
     def download_data(
@@ -494,7 +505,7 @@ class ScreenEngine:
                     )
 
                 strategy.set_progress_callback(_on_strategy_progress)
-                result = strategy.screen(stock_list, scanner=market_scanner)
+                result = strategy.screen(stock_list, scanner=market_scanner, stop_event=self._stop_event)
                 results[name] = result
                 logger.info(f"策略 {name} 完成，命中 {len(result.all_signals)} 只")
 
@@ -775,6 +786,17 @@ class ScreenEngine:
         _t1 = datetime.now()
         logger.info(f"阶段1完成, 耗时: {_t1 - _t0}")
 
+        # ── 守门：股票列表必须非空，否则后续策略阶段会以 KeyError('ts_code') 崩溃，
+        #    被 server.run_task 静默吞掉，表现为"下载完成后任务就结束、没结果"。
+        #    这里提前给出明确错误，而不是让它深埋在策略层炸掉。
+        _sl = self._load_stock_list()
+        if _sl is None or _sl.empty:
+            msg = "股票列表为空（数据源 API 与本地缓存均不可用），无法筛选"
+            logger.error(msg)
+            self._set_progress("done", msg, 0, 100)
+            self._notify_progress(progress_callback, "done", msg, 0, 100)
+            return {"status": "error", "error": msg, "comprehensive_picks": []}
+
         # 阶段1.5：预计算指标（按需，非阻塞）
         # 若开启实时数据，先批量获取全市场实时行情存入临时缓存，
         # 避免预计算阶段逐只请求触发限流
@@ -832,6 +854,35 @@ class ScreenEngine:
             progress_callback=_wrapped_cb,
             on_strategy_done=on_strategy_done,
         )["results"]
+
+        # precalc 实际收益评估：策略阶段对 get_indicators 的命中率
+        try:
+            stats = market_scanner.get_indicator_stats()
+            total = stats["hit"] + stats["miss"]
+            hit_rate = (stats["hit"] / total * 100) if total else 0.0
+            msg = (
+                f"[precalc 复用率] 策略期间 get_indicators 调用 {total} 次，"
+                f"命中 {stats['hit']} / 未命中 {stats['miss']}（{hit_rate:.1f}%）"
+                f" | 按 days 命中: {stats['hit_by_days']} 未命中: {stats['miss_by_days']}"
+                f" | 当前缓存条目: {stats['cache_size']}"
+            )
+            logger.info(msg)
+            # 同时落到 observability，方便 API 取（curl /api/diagnostics?source=engine.precalc）
+            try:
+                from .observability import obs
+                obs.info("engine.precalc", "stats", msg, context={
+                    "total_calls": total,
+                    "hit": stats["hit"],
+                    "miss": stats["miss"],
+                    "hit_rate_pct": round(hit_rate, 1),
+                    "hit_by_days": stats["hit_by_days"],
+                    "miss_by_days": stats["miss_by_days"],
+                    "cache_size": stats["cache_size"],
+                })
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug(f"precalc 复用率日志失败: {e}")
 
         # 检查停止事件
         if self._stop_event and self._stop_event.is_set():
@@ -993,6 +1044,7 @@ class ScreenEngine:
                 "trade_date": result.trade_date,
                 "total_scanned": result.total_scanned,
                 "hit_count": len(result.all_signals),
+                "all_hit_codes": [s.ts_code for s in result.all_signals],
                 "top_stocks": [
                     {
                         "ts_code": s.ts_code,
