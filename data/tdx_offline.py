@@ -19,6 +19,7 @@ import os
 import struct
 import logging
 from datetime import date
+from pathlib import Path
 from typing import Optional, Dict, List
 
 import pandas as pd
@@ -29,25 +30,49 @@ logger = logging.getLogger(__name__)
 _TDX_FMT = "<5if2i"   # 5个int32 + 1个float32 + 2个int32 = 8字段，32字节
 _PRICE_SCALE = 100.0
 
+# ── 默认路径解析 ─────────────────────────────────────────────
+# 优先用项目内 data/tdx_vipdoc/（由 import_tdx 写入），否则回落到用户 Downloads 路径
+_PROJECT_TDX_DIR = str(Path(__file__).resolve().parent / "tdx_vipdoc")
+_LEGACY_TDX_DIR = "/Users/jacob/Downloads/hsjday_extracted"
+
+
+def _resolve_default_base_dir() -> str:
+    for cand in (_PROJECT_TDX_DIR, _LEGACY_TDX_DIR):
+        if any(os.path.isdir(os.path.join(cand, m, "lday")) for m in ("sh", "sz", "bj")):
+            return cand
+    return _PROJECT_TDX_DIR
+
 
 class TdxOfflineStore:
     """通达信离线数据仓库（第0层缓存）"""
 
-    def __init__(self, base_dir: str = "/Users/jacob/Downloads/hsjday_extracted"):
-        self.base_dir = base_dir
-        self._dir_map = {
-            "sh": os.path.join(base_dir, "sh", "lday"),
-            "sz": os.path.join(base_dir, "sz", "lday"),
-            "bj": os.path.join(base_dir, "bj", "lday"),
-        }
-        self._available = {
-            k: os.path.isdir(v) for k, v in self._dir_map.items()
-        }
+    def __init__(self, base_dir: Optional[str] = None):
+        self.base_dir = base_dir or _resolve_default_base_dir()
+        self._refresh_dirs()
         available = [k for k, v in self._available.items() if v]
         if available:
-            logger.info(f"TdxOfflineStore: 可用市场 = {available}")
+            logger.info(f"TdxOfflineStore: 可用市场 = {available}（{self.base_dir}）")
         else:
-            logger.warning(f"TdxOfflineStore: 未找到 .day 数据，base_dir={base_dir}")
+            logger.warning(f"TdxOfflineStore: 未找到 .day 数据，base_dir={self.base_dir}")
+
+    def _refresh_dirs(self) -> None:
+        self._dir_map = {
+            "sh": os.path.join(self.base_dir, "sh", "lday"),
+            "sz": os.path.join(self.base_dir, "sz", "lday"),
+            "bj": os.path.join(self.base_dir, "bj", "lday"),
+        }
+        self._available = {k: os.path.isdir(v) for k, v in self._dir_map.items()}
+
+    def set_base_dir(self, base_dir: str) -> None:
+        """切换数据目录（一键导入完成后调用）。"""
+        self.base_dir = base_dir
+        self._refresh_dirs()
+        available = [k for k, v in self._available.items() if v]
+        logger.info(f"TdxOfflineStore: base_dir 切换为 {self.base_dir}, 可用市场={available}")
+
+    def refresh(self) -> None:
+        """在不改变 base_dir 的情况下重新探测可用目录。"""
+        self._refresh_dirs()
 
     def _guess_market(self, code: str) -> Optional[str]:
         c = str(code).strip().lower()

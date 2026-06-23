@@ -35,50 +35,22 @@ def get_realtime(code: str) -> dict:
 
 
 def get_kline(code: str, days: int = 60) -> pd.DataFrame:
-    """获取K线（实时数据合成）"""
     """
-    获取K线（实时模式）
-    使用批量实时数据合成K线
+    获取 K线：本地 CSV 历史 + 今日实时合并。
+
+    §C2 修复（2026-06-18）：旧实现只返回今日 1 行，调用方拿到后写入
+    内存缓存 / 本地 CSV，污染历史；策略层因 `len < days` 又忽略它退回读盘。
+    现行：先取本地完整历史，再把今日报价 merge 到末尾，返回 tail(days)。
     """
-    # 获取实时数据
+    from . import local_cache
+    from .realtime_merge import merge_realtime_into_history
+
+    history = local_cache.get_cached_kline(code)
+    # 没有本地历史就无法形成完整 K线 —— 返回空，让 data_layer 走兜底
+    if history is None or history.empty:
+        logger.debug(f"{code} 无本地历史，realtime.get_kline 返回空让上层兜底")
+        return pd.DataFrame()
+
     realtime = get_realtime(code)
-    if not realtime:
-        return pd.DataFrame()
-
-    # 转换为K线格式
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    price = realtime.get("price", 0)
-    if price <= 0:
-        return pd.DataFrame()
-
-    open_price = realtime.get("open", price)
-    high = realtime.get("high", price)
-    low = realtime.get("low", price)
-    volume = realtime.get("volume", 0)
-
-    # 粗略估算全天成交量
-    now = datetime.now()
-    if now.hour < 11:
-        # 上午，预估
-        minutes_passed = (now.hour - 9) * 60 + now.minute - 30
-    else:
-        # 下午
-        minutes_passed = 120 + (now.hour - 13) * 60 + now.minute
-
-    if minutes_passed > 0:
-        est_volume = volume * 240 / max(minutes_passed, 1)
-    else:
-        est_volume = volume
-
-    df = pd.DataFrame([{
-        "date": today,
-        "open": open_price,
-        "high": high,
-        "low": low,
-        "close": price,
-        "volume": est_volume,
-    }])
-
-    return df
+    merged = merge_realtime_into_history(history, realtime)
+    return merged.tail(days) if merged is not None and not merged.empty else history.tail(days)
