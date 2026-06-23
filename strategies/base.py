@@ -102,6 +102,7 @@ class BaseStrategy(ABC):
         stock_list: pd.DataFrame,
         scanner=None,
         max_workers: int = 20,
+        stop_event=None,
     ) -> ScreenResult:
         """
         通用并行筛选模板。
@@ -111,6 +112,7 @@ class BaseStrategy(ABC):
             stock_list: 股票列表 DataFrame
             scanner: MarketScanner 实例
             max_workers: 并行线程数（默认20）
+            stop_event: threading.Event，置位后尽快停止扫描并撒手未完成的 future
 
         Returns:
             ScreenResult
@@ -132,6 +134,9 @@ class BaseStrategy(ABC):
 
         def _eval_one(code: str) -> tuple:
             """评估单只，返回 (signal_or_none, evaluated_flag, err_or_none)"""
+            # 已收到停止信号的 future 直接短路，不再做计算
+            if stop_event is not None and stop_event.is_set():
+                return None, False, None
             try:
                 sig = self._evaluate_single_stock(code, scanner, name_map, trade_date)
                 return sig, True, None
@@ -141,9 +146,16 @@ class BaseStrategy(ABC):
                 logger.debug(f"[{self.name}] {code} 计算失败: {e}")
                 return None, False, f"{type(e).__name__}: {e}"
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 不用 `with ThreadPoolExecutor() as pool:`：其 __exit__ 会 shutdown(wait=True)，
+        # 收到停止信号时仍会卡着等所有在跑的 future 自然结束。改用手动生命周期。
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        futures = {}
+        try:
             futures = {executor.submit(_eval_one, c): c for c in codes}
             for idx, future in enumerate(as_completed(futures), 1):
+                if stop_event is not None and stop_event.is_set():
+                    logger.info(f"[{self.name}] 收到停止信号，中止扫描（已处理 {idx}/{total}）")
+                    break
                 sig, evaluated, err = future.result()
                 if evaluated:
                     scanned += 1
@@ -153,6 +165,12 @@ class BaseStrategy(ABC):
                 if sig is not None:
                     candidates.append(sig)
                 self._report_progress("executing", idx, total)
+        finally:
+            # 手动取消未启动的 future（cancel_futures 是 Python 3.9+，本项目跑 3.7）
+            for f in futures:
+                if not f.done():
+                    f.cancel()
+            executor.shutdown(wait=False)
 
         if errors > 0:
             err_pct = errors / total * 100 if total else 0

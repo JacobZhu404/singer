@@ -13,6 +13,9 @@ from .volume_breakout import VolumeBreakoutStrategy
 from .chanlun_strict import ChanlunStrictStrategy
 from .golden_cross import GoldenCrossStrategy
 from .momentum import MomentumStrategy
+from .rps_breakout import RpsBreakoutStrategy
+from .high_tight_flag import HighTightFlagStrategy
+from .tail_market import TailMarketStrategy
 
 # 策略注册表
 # 排序说明：默认选中策略在前，未选中策略在后
@@ -97,6 +100,38 @@ STRATEGY_REGISTRY = {
         "tags": ["金叉", "趋势", "均线", "宽松"],
         "icon": "✨",
         "weight": 0.9,
+    },
+    "rps_breakout": {
+        "cls": RpsBreakoutStrategy,
+        "name": "RPS相对强度突破",
+        "description": "欧奈尔RPS：多周期加权强度+创阶段新高+放量，捕捉领涨股",
+        "tags": ["欧奈尔", "相对强度", "突破", "领涨"],
+        "icon": "🏆",
+        "weight": 1.1,
+    },
+    "high_tight_flag": {
+        "cls": HighTightFlagStrategy,
+        "name": "高紧旗形",
+        "description": "欧奈尔高紧旗形：旗杆暴涨+高位窄幅缩量整理，蓄势待突破",
+        "tags": ["欧奈尔", "旗形", "强庄", "突破"],
+        "icon": "🚩",
+        "weight": 1.0,
+    },
+    "tail_market": {
+        "cls": TailMarketStrategy,
+        "name": "尾盘强势(日线近似)",
+        "description": "温和涨幅+量能配合+均线多头+收盘创新高（缺市值/分时数据）",
+        "tags": ["尾盘", "强势", "短线", "近似"],
+        "icon": "🌅",
+        "weight": 0.9,
+    },
+    "limit_up_gene": {
+        "cls": LimitUpGeneStrategy,
+        "name": "涨停基因",
+        "description": "近期涨停+未大幅回撤+再次启动，板块阈值感知（主板10/创业20/北交30/ST5）",
+        "tags": ["涨停", "短线", "板块"],
+        "icon": "🔥",
+        "weight": 1.0,
     },
 }
 

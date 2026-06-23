@@ -74,9 +74,12 @@ class RightSideTradingStrategy(BaseStrategy):
             breakout_60_pct = (c - high_60) / high_60 * 100 if high_60 > 0 else 0
             has_breakout_60 = c > high_60
 
-        # [修改] 改为加分制，不再非此即彼
-        # 不论点没突破，都给基础分，然后逐项加分
-        
+        # 突破是右侧交易的核心条件——未突破直接淘汰，避免在加分制下被弱信号顶上 top_n
+        # 阶段 B 数据：旧实现给"未突破"+5 基础分，导致命中 300（被 top_n 截），与
+        # volume_breakout 嵌套率达 93%（vol 几乎完全是 right 的子集）
+        if not has_breakout_20 and not has_breakout_60:
+            return None
+
         # 条件1：突破20日/60日新高
         if has_breakout_60:
             signals.append(f"突破60日新高({high_60:.2f})")
@@ -105,9 +108,6 @@ class RightSideTradingStrategy(BaseStrategy):
             elif breakout_20_pct > 8.0:
                 signals.append(f"幅度过大({breakout_20_pct:.1f}%)")
                 score -= 5
-        else:
-            # 没有突破的，给基础分，参与排序
-            score += 5
 
         # 条件2：放量
         if vr > 2.0:
@@ -157,8 +157,8 @@ class RightSideTradingStrategy(BaseStrategy):
             signals.append("MACD零轴上")
             score += 10
 
-        # [修改] 阈值降到60，与其他策略一致
-        if score < 60:
+        # 阈值收紧 60→80：纯突破至少要叠加放量/金叉等 2 项才能入选，过滤"勉强达标"
+        if score < 80:
             return None
 
         quote = self._get_quote(scanner, code, c)

@@ -41,7 +41,7 @@ class GoldenCrossStrategy(BaseStrategy):
         super().__init__(top_n=top_n)
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
-        indicators = scanner.get_indicators(code, days=60)
+        indicators = scanner.get_indicators(code, days=120)
         if not indicators or len(indicators["kline"]) < 30:
             raise self._SkipStock()
 

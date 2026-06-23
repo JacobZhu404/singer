@@ -18,8 +18,19 @@ from .constants import (
     SELL_SCAN_MIN_BARS,
     BUY_RISK_MIN_BARS,
 )
+from .observability import obs
 
 logger = logging.getLogger(__name__)
+
+
+def _report_scan_failure(scan_name: str, code: str, e: Exception) -> None:
+    """风险扫描类辅助函数共用的失败上报：warning 日志 + obs 事件，不向上抛出。"""
+    logger.warning(f"{scan_name} {code} 失败: {type(e).__name__}: {e}")
+    try:
+        obs.error("risk_scanner", scan_name, f"{type(e).__name__}: {e}",
+                  context={"code": code}, exc=e)
+    except Exception:
+        pass
 
 
 _EMPTY_SELL = {
@@ -75,7 +86,7 @@ def quick_risk_scan(code: str, df: Optional[pd.DataFrame] = None):
         return tag, reasons, score, flags
 
     except Exception as e:
-        logger.debug(f"风险扫描 {code} 失败: {e}")
+        _report_scan_failure("quick_risk_scan", code, e)
         return "unknown", [], 0, []
 
 
@@ -88,7 +99,7 @@ def quick_sell_scan(code: str, df: Optional[pd.DataFrame] = None) -> dict:
             return dict(_EMPTY_SELL)
         return detect_sell_signals(df)
     except Exception as e:
-        logger.debug(f"卖出信号扫描 {code} 失败: {e}")
+        _report_scan_failure("quick_sell_scan", code, e)
         return dict(_EMPTY_SELL)
 
 
@@ -101,5 +112,5 @@ def quick_buy_risk_assess(code: str, df: Optional[pd.DataFrame] = None) -> dict:
             return dict(_EMPTY_BUY_RISK)
         return assess_buy_risk(df)
     except Exception as e:
-        logger.debug(f"买入风险评估 {code} 失败: {e}")
+        _report_scan_failure("quick_buy_risk_assess", code, e)
         return dict(_EMPTY_BUY_RISK)
