@@ -388,7 +388,8 @@ def api_data_status():
     market = request.args.get("market", "全部市场")
     logger.info(f"api_data_status: market=[{market}]")
     status = market_scanner.get_cache_status()
-    cached = status.get("memory_cached", 0)
+    # 用磁盘缓存数判断"数据是否就绪"（进程重启内存清空，但磁盘 CSV 仍在）
+    cached = status.get("cached_count", 0)
 
     # 按市场过滤股票总数
     total_stocks = cached  # 兜底
@@ -513,6 +514,128 @@ def api_download():
     t = threading.Thread(target=download_task, daemon=True)
     t.start()
     return jsonify({"code": 0, "msg": "数据下载任务已启动，请轮询 /api/screen/progress 查看进度"})
+
+
+# ── 通达信离线数据一键导入 ──────────────────────────────────────────
+_tdx_import_progress: dict = {
+    "phase": "idle",   # idle / download / extract / done / error / stopped
+    "msg": "",
+    "current": 0,
+    "total": 0,
+    "pct": 0,
+    "result": None,
+}
+_tdx_import_lock = threading.Lock()
+_tdx_import_running = False
+_tdx_import_stop_event = threading.Event()
+
+
+def _set_tdx_progress(phase: str, current: int, total: int, extra: dict) -> None:
+    msg = (extra or {}).get("msg", "")
+    if phase == "download":
+        pct = int(current / total * 60) if total else 0
+    elif phase == "extract":
+        # 下载占 0-60%，解压占 60-99%
+        pct = 60 + (int(current / total * 39) if total else 0)
+    elif phase == "done":
+        pct = 100
+    elif phase in ("error", "stopped"):
+        pct = 0
+    else:
+        pct = 0
+    with _tdx_import_lock:
+        _tdx_import_progress.update({
+            "phase": phase,
+            "msg": msg,
+            "current": current,
+            "total": total,
+            "pct": min(pct, 100),
+        })
+        if "markets" in (extra or {}):
+            _tdx_import_progress["markets"] = extra["markets"]
+
+
+@app.route("/api/tdx/import", methods=["POST"])
+def api_tdx_import():
+    """
+    一键下载并解压通达信沪深京日线数据包。
+    下载源：https://data.tdx.com.cn/vipdoc/hsjday.zip
+    目标目录：data/tdx_vipdoc/（覆盖式）
+    前端轮询 /api/tdx/import/progress 查看进度。
+    """
+    global _tdx_import_running
+    if _tdx_import_running:
+        return jsonify({"code": 2, "msg": "已有通达信导入任务在执行中"})
+
+    body = request.get_json(silent=True) or {}
+    url = body.get("url") or None  # 允许前端覆盖
+    keep_zip = bool(body.get("keep_zip", False))
+
+    with _tdx_import_lock:
+        _tdx_import_progress.update({
+            "phase": "download",
+            "msg": "准备开始下载...",
+            "current": 0,
+            "total": 0,
+            "pct": 0,
+            "result": None,
+        })
+        _tdx_import_progress.pop("markets", None)
+    _tdx_import_stop_event.clear()
+
+    def _run():
+        global _tdx_import_running
+        _tdx_import_running = True
+        try:
+            from ..data.import_tdx import import_tdx, TDX_HSJDAY_URL
+            result = import_tdx(
+                url=url or TDX_HSJDAY_URL,
+                progress_cb=_set_tdx_progress,
+                stop_event=_tdx_import_stop_event,
+                keep_zip=keep_zip,
+            )
+            with _tdx_import_lock:
+                _tdx_import_progress["result"] = result
+                if result.get("status") == "ok":
+                    _tdx_import_progress["phase"] = "done"
+                    _tdx_import_progress["pct"] = 100
+                    stats = result.get("stats", {})
+                    _tdx_import_progress["msg"] = f"导入完成，共 {stats.get('total', 0)} 只股票"
+                elif result.get("status") == "stopped":
+                    _tdx_import_progress["phase"] = "stopped"
+                    _tdx_import_progress["msg"] = "已取消"
+                else:
+                    _tdx_import_progress["phase"] = "error"
+                    _tdx_import_progress["msg"] = result.get("error") or "导入失败"
+        except Exception as e:
+            logger.error(f"TDX 导入异常: {e}", exc_info=True)
+            with _tdx_import_lock:
+                _tdx_import_progress["phase"] = "error"
+                _tdx_import_progress["msg"] = f"导入失败: {e}"
+                _tdx_import_progress["result"] = {"status": "error", "error": str(e)}
+        finally:
+            _tdx_import_running = False
+            _tdx_import_stop_event.clear()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({"code": 0, "msg": "通达信离线数据导入已启动"})
+
+
+@app.route("/api/tdx/import/progress", methods=["GET"])
+def api_tdx_import_progress():
+    with _tdx_import_lock:
+        prog = dict(_tdx_import_progress)
+    prog["running"] = _tdx_import_running
+    return jsonify({"code": 0, "data": prog})
+
+
+@app.route("/api/tdx/import/stop", methods=["POST"])
+def api_tdx_import_stop():
+    if not _tdx_import_running:
+        return jsonify({"code": 1, "msg": "当前没有正在运行的导入任务"})
+    _tdx_import_stop_event.set()
+    return jsonify({"code": 0, "msg": "已发送停止信号"})
 
 
 @app.route("/api/result", methods=["GET"])

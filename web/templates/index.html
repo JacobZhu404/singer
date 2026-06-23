@@ -346,9 +346,9 @@
 
   /* ── Result tabs (strategy tabs) ── */
   .result-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
-  .result-tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
-  .result-tab:hover { color: var(--text); }
-  .result-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .result-tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; transition: all 0.15s; border-radius: 6px 6px 0 0; }
+  .result-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .result-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(88,166,255,0.12); font-weight: 600; }
 
   /* ── Modal ── */
   .modal h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
@@ -553,7 +553,6 @@
 <div class="header">
   <div class="status-dot" id="statusDot"></div>
   <h1>🎯 歌者</h1>
-  <div style="margin-left:auto;font-size:13px;color:var(--muted)" id="headerInfo">加载中...</div>
 </div>
 
 <div class="layout">
@@ -635,6 +634,46 @@
         <span>🔍 诊断</span>
         <span id="diagBadgeContainer" style="display:flex;gap:4px"></span>
       </button>
+
+      <!-- 通达信离线数据一键导入 -->
+      <button class="diag-btn" id="tdxImportBtn" onclick="openTdxImportModal()" title="从通达信官网下载完整日线数据包并导入到本地（解压到 data/tdx_vipdoc/）" style="margin-top:6px">
+        <span>📦 导入通达信离线数据</span>
+        <span id="tdxImportBadge" style="font-size:11px;color:var(--muted)"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- TDX Import Modal -->
+  <div class="diag-modal" id="tdxImportModal" onclick="if(event.target===this)closeTdxImportModal()">
+    <div class="diag-box" style="max-width:520px">
+      <div class="diag-head">
+        <h3>📦 通达信离线数据导入
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">沪深京日线完整包</span>
+        </h3>
+        <button class="btn btn-secondary" onclick="closeTdxImportModal()" style="font-size:11px;padding:4px 10px">关闭</button>
+      </div>
+      <div style="padding:16px;font-size:13px;line-height:1.7">
+        <div style="color:var(--muted);margin-bottom:10px">
+          数据源：<code style="font-size:11px">data.tdx.com.cn/vipdoc/hsjday.zip</code><br>
+          解压目标：<code style="font-size:11px">data/tdx_vipdoc/</code><br>
+          说明：完整包体积约 1~2GB，解压后约 3GB，请保证磁盘空间和网络稳定。
+        </div>
+        <div class="progress-wrap" id="tdxProgressWrap" style="display:none;margin:10px 0">
+          <div class="progress-label">
+            <span class="progress-label-text" id="tdxProgressLabel">准备中...</span>
+            <span class="progress-label-pct" id="tdxProgressPct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="tdxProgressFill" style="width:0%"></div>
+          </div>
+          <div class="progress-detail" id="tdxProgressDetail" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+        </div>
+        <div id="tdxImportResult" style="display:none;margin:10px 0;font-size:12px"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary" id="tdxStartBtn" onclick="startTdxImport()" style="flex:1">🚀 开始下载并导入</button>
+          <button class="btn btn-dangerous" id="tdxStopBtn" onclick="stopTdxImport()" style="flex:1;display:none">停止</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -700,14 +739,16 @@
         <div style="font-size:12px;color:var(--muted)" id="loadingTip">首次加载需要约30~60秒</div>
       </div>
       <div id="resultArea" style="display:none">
-        <div class="info-grid" id="summaryCards"></div>
+        <div style="display:flex;align-items:stretch;gap:12px;margin-bottom:8px">
+          <div class="info-grid" id="summaryCards" style="flex:1;margin-bottom:0"></div>
+          <div style="display:flex;flex-direction:column;gap:6px;justify-content:center;flex-shrink:0;min-width:124px">
+            <button class="btn btn-secondary" onclick="exportCSV()" style="font-size:12px;padding:6px 10px;white-space:nowrap;width:100%">📥 导出CSV</button>
+            <button class="btn btn-secondary" onclick="exportCol('code')" style="font-size:12px;padding:6px 10px;white-space:nowrap;width:100%">📋 复制代码</button>
+            <button class="btn btn-secondary" onclick="exportCol('name')" style="font-size:12px;padding:6px 10px;white-space:nowrap;width:100%">📋 复制名称</button>
+          </div>
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div class="result-tabs" id="resultTabs"></div>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary" onclick="exportCSV()" style="font-size:12px;padding:5px 10px;white-space:nowrap">📥 导出CSV</button>
-            <button class="btn btn-secondary" onclick="exportCol('code')" style="font-size:12px;padding:5px 10px;white-space:nowrap">📋 复制代码</button>
-            <button class="btn btn-secondary" onclick="exportCol('name')" style="font-size:12px;padding:5px 10px;white-space:nowrap">📋 复制名称</button>
-          </div>
         </div>
         <!-- 风险过滤器（仅综合推荐 tab 显示） -->
         <div id="riskFilterBar" style="display:none;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap">
@@ -854,7 +895,6 @@ async function checkStatus() {
   const r = await fetch('/api/status');
   const j = await r.json();
   const d = j.data;
-  document.getElementById('headerInfo').textContent = `交易日: ${d.trade_date} · ${d.server_time}`;
 
   // 刷新数据状态条（显示本地持久化缓存数量）
   await fetchDataStatus();
@@ -1375,7 +1415,133 @@ async function startOnlyUpdate() {
   }, 800);
 }
 
-// 只筛选：用缓存数据直接筛选
+// ── 通达信离线数据导入 ────────────────────────────────────────────────
+let _tdxImportTimer = null;
+
+function openTdxImportModal() {
+  document.getElementById('tdxImportModal').classList.add('show');
+  // 打开时先拉一次进度，若有在进行的任务则恢复
+  refreshTdxImportState();
+}
+
+function closeTdxImportModal() {
+  document.getElementById('tdxImportModal').classList.remove('show');
+}
+
+async function refreshTdxImportState() {
+  try {
+    const r = await fetch('/api/tdx/import/progress');
+    const j = await r.json();
+    if (j.code === 0 && j.data) {
+      _renderTdxProgress(j.data);
+      if (j.data.running) {
+        _showTdxRunningUI();
+        startTdxImportPoll();
+      }
+    }
+  } catch (e) {}
+}
+
+function _showTdxRunningUI() {
+  document.getElementById('tdxProgressWrap').style.display = 'block';
+  document.getElementById('tdxStartBtn').style.display = 'none';
+  document.getElementById('tdxStopBtn').style.display = 'block';
+  document.getElementById('tdxImportResult').style.display = 'none';
+}
+
+function _showTdxIdleUI() {
+  document.getElementById('tdxStartBtn').style.display = 'block';
+  document.getElementById('tdxStopBtn').style.display = 'none';
+}
+
+function _renderTdxProgress(p) {
+  if (!p) return;
+  const phase = p.phase || 'idle';
+  const label = {
+    'idle': '准备中...',
+    'download': '⬇️ 下载中',
+    'extract': '📂 解压中',
+    'done': '✅ 导入完成',
+    'stopped': '⏹ 已取消',
+    'error': '❌ 导入失败',
+  }[phase] || phase;
+  document.getElementById('tdxProgressLabel').textContent = label;
+  document.getElementById('tdxProgressPct').textContent = `${p.pct || 0}%`;
+  document.getElementById('tdxProgressFill').style.width = `${p.pct || 0}%`;
+  document.getElementById('tdxProgressDetail').textContent = p.msg || '';
+  if (phase === 'done' || phase === 'stopped' || phase === 'error') {
+    _showTdxIdleUI();
+    const box = document.getElementById('tdxImportResult');
+    box.style.display = 'block';
+    if (phase === 'done') {
+      const r = p.result || {};
+      const stats = r.stats || {};
+      const mk = stats.markets || {};
+      box.innerHTML = `<div style="color:var(--green)">导入完成：共 ${stats.total || 0} 只`
+        + (mk.sh != null ? ` · 沪 ${mk.sh}` : '')
+        + (mk.sz != null ? ` · 深 ${mk.sz}` : '')
+        + (mk.bj != null ? ` · 京 ${mk.bj}` : '')
+        + `</div>`
+        + `<div style="color:var(--muted);margin-top:4px">解压目录: ${r.dest_dir || '-'}</div>`;
+    } else if (phase === 'stopped') {
+      box.innerHTML = `<div style="color:var(--yellow)">已取消，可重新开始</div>`;
+    } else {
+      box.innerHTML = `<div style="color:var(--red)">${p.msg || '导入失败'}</div>`;
+    }
+    if (_tdxImportTimer) { clearInterval(_tdxImportTimer); _tdxImportTimer = null; }
+    fetchDataStatus && fetchDataStatus();  // 刷新数据状态条
+  }
+}
+
+function startTdxImportPoll() {
+  if (_tdxImportTimer) return;
+  _tdxImportTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/tdx/import/progress');
+      const j = await r.json();
+      if (j.code === 0) _renderTdxProgress(j.data);
+    } catch (e) {}
+  }, 1000);
+}
+
+async function startTdxImport() {
+  document.getElementById('tdxImportResult').style.display = 'none';
+  document.getElementById('tdxProgressWrap').style.display = 'block';
+  document.getElementById('tdxProgressLabel').textContent = '正在启动...';
+  document.getElementById('tdxProgressPct').textContent = '0%';
+  document.getElementById('tdxProgressFill').style.width = '0%';
+  document.getElementById('tdxProgressDetail').textContent = '';
+  _showTdxRunningUI();
+
+  try {
+    const r = await fetch('/api/tdx/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const j = await r.json();
+    if (j.code !== 0) {
+      notify(j.msg || '启动失败', 'error');
+      _showTdxIdleUI();
+      return;
+    }
+    startTdxImportPoll();
+  } catch (e) {
+    notify('启动失败: ' + e.message, 'error');
+    _showTdxIdleUI();
+  }
+}
+
+async function stopTdxImport() {
+  try {
+    const r = await fetch('/api/tdx/import/stop', { method: 'POST' });
+    const j = await r.json();
+    notify(j.msg || '已请求停止', j.code === 0 ? 'info' : 'error');
+  } catch (e) {
+    notify('停止失败: ' + e.message, 'error');
+  }
+}
+
 async function startOnlyScreen() {
   if (selectedStrategies.size === 0) { notify('请先选择至少一个策略', 'error'); return; }
   const market = document.getElementById('marketSelect').value;
@@ -1527,11 +1693,12 @@ async function pollProgress() {
       document.getElementById('progressFill').style.width = `${p.pct}%`;
       _setAllCardsWaiting('prefetch');
     } else if (p.phase === 'prefetch_done') {
+      // 注意：prefetch_done 只表示"数据下载完成"，screen 流程后面还有 precalc/running。
+      // 不要在这里 clearInterval / closeSSE，否则会停在"数据更新完成"无法继续显示策略阶段。
+      // 真正的终止由 done（screen 完成）或 download_done（仅下载完成）分支处理。
       document.getElementById('progressLabel').textContent = '✅ 数据更新完成';
       document.getElementById('progressPct').textContent = '100%';
       document.getElementById('progressFill').style.width = '100%';
-      clearInterval(_progressTimer);
-      closeSSE();
     } else if (p.phase === 'prefetch') {
       // 兼容旧版本
       document.getElementById('progressLabel').textContent = '📥 加载行情数据';
@@ -1651,8 +1818,18 @@ function _updateSidebarCardProgress(strategies) {
 
 // ── 设置所有已选中策略为"等待数据"状态（prefetch阶段用）──
 function _setAllCardsWaiting(phase) {
+  // 先清空所有卡片（包括未选中的）的命中数 / 进度 / 标签，避免上一轮残留误读为本轮结果
+  document.querySelectorAll('.strategy-card').forEach(card => {
+    card.classList.remove('waiting', 'running', 'done');
+    const fill = card.querySelector('.strategy-card-progress-fill');
+    if (fill) fill.style.width = '0%';
+    const countEl = card.querySelector('.strategy-card-progress-count');
+    if (countEl) countEl.textContent = '';
+    const label = card.querySelector('.strategy-card-progress-label-text');
+    if (label) label.textContent = '';
+  });
+  // 再把本轮已选中的标记为等待
   document.querySelectorAll('.strategy-card.selected').forEach(card => {
-    card.classList.remove('running', 'done');
     card.classList.add('waiting');
     const fill = card.querySelector('.strategy-card-progress-fill');
     if (fill) fill.style.width = '100%';
@@ -1711,13 +1888,45 @@ function resetActionUI() {
 }
 
 async function stopScreening() {
-  clearInterval(_progressTimer);
-  clearInterval(_resultTimer);
-  closeSSE();
-  const r = await fetch('/api/screen/stop', { method: 'POST' });
-  const j = await r.json();
-  notify(j.msg || '已停止', j.code === 0 ? 'warn' : 'error');
-  resetActionUI();
+  const stopBtn = document.getElementById('stopBtn');
+  const originalText = stopBtn ? stopBtn.textContent : '停止';
+  if (stopBtn) {
+    stopBtn.textContent = '停止中（最多5秒）...';
+    stopBtn.disabled = true;
+  }
+  // 立即提示用户已发出停止请求
+  notify('已发出停止信号，等待任务退出...', 'warn');
+
+  try {
+    const r = await fetch('/api/screen/stop', { method: 'POST' });
+    const j = await r.json();
+
+    if (j.code === 0) {
+      // 真停了
+      clearInterval(_progressTimer);
+      clearInterval(_resultTimer);
+      closeSSE();
+      notify(j.msg || '✅ 已成功停止', 'warn');
+      resetActionUI();
+    } else if (j.code === 2) {
+      // 信号已发但未在 5s 内停下，后端已强制重置标志位
+      clearInterval(_progressTimer);
+      clearInterval(_resultTimer);
+      closeSSE();
+      notify(j.msg || '⚠️ 任务未响应停止信号，已强制重置', 'error');
+      resetActionUI();
+    } else {
+      // code=1: 当前没有正在运行的任务
+      notify(j.msg || '当前无运行中任务', 'warn');
+      resetActionUI();
+    }
+  } catch (e) {
+    notify('停止请求失败: ' + (e.message || e), 'error');
+    if (stopBtn) {
+      stopBtn.textContent = originalText;
+      stopBtn.disabled = false;
+    }
+  }
 }
 
 // ── Stock Link Helper ──
@@ -2741,8 +2950,11 @@ async function confirmBuy() {
   if (j.code === 0) {
     notify(j.data.msg, 'success');
     closeModal();
-    // 切换到持仓页
-    switchTopTab('portfolio');
+    // 不自动跳转持仓页，避免打断当前选股 / 查看流程；
+    // 若用户已经在持仓页，刷新一下数据即可
+    if (currentTopTab === 'portfolio') {
+      try { await loadPortfolio(); } catch (e) {}
+    }
   } else {
     notify(j.msg || j.data?.msg || '买入失败', 'error');
   }
