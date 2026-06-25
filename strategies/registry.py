@@ -16,6 +16,7 @@ from .momentum import MomentumStrategy
 from .rps_breakout import RpsBreakoutStrategy
 from .high_tight_flag import HighTightFlagStrategy
 from .tail_market import TailMarketStrategy
+from .reversal import ReversalStrategy
 
 # 策略注册表
 # 排序说明：默认选中策略在前，未选中策略在后
@@ -125,11 +126,19 @@ STRATEGY_REGISTRY = {
         "icon": "🌅",
         "weight": 0.9,
     },
+    "reversal": {
+        "cls": ReversalStrategy,
+        "name": "横截面反转",
+        "description": "全市场按近5日跌幅横截面排名+当日企稳，捕捉超跌反弹（A股短期反转效应）",
+        "tags": ["反转", "超跌", "横截面", "短线"],
+        "icon": "🔄",
+        "weight": 1.0,
+    },
     "limit_up_gene": {
         "cls": LimitUpGeneStrategy,
         "name": "涨停基因",
-        "description": "近期涨停+未大幅回撤+再次启动，板块阈值感知（主板10/创业20/北交30/ST5）",
-        "tags": ["涨停", "短线", "板块"],
+        "description": "近期真封板(close==high) + 回撤 5-18% 甜区 + 量价拐头 (v2，去循环引用)",
+        "tags": ["涨停", "回踩", "短线"],
         "icon": "🔥",
         "weight": 1.0,
     },
