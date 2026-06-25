@@ -475,7 +475,7 @@ class MarketScanner:
             try:
                 progress_callback("", 0, len(need_fetch))
             except Exception:
-                pass
+                logger.debug("progress_callback raised", exc_info=True)
 
         # ─── §C1 快速路径 ───────────────────────────────────────────────
         # 分类：REALTIME（只缺今日一行） vs CLOSE/其它（需要拉历史 bar）
@@ -524,7 +524,7 @@ class MarketScanner:
                              context={"attempted": attempted, "failed_count": len(failed),
                                       "samples": failed[:5]})
                 except Exception:
-                    pass
+                    logger.debug("obs.warn sources_unavailable failed", exc_info=True)
                 break
             need_fetch = failed
             if round_idx + 1 < len(concurrency_levels):
@@ -537,7 +537,7 @@ class MarketScanner:
                                       "next_workers": concurrency_levels[round_idx+1],
                                       "samples": failed[:5]})
                 except Exception:
-                    pass
+                    logger.debug("obs.warn concurrency_downgrade failed", exc_info=True)
             else:
                 logger.warning(f"{label} 失败 {len(failed)} 只，进入串行兜底")
                 try:
@@ -547,7 +547,7 @@ class MarketScanner:
                              context={"failed_count": len(failed),
                                       "samples": failed[:5]})
                 except Exception:
-                    pass
+                    logger.debug("obs.warn serial_fallback failed", exc_info=True)
 
         # 最终串行兜底
         if failed:
@@ -568,7 +568,7 @@ class MarketScanner:
                                    "samples": failed[:20],
                                    "action": "标记失败，使用本地旧缓存兜底"})
             except Exception:
-                pass
+                logger.debug("obs.error final_failure failed", exc_info=True)
 
         cache = _get_cache()
         with self._lock:
@@ -638,7 +638,7 @@ class MarketScanner:
                                    "action": "退回 _fetch_round 单只链路"},
                           exc=e)
             except Exception:
-                pass
+                logger.debug("obs.error batch_realtime_failed failed", exc_info=True)
             return codes  # 全部退回单只链路兜底
 
         if stop_event and stop_event.is_set():
@@ -718,7 +718,7 @@ class MarketScanner:
                                        "action": "进入下一轮重试"},
                               exc=e)
                 except Exception:
-                    pass
+                    logger.debug("obs.error fetch_one failed", exc_info=True)
             finally:
                 with lock:
                     done_count += 1
@@ -770,7 +770,7 @@ class MarketScanner:
                                      context={"stalled_count": len(stalled),
                                               "samples": stalled[:10], "round": round_label})
                         except Exception:
-                            pass
+                            logger.debug("obs.warn round_stalled failed", exc_info=True)
                         break
                     for future in done_set:
                         try:
@@ -794,7 +794,7 @@ class MarketScanner:
                                                    "action": "标记为失败"},
                                           exc=e)
                             except Exception:
-                                pass
+                                logger.debug("obs.error future_result failed", exc_info=True)
             except Exception as e:
                 try:
                     from ..core.observability import obs
@@ -803,7 +803,7 @@ class MarketScanner:
                               context={"round": round_label, "action": "退出本轮"},
                               exc=e)
                 except Exception:
-                    pass
+                    logger.debug("obs.error as_completed_loop failed", exc_info=True)
 
             if stopped:
                 logger.info(f"{round_label}: 收到停止信号，撒手未完成的 future（不等 HTTP 回包）")
@@ -814,7 +814,7 @@ class MarketScanner:
                              f"{round_label} 停止，{pending} 个 future 在后台自然结束",
                              context={"pending": pending, "round": round_label})
                 except Exception:
-                    pass
+                    logger.debug("obs.warn round_stopped failed", exc_info=True)
         finally:
             # 手动取消尚未启动的 future（等价于 3.9+ 的 cancel_futures=True）；
             # wait=False 不等已启动的 HTTP 回包——已启动线程会在 HTTP timeout（≤10s）后自然死亡，
@@ -1024,7 +1024,7 @@ class MarketScanner:
                                   context={"code": code, "action": "跳过该股"},
                                   exc=e)
                     except Exception:
-                        pass
+                        logger.debug("obs.error evaluate_batch failed", exc_info=True)
         return results
 
     def _merge_today_realtime(self, df: pd.DataFrame, code6: str) -> pd.DataFrame:

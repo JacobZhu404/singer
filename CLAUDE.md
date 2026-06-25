@@ -9,19 +9,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 环境与启动（重要）
 
 **运行时是 Python 3.11，必须用项目内 venv：`.venv/bin/python`。**
-系统默认 `python3` 是 3.7.5，缺 flask/akshare/talib 且 pandas 过旧，**用它启动必然失败**——
+系统默认 `python3` 是 3.7.5，缺 flask 且 pandas 过旧，**用它启动必然失败**——
 任何人/任何大模型都不要用裸 `python3` 跑本项目。
 
 ```bash
-# 首次：创建并安装依赖
+# 首次：创建并安装依赖（纯 Python 依赖，无需 brew/TA-Lib）
 python3.11 -m venv .venv
-TA_INCLUDE_PATH="$(brew --prefix ta-lib)/include" \
-TA_LIBRARY_PATH="$(brew --prefix ta-lib)/lib" \
-  .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
 
 # 之后所有命令都走 .venv/bin/python（或先 source .venv/bin/activate）
 .venv/bin/python -m pytest tests/ -q
 ```
+
+> 指标全部基于 pandas/numpy 自实现（见 `utils/indicators.py`），**不依赖 TA-Lib**。
 
 ## 常用命令
 
