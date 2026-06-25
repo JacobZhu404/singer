@@ -13,10 +13,11 @@ import os
 import sys
 import json
 import glob
+import hashlib
 import logging
 import threading
 import multiprocessing as mp
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from typing import Dict, List, Optional, Tuple
@@ -28,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from stock_screener.strategies.registry import STRATEGY_REGISTRY, get_strategy
 from stock_screener.backtest.pit_scanner import PointInTimeScanner
+from stock_screener.utils.indicators import get_limit_pct
 
 logger = logging.getLogger(__name__)
 
@@ -38,22 +40,28 @@ try:
         BACKTEST_SCORE_THRESHOLD as _ST,
         BACKTEST_SLIPPAGE_PCT as _SL,
         BACKTEST_COMMISSION_PCT as _CM,
+        BACKTEST_STAMP_DUTY_PCT as _SD,
         BACKTEST_BENCHMARK_CODE as _BC,
     )
     HOLD_PERIODS = _HP
     SCORE_THRESHOLD = _ST
     SLIPPAGE_PCT = _SL
     COMMISSION_PCT = _CM
+    STAMP_DUTY_PCT = _SD
     BENCHMARK_CODE = _BC
 except ImportError:
     HOLD_PERIODS = [2, 5, 10, 30]
     SCORE_THRESHOLD = 40
     SLIPPAGE_PCT = 0.0010
     COMMISSION_PCT = 0.0003
+    STAMP_DUTY_PCT = 0.0005
     BENCHMARK_CODE = "000001"
 
-# 双边交易成本：买入 +slip +comm，卖出 -slip -comm
-ROUND_TRIP_COST_PCT = (SLIPPAGE_PCT + COMMISSION_PCT) * 2 * 100
+# 双边交易成本 (%)：
+#   买入：滑点 + 佣金
+#   卖出：滑点 + 佣金 + 印花税（**单边收 0.05%**，A 股短周期回测里常被忽略，
+#          导致反转/T+N 信号收益被高估，见 factor-ic-findings）
+ROUND_TRIP_COST_PCT = ((SLIPPAGE_PCT + COMMISSION_PCT) * 2 + STAMP_DUTY_PCT) * 100
 
 # 缓存目录（本地 CSV 文件）
 _CACHE_DIR = os.path.join(
@@ -124,12 +132,19 @@ def _benchmark_period_returns(trade_dates: List[str]) -> Dict[int, Dict[str, flo
         return {p: {} for p in HOLD_PERIODS}
 
     df["date_str"] = df["date"].dt.strftime("%Y%m%d")
+    has_open = "open" in df.columns
     out = {p: {} for p in HOLD_PERIODS}
     for td in trade_dates:
         if td not in df["date_str"].values:
             continue
         idx = df[df["date_str"] == td].index[0]
-        entry = float(df.iloc[idx]["close"])
+        # 与个股入场口径一致：T+1 开盘价入场（基准无 open 列时退回 T 收盘）
+        buy_idx = idx + 1
+        if buy_idx >= len(df):
+            continue
+        entry = float(df.iloc[buy_idx]["open"]) if has_open else float(df.iloc[idx]["close"])
+        if entry <= 0:
+            continue
         for period in HOLD_PERIODS:
             end = idx + period
             if end >= len(df):
@@ -179,25 +194,67 @@ def _load_cached_df(code: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _calc_future_returns(df: pd.DataFrame, entry_idx: int) -> tuple:
+def _is_limit_down_close(df: pd.DataFrame, idx: int, limit_pct: float) -> bool:
+    """退出日收盘是否封死跌停。跌停封板无法卖出，须把出场往后顺延一日。
+    与 `_is_limit_up_open` 的进场过滤对称。"""
+    if idx <= 0 or idx >= len(df):
+        return False
+    try:
+        prev_close = float(df.iloc[idx - 1]["close"])
+        close = float(df.iloc[idx]["close"])
+    except Exception:
+        return False
+    if prev_close <= 0:
+        return False
+    pct = (close - prev_close) / prev_close * 100.0
+    return pct <= -(limit_pct - 0.3)
+
+
+def _calc_future_returns(df: pd.DataFrame, entry_idx: int,
+                        code: str = "", name: str = "") -> tuple:
     """
     计算未来各持有期收益和最大回撤
+
+    入场建模为 **T+1 开盘价**：`entry_idx` 是信号日 T（策略看到的是 T 收盘指标），
+    实际买入发生在 T+1 开盘（`open[entry_idx+1]`）。沿用收盘价入场会让回测在「刚
+    看到的那根收盘」上成交，带未来信息嫌疑且实盘拿不到。持有 period 根：买入
+    T+1，卖出 close[T+period]（= 持有 period 个交易日），退出口径不变。
+
+    退出日如遇跌停封板（不可卖），把出场顺延到下一根非跌停的 close；若整段
+    都被一字板挡住，则该 period 没有可成交退出价 → 丢弃。这一对称处理修正
+    `factor-ic-findings` 标注的「卖出侧跌停低估反转收益」偏差。
+
     Returns: (returns_dict, exit_prices_dict, drawdowns_dict)
     """
-    entry_price = float(df.iloc[entry_idx]["close"])
+    buy_idx = entry_idx + 1  # T+1 开盘买入
+    if buy_idx >= len(df):
+        return {}, {}, {}     # 信号日是最后一根，无 T+1 可成交
+    entry_price = float(df.iloc[buy_idx]["open"])
     returns, exits, drawdowns = {}, {}, {}
+    if entry_price <= 0:
+        return returns, exits, drawdowns
+    limit_pct = get_limit_pct(code, name) if code else 10.0
 
     for period in HOLD_PERIODS:
         end_idx = entry_idx + period
         if end_idx >= len(df):
             continue
-        prices = df.iloc[entry_idx + 1: end_idx + 1]["close"].values.astype(float)
+        # 退出日封板 → 向后找第一根非跌停的 close；找不到则跳过
+        actual_end = end_idx
+        max_roll = 5
+        rolls = 0
+        while actual_end < len(df) and _is_limit_down_close(df, actual_end, limit_pct) and rolls < max_roll:
+            actual_end += 1
+            rolls += 1
+        if actual_end >= len(df) or _is_limit_down_close(df, actual_end, limit_pct):
+            continue  # 全段被一字板封死，无法兑现
+        prices = df.iloc[buy_idx: actual_end + 1]["close"].values.astype(float)
         if len(prices) == 0:
             continue
         exit_p = prices[-1]
         exits[period] = exit_p
         gross_pct = (exit_p - entry_price) / entry_price * 100
-        # 扣除双边滑点 + 手续费
+        # 扣除双边滑点 + 手续费 + 印花税（仅卖出）
         returns[period] = gross_pct - ROUND_TRIP_COST_PCT
         # 最大回撤
         peak = entry_price
@@ -211,6 +268,29 @@ def _calc_future_returns(df: pd.DataFrame, entry_idx: int) -> tuple:
         drawdowns[period] = max_dd
 
     return returns, exits, drawdowns
+
+
+def _is_limit_up_open(df: pd.DataFrame, signal_idx: int, code: str, name: str) -> bool:
+    """T+1 开盘是否一字/封死涨停，导致 T+1 开盘买不进。
+
+    入场建模为 T+1 开盘价后，可成交性约束从「信号日收盘封板」转移到「次日开盘
+    能否买到」：若 T+1 开盘相对 T 收盘已涨停（≥ 限板 - 0.3%），多为一字板，开盘
+    根本挂不进单 → 跳过。`signal_idx` 为信号日 T。无 T+1（信号在最后一根）亦视为
+    不可成交。
+    """
+    buy_idx = signal_idx + 1
+    if buy_idx >= len(df):
+        return True
+    try:
+        prev_close = float(df.iloc[signal_idx]["close"])
+        open_p = float(df.iloc[buy_idx]["open"])
+    except Exception:
+        return False
+    if prev_close <= 0:
+        return False
+    pct = (open_p - prev_close) / prev_close * 100.0
+    limit = get_limit_pct(code, name)
+    return pct >= (limit - 0.3)
 
 
 def _check_sell_signal(risk_flags: list) -> bool:
@@ -251,15 +331,19 @@ def _eval_trade(code: str, name: str, strategy_obj, trade_date: str,
     if sig is None or sig.score < SCORE_THRESHOLD:
         return None
 
+    # T+1 开盘封死涨停（一字板）→ 开盘买不进，回测在此进场会系统性高估收益。
+    if _is_limit_up_open(df, full_idx, code, name):
+        return None
+
     has_risk = _check_sell_signal(sig.risk_flags or [])
-    rets, exits, dds = _calc_future_returns(df, full_idx)
+    rets, exits, dds = _calc_future_returns(df, full_idx, code=code, name=name)
 
     return BacktestTrade(
         buy_date=trade_date,
         code=code,
         name=name,
         strategy=strategy_obj.name,
-        buy_price=float(df.iloc[full_idx]["close"]),
+        buy_price=float(df.iloc[full_idx + 1]["open"]),
         score=min(sig.score, 100),
         signals=sig.signals,
         has_risk=has_risk,
@@ -292,16 +376,32 @@ def _pool_init(strategy_names: List[str], top_n: int, niceness: int):
     _WK["scanner"] = PointInTimeScanner()
     _WK["strats"] = {s: get_strategy(s, top_n=top_n) for s in strategy_names}
     _WK["cur_date"] = None
+    _WK["prepared"] = set()
 
 
-def _pool_worker(args: Tuple[str, str, list]) -> List[BacktestTrade]:
-    trade_date, strategy_name, code_chunk = args
+def _pool_worker(args: Tuple[str, str, list, list]) -> List[BacktestTrade]:
+    """args = (trade_date, strategy_name, code_chunk, full_codes_for_panel)
+
+    full_codes_for_panel：横截面策略需要看到全部候选股才能排名；逐 chunk 的
+    worker 自身只见局部，故由调度方把全集传进来由 worker 做一次 prepare。
+    process 路径下每个 worker 会独立载入全市场——慢但正确；进一步优化可
+    走「主进程算横截面 → 仅把得分字典 IPC 给 worker」，留到需要时再做。
+    """
+    trade_date, strategy_name, code_chunk, full_codes = args
     scanner: PointInTimeScanner = _WK["scanner"]
     # 同一进程内换日才 set_as_of（清指标缓存）；同日多策略/多块共享缓存
     if _WK["cur_date"] != trade_date:
         scanner.set_as_of(trade_date)
         _WK["cur_date"] = trade_date
+        _WK["prepared"] = set()
     strat = _WK["strats"][strategy_name]
+    prep_key = (trade_date, strategy_name)
+    if prep_key not in _WK["prepared"]:
+        try:
+            strat.prepare_for_date(scanner, full_codes, trade_date)
+        except Exception:
+            pass
+        _WK["prepared"].add(prep_key)
     out: List[BacktestTrade] = []
     for code, name in code_chunk:
         t = _eval_trade(code, name, strat, trade_date, scanner, scanner._full_df(code))
@@ -394,6 +494,7 @@ class BacktestEngine:
         max_workers: Optional[int] = None,
         use_processes: bool = True,
         niceness: int = 10,
+        resume: bool = False,
     ) -> Dict[str, BacktestResult]:
         """
         执行回测
@@ -405,6 +506,9 @@ class BacktestEngine:
             max_workers: 并行度；None = 保守默认（约 60% 内核，至少留 2 个给前台）
             use_processes: True = 进程池真并行（推荐）；False/1 worker = 退回线程
             niceness: 子进程 nice 增量（越大优先级越低，越不抢前台 CPU）
+            resume: True = 开启断点续跑。每完成一个交易日把累计结果落盘到
+                results/.bt_checkpoint_<sig>.json；若已存在匹配 checkpoint 则
+                加载并跳过已完成交易日。全部跑完后自动删除 checkpoint。
         """
         if strategy_names is None:
             strategy_names = list(STRATEGY_REGISTRY.keys())
@@ -414,10 +518,22 @@ class BacktestEngine:
         trade_dates = self._get_trade_dates()
         name_map    = _load_stock_names()
 
-        # 获取所有有缓存文件的股票代码
+        # universe 对齐实盘：cache 目录 ∩ stocks.json，再过滤 ST/退市。
+        # 之前直接 glob cache 会带进 ~868 只 "幽灵股"（北交所 920xxx、退市旧
+        # 代码、ST），与实盘 _get_name_map 的结果不一致——回测里它们要么不
+        # 可成交、要么涨跌幅规则错（北交所 30% 当成 10% 算）、要么 ST 风险
+        # 被回测吃掉但实盘根本买不到。
         csv_files = glob.glob(os.path.join(_CACHE_DIR, "*.csv"))
-        all_codes = [(os.path.splitext(os.path.basename(f))[0]) for f in csv_files]
-        all_codes = [(c, name_map.get(c, c)) for c in all_codes]
+        cached = {os.path.splitext(os.path.basename(f))[0] for f in csv_files}
+        if name_map:
+            all_codes = [
+                (c, n) for c, n in name_map.items()
+                if c in cached and "ST" not in n and "退" not in n
+            ]
+        else:
+            # 兜底：stocks.json 缺失时退回旧逻辑，保证回测仍可跑（仅含 ST 警告）
+            logger.warning("stocks.json 为空，universe 退回 cache 目录扫描（含 ST/北交所）")
+            all_codes = [(c, c) for c in sorted(cached)]
 
         logger.info(f"回测: {len(trade_dates)}个交易日 × {len(strategy_names)}个策略 × "
                     f"{len(all_codes)}只股票 | workers={max_workers} "
@@ -425,12 +541,33 @@ class BacktestEngine:
 
         results = {s: BacktestResult(strategy=s) for s in strategy_names}
 
+        # ── 断点续跑：加载匹配的 checkpoint，跳过已完成交易日 ──
+        ckpt_path = None
+        signature = None
+        done_dates: set = set()
+        if resume:
+            signature = _checkpoint_signature(trade_dates, strategy_names,
+                                              all_codes, top_n, filter_sell)
+            out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+            os.makedirs(out_dir, exist_ok=True)
+            ckpt_path = os.path.join(out_dir, f".bt_checkpoint_{signature}.json")
+            done_dates = _load_checkpoint(ckpt_path, signature, results)
+            if done_dates:
+                logger.info(f"断点续跑：已加载 {len(done_dates)}/{len(trade_dates)} "
+                            f"个交易日结果，跳过它们")
+
         if use_processes and max_workers > 1:
             self._run_processes(strategy_names, all_codes, trade_dates, top_n,
-                                filter_sell, max_workers, niceness, results)
+                                filter_sell, max_workers, niceness, results,
+                                done_dates, ckpt_path, signature)
         else:
             self._run_threads(strategy_names, all_codes, trade_dates, top_n,
-                              filter_sell, max_workers, results)
+                              filter_sell, max_workers, results,
+                              done_dates, ckpt_path, signature)
+
+        # 全部交易日跑完 → checkpoint 已无用，删除避免下次误续旧结果
+        if ckpt_path and os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
 
         bench = _benchmark_period_returns(trade_dates)
         for r in results.values():
@@ -438,15 +575,24 @@ class BacktestEngine:
         return results
 
     def _run_threads(self, strategy_names, all_codes, trade_dates, top_n,
-                     filter_sell, max_workers, results):
+                     filter_sell, max_workers, results,
+                     done_dates=None, ckpt_path=None, signature=None):
         """线程路径（兼容/回退；CPU 密集下不真并行）。"""
+        done_dates = done_dates if done_dates is not None else set()
         strategy_objs = {s: get_strategy(s, top_n=top_n) for s in strategy_names}
         scanner = PointInTimeScanner()
         for date_idx, trade_date in enumerate(trade_dates):
+            if trade_date in done_dates:
+                continue
             logger.info(f"进度 {date_idx+1}/{len(trade_dates)} - {trade_date}")
             scanner.set_as_of(trade_date)
             for strategy in strategy_names:
                 strat = strategy_objs[strategy]
+                # 横截面/全市场预处理（reversal 等需要在评估前看到全部候选股）
+                try:
+                    strat.prepare_for_date(scanner, [c for c, _ in all_codes], trade_date)
+                except Exception as e:
+                    logger.debug(f"[{strategy}] prepare_for_date 异常: {e}")
                 tasks = [(code, name, strat, trade_date, scanner) for code, name in all_codes]
                 all_trades = []
                 with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
@@ -457,10 +603,15 @@ class BacktestEngine:
                     all_trades = [t for t in all_trades if not t.has_risk]
                 all_trades.sort(key=lambda t: t.score, reverse=True)
                 results[strategy].trades.extend(all_trades[:top_n])
+            if ckpt_path:
+                done_dates.add(trade_date)
+                _write_checkpoint(ckpt_path, signature, done_dates, results)
 
     def _run_processes(self, strategy_names, all_codes, trade_dates, top_n,
-                       filter_sell, max_workers, niceness, results):
+                       filter_sell, max_workers, niceness, results,
+                       done_dates=None, ckpt_path=None, signature=None):
         """进程池路径：真并行 + 低优先级 + 分块降 IPC。"""
+        done_dates = done_dates if done_dates is not None else set()
         # 按股票分块：任务数 = 日期 × 策略 × 块数；块越大 IPC 越少，内存峰值越高
         chunk = max(100, len(all_codes) // (max_workers * 4))
         code_chunks = [all_codes[i:i + chunk] for i in range(0, len(all_codes), chunk)]
@@ -472,9 +623,13 @@ class BacktestEngine:
             initializer=_pool_init,
             initargs=(strategy_names, top_n, niceness),
         ) as pool:
+            full_codes = [c for c, _ in all_codes]
             for date_idx, trade_date in enumerate(trade_dates):
+                if trade_date in done_dates:
+                    continue
                 logger.info(f"进度 {date_idx+1}/{len(trade_dates)} - {trade_date}")
-                tasks = [(trade_date, s, ch) for s in strategy_names for ch in code_chunks]
+                tasks = [(trade_date, s, ch, full_codes)
+                         for s in strategy_names for ch in code_chunks]
                 per_strategy = {s: [] for s in strategy_names}
                 for trades in pool.map(_pool_worker, tasks):
                     for t in trades:
@@ -485,6 +640,9 @@ class BacktestEngine:
                         tl = [t for t in tl if not t.has_risk]
                     tl.sort(key=lambda t: t.score, reverse=True)
                     results[s].trades.extend(tl[:top_n])
+                if ckpt_path:
+                    done_dates.add(trade_date)
+                    _write_checkpoint(ckpt_path, signature, done_dates, results)
 
 
 def _calc_stats(result: BacktestResult, benchmark: Optional[Dict[int, Dict[str, float]]] = None):
@@ -550,6 +708,86 @@ def print_report(results: Dict[str, BacktestResult]):
         print()
 
     print("=" * width)
+
+
+# ─── 断点续跑：长周期回测可能因休眠/中断耗时数小时，按天 checkpoint 落盘，
+#     续跑时跳过已完成交易日，避免重算。结果以「累计的 BacktestTrade 原始记录」
+#     为单位存储（_calc_stats 在最终一次性重算，故无需存统计量）。 ───────────────
+
+def _trade_to_dict(t: BacktestTrade) -> dict:
+    """BacktestTrade → 可 JSON 化 dict。int 周期键经 json 会变 str，加载时再还原。"""
+    return asdict(t)
+
+
+def _trade_from_dict(d: dict) -> BacktestTrade:
+    def _int_keys(m):
+        return {int(k): v for k, v in (m or {}).items()}
+    return BacktestTrade(
+        buy_date=d["buy_date"],
+        code=d["code"],
+        name=d["name"],
+        strategy=d["strategy"],
+        buy_price=d["buy_price"],
+        score=d["score"],
+        signals=d.get("signals", []),
+        has_risk=d.get("has_risk", False),
+        returns=_int_keys(d.get("returns")),
+        exit_prices=_int_keys(d.get("exit_prices")),
+        max_drawdowns=_int_keys(d.get("max_drawdowns")),
+    )
+
+
+def _checkpoint_signature(trade_dates, strategy_names, all_codes,
+                          top_n, filter_sell) -> str:
+    """对回测配置取稳定哈希；任一关键参数变化即另起 checkpoint，避免错误续跑。"""
+    payload = json.dumps(
+        {
+            "dates": sorted(trade_dates),
+            "strats": sorted(strategy_names),
+            "codes": sorted(c for c, _ in all_codes),
+            "top_n": top_n,
+            "filter_sell": bool(filter_sell),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _write_checkpoint(path, signature, done_dates, results):
+    """原子写 checkpoint（先写 .tmp 再 os.replace，避免半截文件）。"""
+    data = {
+        "signature": signature,
+        "done_dates": sorted(done_dates),
+        "trades": {
+            s: [_trade_to_dict(t) for t in r.trades]
+            for s, r in results.items()
+        },
+    }
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def _load_checkpoint(path, signature, results) -> set:
+    """若存在且签名匹配，把累计 trades 回填进 results，返回已完成交易日集合；
+    否则返回空集（不回填）。"""
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        logger.warning(f"checkpoint 读取失败，忽略并从头跑: {e}")
+        return set()
+    if data.get("signature") != signature:
+        logger.info("checkpoint 签名不匹配（配置已变），忽略旧 checkpoint")
+        return set()
+    for s, tl in data.get("trades", {}).items():
+        if s in results:
+            results[s].trades.extend(_trade_from_dict(d) for d in tl)
+    return set(data.get("done_dates", []))
 
 
 def save_results(results: Dict[str, BacktestResult], output_dir: str = None):
