@@ -20,7 +20,7 @@ import numpy as np
 from typing import Optional
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,13 @@ class HighTightFlagStrategy(BaseStrategy):
     base_win_rate = 0.55
 
     # 参数
-    POLE_MIN_GAIN = 80.0      # 旗杆最小涨幅(%)
+    # 注：严格欧奈尔口径 POLE_MIN_GAIN=80% 在 52 周回测里只命中 3 笔（HTF 本就
+    # 是最稀有形态），样本太小无法统计验证。放宽到 50%（仍是 ≤45 日内的强势
+    # 翻倍前奏），换取可统计的样本量；突破质量门槛（收盘放量突破）保持不变。
+    POLE_MIN_GAIN = 50.0      # 旗杆最小涨幅(%)
     POLE_MAX_DAYS = 45        # 旗杆考察最大交易日数
     FLAG_MIN_DAYS = 5         # 旗面最少天数
-    FLAG_MAX_DAYS = 15        # 旗面最多天数
+    FLAG_MAX_DAYS = 20        # 旗面最多天数
     FLAG_MAX_DRAWDOWN = 25.0  # 旗面最大回撤(%)
 
     def __init__(self, top_n: int = 10):
@@ -61,14 +64,16 @@ class HighTightFlagStrategy(BaseStrategy):
             raise self._SkipStock()
 
         # ── 1. 识别旗面（最近 FLAG_MIN..MAX 天的高位整理区）──
-        # 旗面起点 fs：尝试不同旗面长度，取「回撤最浅且高位」的窗口
-        best_flag = None  # (flag_len, flag_high, flag_low, drawdown)
+        # 旗面起点 fs：尝试不同旗面长度，取「回撤最浅且高位」的窗口。
+        # 注意：旗面 = 突破日**之前**的整理区，统计窗口为 [fs..i-1]，不含今日。
+        # 否则今日盘中插针会被算进 flag_high，close > flag_high 永远拿不到。
+        best_flag = None  # (flag_len, flag_high, flag_low, drawdown, fs)
         for flag_len in range(self.FLAG_MIN_DAYS, self.FLAG_MAX_DAYS + 1):
-            fs = i - flag_len + 1
+            fs = i - flag_len
             if fs <= 0:
                 break
-            seg_high = float(high.iloc[fs:i + 1].max())
-            seg_low = float(low.iloc[fs:i + 1].min())
+            seg_high = float(high.iloc[fs:i].max())
+            seg_low = float(low.iloc[fs:i].min())
             if seg_high <= 0:
                 continue
             drawdown = (seg_high - seg_low) / seg_high * 100
@@ -95,19 +100,28 @@ class HighTightFlagStrategy(BaseStrategy):
         if pole_gain < self.POLE_MIN_GAIN:
             return None
 
+        # 真"旗面"必须在旗杆顶**附近或之上**整理。若 flag_high < pole_top*0.98，
+        # 说明旗面在下滑（已开始破位），不是高位窄幅整理 — 这是 16 周回测里
+        # 30 日 α=-9.14% 的主因之一（catches stocks already topping out）。
+        if flag_high < pole_top * 0.98:
+            return None
+
         signals = []
         score = 0
 
-        # 旗杆涨幅评分
+        # 旗杆涨幅评分（涨幅越大越接近经典 HTF，给分越高）
         if pole_gain >= 120:
             score += 40
             signals.append(f"旗杆暴涨{pole_gain:.0f}%")
         elif pole_gain >= 100:
             score += 35
             signals.append(f"旗杆翻倍{pole_gain:.0f}%")
-        else:
-            score += 28
+        elif pole_gain >= 80:
+            score += 30
             signals.append(f"旗杆强涨{pole_gain:.0f}%")
+        else:
+            score += 24
+            signals.append(f"旗杆上涨{pole_gain:.0f}%")
 
         # 旗面紧致度评分（回撤越浅越好）
         if flag_dd <= 12:
@@ -122,7 +136,7 @@ class HighTightFlagStrategy(BaseStrategy):
 
         # ── 3. 旗面缩量（整理期均量 < 旗杆期均量）──
         pole_vol = float(vol.iloc[pole_start_lo:pole_end + 1].mean())
-        flag_vol = float(vol.iloc[fs:i + 1].mean())
+        flag_vol = float(vol.iloc[fs:i].mean())
         if pole_vol > 0 and flag_vol > 0:
             vol_shrink = flag_vol / pole_vol
             if vol_shrink < 0.6:
@@ -133,24 +147,20 @@ class HighTightFlagStrategy(BaseStrategy):
                 signals.append(f"旗面量能收敛({vol_shrink:.0%})")
 
         # ── 4. 当前位置：贴近旗面高点（蓄势）或放量突破 ──
-        vol_ratio = indicators.get("vol_ratio")
-        vr = 1.0
-        if vol_ratio is not None and not pd.isna(vol_ratio.iloc[i]):
-            vr = float(vol_ratio.iloc[i])
+        vr = last_vol_ratio(indicators.get("vol_ratio"), i)
 
-        near_high = price_now >= flag_high * 0.95
-        breakout = float(high.iloc[i]) >= flag_high and vr >= 1.5
-        if breakout:
-            score += 20
-            signals.append(f"放量突破旗面({vr:.1f}倍)")
-        elif near_high:
-            score += 10
-            signals.append("贴近旗面高点蓄势")
-        else:
-            # 已明显回落出旗面区，不算有效形态
+        # 只接受**收盘价**有效突破：旧版用 `high >= flag_high`（盘中插针），
+        # 又开了 `near_high` 后门（5% 内即可），结果选到一堆"刚做完旗杆开始
+        # 跌出旗面"的票。改成 close 突破 + 放量。
+        breakout = float(close.iloc[i]) > flag_high and vr >= 1.3
+        if not breakout:
             return None
+        score += 25
+        signals.append(f"放量突破旗面({vr:.1f}倍)")
 
-        if score < 80:
+        # 阈值随旗杆门槛同步下调 85→75：放宽后弱旗杆(24分)+松旗面(12分)+突破(25)=61
+        # 仍被挡；要么强旗杆要么紧旗面，再叠加突破才入选。
+        if score < 75:
             return None
 
         quote = self._get_quote(scanner, code, price_now)
