@@ -2185,6 +2185,26 @@ function renderMergedTable(picks, container) {
   const riskCounts = { safe: 0, watch: 0, conflict: 0, high_risk: 0, unknown: 0 };
   picks.forEach(p => { if (p.risk_tag) riskCounts[p.risk_tag] = (riskCounts[p.risk_tag] || 0) + 1; });
 
+  // PE / PB 单元格
+  function pePbHtml(p) {
+    const pe = p.pe, pb = p.pb;
+    const fmt = v => (v === null || v === undefined || isNaN(v)) ? '—' : Number(v).toFixed(1);
+    let peColor = '', pbColor = '';
+    if (pe !== null && pe !== undefined) {
+      if (pe < 0) peColor = 'color:var(--red);font-weight:600';
+      else if (pe >= 100) peColor = 'color:var(--red)';
+      else if (pe >= 50) peColor = 'color:var(--orange)';
+    }
+    if (pb !== null && pb !== undefined && (pb > 10 || pb < 0)) pbColor = 'color:var(--orange)';
+    const reasons = p.fundamental_reasons || [];
+    const adj = p.fundamental_adj || 0;
+    const tip = reasons.length ? `估值调整 ${adj.toFixed(1)} 分\n${reasons.join('\n')}` : 'PE/PB 在正常区间';
+    return `<div title="${tip}" style="font-size:12px;line-height:1.3">
+      <div><span style="color:var(--muted)">PE</span> <span style="${peColor}">${fmt(pe)}</span></div>
+      <div><span style="color:var(--muted)">PB</span> <span style="${pbColor}">${fmt(pb)}</span></div>
+    </div>`;
+  }
+
   // 生成风险标签的 HTML helper
   function riskTagHtml(p) {
     const tag   = p.risk_tag || 'unknown';
@@ -2242,6 +2262,7 @@ function renderMergedTable(picks, container) {
       <thead>
         <tr>
           <th>#</th><th>股票</th><th>最新价</th><th>涨跌幅</th><th>量比</th>
+          <th title="市盈率 / 市净率（来自新浪节点 API 当日快照）">PE / PB</th>
           <th>综合评分</th><th>命中策略（得分）</th><th>关键信号</th>
           <th title="基于实时技术指标的卖出风险评估，点击可查看详情">风险评估 ℹ️</th>
           <th>操作</th>
@@ -2267,7 +2288,8 @@ function renderMergedTable(picks, container) {
               <td class="price">${price > 0 ? price.toFixed(2) : '-'}</td>
               <td class="${pctClass}" style="font-weight:700">${pctStr}</td>
               <td>${((p.volume_ratio)||1).toFixed(1)}x</td>
-              <td><span class="score-pill ${scoreClass}" title="加权总分:${(p.weighted_score||0).toFixed(1)} 综合评分:${(p.composite_score||0).toFixed(1)}">${scoreVal}</span></td>
+              <td>${pePbHtml(p)}</td>
+              <td><span class="score-pill ${scoreClass}" title="加权总分:${(p.weighted_score||0).toFixed(1)} 综合评分:${(p.composite_score||0).toFixed(1)}${(p.fundamental_adj||0) ? ' 估值调整:' + p.fundamental_adj.toFixed(1) : ''}">${scoreVal}</span></td>
               <td><div class="strategy-badges">${badges}</div></td>
               <td><div class="signals">${sigs}</div></td>
               <td>${riskTagHtml(p)}</td>
@@ -2988,7 +3010,7 @@ function exportCSV() {
     }
     picks = lastResult.comprehensive_picks;
     tradeDate = lastResult.trade_date || tradeDate;
-    headers = ['代码', '名称', '最新价', '涨跌额', '涨跌幅', '综合评分', '信号', '命中策略', '行业', '风险等级'];
+    headers = ['代码', '名称', '最新价', '涨跌额', '涨跌幅', '综合评分', 'PE', 'PB', '估值调整', '信号', '命中策略', '行业', '风险等级'];
     rows = picks.map(p => [
       p.code || '',
       p.name || '',
@@ -2996,6 +3018,9 @@ function exportCSV() {
       p.change ?? '',
       p.change_pct ?? '',
       p.score ?? '',
+      p.pe ?? '',
+      p.pb ?? '',
+      p.fundamental_adj ?? '',
       (p.signals || []).map(s => s.name || s).join(';'),
       (p.strategies || []).map(s => strategyNameMap[s] || s).join(';'),
       p.industry || '',

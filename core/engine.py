@@ -699,11 +699,27 @@ class ScreenEngine:
                 if f["type"] not in existing_types:
                     all_flags.append(f)
 
+            # ── 基本面（PE/PB）：风险标签 + 综合分调整 ──
+            fundamental = market_scanner.get_fundamental(code)
+            pe = fundamental.get("pe")
+            pb = fundamental.get("pb")
+            fundamental_adj = 0.0
+            fundamental_reasons: List[str] = []
+            if pe is not None or pb is not None:
+                from ..utils.fundamental_flags import (
+                    compute_fundamental_flags, fundamental_score_adjustment,
+                )
+                for f in compute_fundamental_flags(pe, pb):
+                    if f["type"] not in existing_types:
+                        all_flags.append(f)
+                        existing_types.add(f["type"])
+                fundamental_adj, fundamental_reasons = fundamental_score_adjustment(pe, pb)
+
             # 计算平均排名百分比（越低越好）
             avg_rank_pct = (entry["strategy_rank_sum"] / entry["strategy_count"]
                             if entry["strategy_count"] > 0 else 1.0)
 
-            # 综合评分 = 加权得分 + 排名加成 + 多策略共识 + 风险调整 + 大盘强度
+            # 综合评分 = 加权得分 + 排名加成 + 多策略共识 + 风险调整 + 基本面调整 + 大盘强度
             risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * _ScoreWeights.RISK_FACTOR
             market_strength_adj = market_strength * _ScoreWeights.MARKET_STRENGTH if market_strength is not None else 0
             composite_score = (
@@ -711,6 +727,7 @@ class ScreenEngine:
                 (1 - avg_rank_pct) * _ScoreWeights.RANK +
                 n_strategies * _ScoreWeights.CONSENSUS +
                 risk_adjustment +
+                fundamental_adj +
                 market_strength_adj
             )
             composite_score = max(composite_score, 0)
@@ -719,6 +736,12 @@ class ScreenEngine:
                 **entry,
                 "n_strategies": n_strategies,
                 "all_signals": list(dict.fromkeys(entry["all_signals"])),  # 去重保序保留频次（不转set）
+                # 基本面（缺失为 None，前端按需展示）
+                "pe": pe,
+                "pb": pb,
+                "mktcap_wan": fundamental.get("mktcap_wan"),
+                "fundamental_adj": round(fundamental_adj, 2),
+                "fundamental_reasons": fundamental_reasons,
                 # 风险信息
                 "risk_tag": risk_tag,
                 "risk_reasons": risk_reasons,
@@ -842,6 +865,18 @@ class ScreenEngine:
         if self._stop_event and self._stop_event.is_set():
             logger.info("用户已停止，策略筛选中断")
             return {"status": "stopped", "comprehensive_picks": []}
+
+        # 阶段1.6：加载全市场基本面快照（PE/PB），失败不阻塞
+        try:
+            self._notify_progress(progress_callback, "fundamentals", "加载基本面快照...", 0, 1)
+            fundamentals = market_scanner.ensure_fundamentals()
+            self._notify_progress(
+                progress_callback, "fundamentals",
+                f"基本面 {len(fundamentals)} 只" if fundamentals else "基本面不可用，跳过",
+                1, 1,
+            )
+        except Exception as e:
+            logger.warning(f"基本面加载阶段异常（忽略）: {e}")
 
         # 阶段2：串行运行策略（每个策略内部已并行）
         _wrapped_cb = None
