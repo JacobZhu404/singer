@@ -211,37 +211,63 @@ chanlun_strict × *:             ≤0.0%  ← 严重失真
 
 ---
 
-## 行动清单（输出到阶段 C）
+## 行动清单（数据修正版）
 
-按 ROI 排序：
+> ⚠️ 本节原是**基于结构推断的预测清单**，2026-06-23 真实 Jaccard 回填后大量翻车
+> （见本文档顶部）。下面是按**真实命中全集**修正后的版本。
 
-### 优先级 1：先修 bug，再谈合并
-1. **修 `td_sequential` 阈值** ——补 `score >= 50`，预期命中数降到 < 100，再看与 `rsi_oversold` 的真实 Jaccard
-2. **删 `chan20.py`** —— 死代码，无人用
-3. **修 `limit_up_gene` 涨停判定** —— 按板块阈值（科创/创业 20%、ST 5%）
-4. **删 `td_sequential` / `rsi_oversold` 末尾静默 except** —— 与 `_SkipStock` 重复
+### 判据说明（重要）
+到目前为止，所有"合并/保留"建议都基于**重叠度**（谁和谁选同样的票：Jaccard +
+嵌套率），**没有一项用过回测 alpha/收益**。也就是"该砍谁"只回答了"谁冗余"，
+没回答"谁赚钱"。下一步若要做实质合并，应补单策略含成本回测，按 α 而非仅按重叠决策。
 
-修完之后才能跑出有意义的全集 Jaccard。
+### 优先级 1：先修 bug —— ✅ 全部完成
+1. ✅ 修 `td_sequential` 阈值（已补 `score < 50` 淘汰）
+2. ✅ 删 `chan20.py`（死代码已删）
+3. ✅ 修 `limit_up_gene` 涨停判定（已 v2 重写，按板块阈值 + 真封板 close==high）
+4. ✅ 删 `td_sequential` / `rsi_oversold` 末尾静默 except
 
-### 优先级 2：合并候选（待 Jaccard 数据校验）
-- **`volume_breakout` → 并入 `rps_breakout` 加分项** （A 簇内嵌套关系最明显）
-- **`bollinger_bands` 拆双模式** （单策略内部去同质化）
+### 优先级 2：合并候选 —— 两次翻转，最终**不合并**
+- ❌ ~~`volume_breakout` 并入 `rps_breakout`~~（第一次翻转）：两者 Jaccard 仅 4.1%，不同源。
+- ❌ ~~`volume_breakout` 并入 `right_side`~~（第二次翻转，**回测推翻重叠结论**）：
+  单日主板快照里 volume_breakout 是 right_side 的"93% 子集、仅 2 票独特"，看似该并入。
+  但那是 **right_side 收紧阈值前**的假象——当天 right_side 命中 300（被 top_n 截顶），
+  自然吞掉 volume_breakout 的 29 票。right_side 阈值收紧到 80 后，**52 周回测**真实画像是：
+
+  | 策略 | 笔数 | α(2日) | α(5日) | α(10日) | α(30日) |
+  |---|---|---|---|---|---|
+  | volume_breakout | 459 | **+0.89%** | **+1.50%** | +1.31% | +3.42% |
+  | right_side | 260 | +0.58% | +0.88% | +1.27% | **+6.28%** |
+
+  两者**收益画像互补**：volume_breakout = 短打（2/5 日 α 更高、笔数近 2 倍），
+  right_side = 长持（30 日 α 远高）。合并会砍掉 459 笔真实短周期 α。**结论：保留两者。**
+- [ ] `bollinger_bands` 拆双模式（`bollinger_lower` / `bollinger_upper`）——
+  仍**只是代码逻辑论证**（单策略内含两套相反形态），无重叠或回测数据支撑，待验证。
+- 数据新发现：`right_side × strong_stock = 29.3%` 是实测最高重叠对（不在原预测里）——
+  但**别再只看重叠**，先按上表的方法对比两者回测 α 再决定，重蹈 volume_breakout 覆辙。
+
+### 教训（本节核心）
+volume_breakout 的合并建议被推翻两次，根因都是**用错了判据**：
+单日同市场的 Jaccard/嵌套率会被某个策略的阈值松紧严重扭曲（截顶时吞噬一切），
+**只有跨期含成本回测的 α 才是合并/降权的可靠判据**。重叠度只能用来"提名嫌疑对"，
+不能用来"定罪"。
 
 ### 优先级 3：阶段 C 单策略深度 review 顺序
-1. `td_sequential`（修阈值后再 review）
+1. `right_side`（先吃下 volume_breakout 的子集，再评估与 strong_stock 的 29.3% 重叠）
 2. `chanlun_strict`（840 行，性能差，单独 1-2 轮）
-3. `rps_breakout` + `volume_breakout`（决定合并方案）
-4. `right_side` / `macd_bull`（评估 D 簇是否值得保留两个）
-5. `bollinger_bands`（拆双模式）
-6. 其余
+3. `right_side` / `macd_bull`（评估 D 簇 21.5% 是否值得保留两个）
+4. `bollinger_bands`（拆双模式）
+5. 其余
+- 底反族（`td_sequential` / `rsi_oversold` / `chanlun_strict`）**全保留**：
+  数据证明三者两两 Jaccard < 4%，真互补，不再是合并候选。
 
 ---
 
-## 待回填（阶段 B 收尾条件）
+## 阶段 B 收尾 —— ✅ 已完成（2026-06-23）
 
-- [ ] 用户重启 web 后跑一次"只筛选"，`last_screen_result.json` 含 `all_hit_codes` 全集
-- [ ] 我用全集重跑两两 Jaccard，验证上述四簇预测
-- [ ] 同时拉 `/api/diagnostics?source=engine.precalc` 看 `[precalc 复用率]` 真实数据，决定 precalc 去留
-- [ ] 把校验后的真实 Jaccard 矩阵覆盖回本文档
+- [x] 跑全市场"只筛选"，拿到各策略 `all_hit_codes` 全集
+- [x] 全集两两 Jaccard 已算（见顶部矩阵），四簇预测大量翻车、已记录
+- [x] precalc 复用率 70.0%（见上文），决定保留
+- [x] 真实 Jaccard 矩阵已回填本文档顶部
 
-校验完成后，进入阶段 C。
+已进入阶段 C。
