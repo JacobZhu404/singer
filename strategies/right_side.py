@@ -23,7 +23,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 from ..utils.indicators import (
     calc_macd, calc_ma, calc_volume_ratio, calc_rsi
 )
@@ -55,7 +55,7 @@ class RightSideTradingStrategy(BaseStrategy):
         signals = []
         score = 0
         c = float(close.iloc[i])
-        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        vr = last_vol_ratio(vol_ratio, i)
 
         # ── 突破计算 ──
         breakout_20_pct = 0.0

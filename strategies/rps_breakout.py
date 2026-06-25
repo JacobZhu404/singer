@@ -24,7 +24,7 @@ import numpy as np
 from typing import Optional
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +113,7 @@ class RpsBreakoutStrategy(BaseStrategy):
                     signals.append("创120日新高")
 
         # ── 放量确认 ──
-        vol_ratio = indicators.get("vol_ratio")
-        vr = 1.0
-        if vol_ratio is not None and not pd.isna(vol_ratio.iloc[i]):
-            vr = float(vol_ratio.iloc[i])
+        vr = last_vol_ratio(indicators.get("vol_ratio"), i)
         if vr >= 2.0:
             score += 15
             signals.append(f"放量突破({vr:.1f}倍)")

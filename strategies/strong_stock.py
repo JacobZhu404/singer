@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 from ..utils.indicators import (
     calc_macd, calc_volume_ratio,
     is_red_candle, detect_gap_up,
@@ -118,7 +118,7 @@ class StrongStockStrategy(BaseStrategy):
             return None
 
         latest = close.iloc[i]
-        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        vr = last_vol_ratio(vol_ratio, i)
         quote = self._get_quote(scanner, code, float(latest))
         
         # 合并extra字典

@@ -72,6 +72,18 @@ class BaseStrategy(ABC):
         """数据不足或其他原因跳过该股票，不计入 scanned"""
         pass
 
+    def prepare_for_date(self, scanner, codes, trade_date: str) -> None:
+        """在评估单只股票前调用的横截面/全市场预处理 hook。
+
+        默认 no-op。横截面类策略（如 reversal）需要先看到**全部候选股**才能做排名，
+        在该 hook 里把结果挂到 scanner 上，evaluate 阶段只做查表。
+        - Web/CLI 路径：BaseStrategy.screen() 不直接调用，靠子类自己在 screen() 里编排
+          （reversal 现在就是这样）。
+        - 回测路径：BacktestEngine 每切换一次 (trade_date, strategy) 都会调用一次，
+          以此打通"先全市场排名再逐只评估"的两阶段流程。
+        """
+        return None
+
     @abstractmethod
     def _evaluate_single_stock(
         self,
@@ -261,6 +273,24 @@ class BaseStrategy(ABC):
             total_scanned=scanned,
             all_signals=candidates[:],
         )
+
+
+def last_vol_ratio(vol_ratio, i: int = -1, default: float = 1.0) -> float:
+    """安全读取量比序列在位置 i 的值，缺失时兜底 default。
+
+    统一各策略里 5 种写法不一的「取量比、兜底 1.0」逻辑：vol_ratio 可能为 None
+    （指标缺失），该位置可能为 NaN（窗口不足），下标也可能越界。此前部分策略只
+    判 NaN 不判 None，指标缺失时会 AttributeError。
+    """
+    if vol_ratio is None:
+        return default
+    try:
+        v = vol_ratio.iloc[i]
+    except (IndexError, KeyError):
+        return default
+    if pd.isna(v):
+        return default
+    return float(v)
 
 
 def _resolve_pct_col(df: pd.DataFrame) -> str:
