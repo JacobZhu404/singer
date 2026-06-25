@@ -223,7 +223,7 @@ class ScreenEngine:
         try:
             market_scanner.reset_indicator_stats()
         except Exception:
-            pass
+            logger.debug("reset_indicator_stats failed", exc_info=True)
         cache_size_before = len(market_scanner._indicator_cache)
 
         # [优化] 检查指标缓存，如果大部分已有则跳过或减少计算
@@ -915,7 +915,7 @@ class ScreenEngine:
                     "cache_size": stats["cache_size"],
                 })
             except Exception:
-                pass
+                logger.debug("obs.put_event precalc_reuse failed", exc_info=True)
         except Exception as e:
             logger.debug(f"precalc 复用率日志失败: {e}")
 

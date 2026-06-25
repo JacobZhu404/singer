@@ -266,7 +266,7 @@ def api_screen():
                 obs.error("web.api", "run_task", f"筛选任务异常: {e}",
                           context={"action": "任务终止"}, exc=e)
             except Exception:
-                pass
+                logger.debug("obs.error run_task failed", exc_info=True)
             _last_result = {"error": str(e)}
         finally:
             _is_running = False
@@ -303,7 +303,7 @@ def api_screen_progress():
                       f"读取进度失败: {e}",
                       context={"action": "返回上次快照"}, exc=e)
         except Exception:
-            pass
+            logger.debug("obs.error screen_progress failed", exc_info=True)
     return jsonify({"code": 0, "data": progress})
 
 
@@ -731,7 +731,7 @@ def api_screen_events():
                 msg = q.get(timeout=30)
                 yield msg
         except Exception:
-            pass
+            logger.debug("SSE generator ended (client disconnect or timeout)", exc_info=True)
         finally:
             with _sse_queues_lock:
                 if q in _sse_queues:
@@ -810,7 +810,7 @@ def api_portfolio():
                                  f"获取实时价失败: {e}",
                                  context={"code": code, "action": "回退到 current_price"})
                     except Exception:
-                        pass
+                        logger.debug("obs.warn fetch_price failed", exc_info=True)
                 return code, pos.get("current_price", 0)
 
             with ThreadPoolExecutor(max_workers=min(10, len(pf.positions))) as pool:
@@ -962,7 +962,7 @@ def api_portfolio_signals():
                              f"获取K线失败: {e}",
                              context={"code": code, "action": "用空 DataFrame 兜底"})
                 except Exception:
-                    pass
+                    logger.debug("obs.warn fetch_history failed", exc_info=True)
                 kl = pd.DataFrame()
             return {
                 "pos": pos,
