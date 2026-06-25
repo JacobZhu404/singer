@@ -28,7 +28,7 @@ import numpy as np
 from typing import Optional
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,7 @@ class TailMarketStrategy(BaseStrategy):
             return None
 
         # ── 量比 > 1 ──
-        vol_ratio = indicators.get("vol_ratio")
-        vr = float(vol_ratio.iloc[i]) if vol_ratio is not None and not pd.isna(vol_ratio.iloc[i]) else 1.0
+        vr = last_vol_ratio(indicators.get("vol_ratio"), i)
         if vr < self.VR_MIN:
             return None
 

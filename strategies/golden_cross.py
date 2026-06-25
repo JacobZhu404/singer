@@ -26,7 +26,7 @@ import numpy as np
 from typing import List
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class GoldenCrossStrategy(BaseStrategy):
             score += 25
 
         # ── 条件3：成交量确认（量比 > 1.5）──
-        vr = float(vol_ratio.iloc[i]) if not np.isnan(vol_ratio.iloc[i]) else 1.0
+        vr = last_vol_ratio(vol_ratio, i)
         if vr > 1.5:
             signals.append(f"放量({vr:.1f}倍)")
             score += 15

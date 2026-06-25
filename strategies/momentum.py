@@ -27,7 +27,7 @@ import numpy as np
 from typing import Optional, List
 import logging
 
-from .base import BaseStrategy, StockSignal, _compute_risk_flags
+from .base import BaseStrategy, StockSignal, _compute_risk_flags, last_vol_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,7 @@ class MomentumStrategy(BaseStrategy):
             signals.append(f"20日涨幅{change_20d:.1f}%")
 
         # ── 成交量确认 ──
-        vol_ratio = indicators["vol_ratio"]
-        vr = float(vol_ratio.iloc[i]) if not pd.isna(vol_ratio.iloc[i]) else 1.0
+        vr = last_vol_ratio(indicators["vol_ratio"], i)
 
         if vr > 1.5:
             signals.append(f"放量({vr:.1f}倍)")
