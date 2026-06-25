@@ -8,7 +8,6 @@ flask-cors>=4.0
 # 数据/计算（指标基于 pandas/numpy 自实现，无 TA-Lib 依赖）
 pandas==2.2.3
 numpy==1.26.4
-scipy>=1.11
 baostock>=0.9.0
 requests>=2.31
 

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 import logging
 
 from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
-from ..utils.indicators import calc_volume_ratio
+from ..utils.indicators import calc_volume_ratio, calc_macd
 
 logger = logging.getLogger(__name__)
 
@@ -396,36 +396,6 @@ def _find_pivots(strokes: List[Stroke]) -> List[Pivot]:
     return merged
 
 
-def _calc_macd(closes: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """计算MACD指标，返回 (dif, dea, macd_bar)"""
-    closes = np.asarray(closes, dtype=float)
-    # EMA
-    ema12 = _ema(closes, 12)
-    ema26 = _ema(closes, 26)
-    dif = ema12 - ema26
-    dea = _ema(dif, 9)
-    macd_bar = (dif - dea) * 2
-    return dif, dea, macd_bar
-
-
-def _ema(data: np.ndarray, span: int) -> np.ndarray:
-    """计算指数移动平均
-
-    EMA 等价于一阶 IIR 滤波器 y[t] = α·x[t] + (1-α)·y[t-1]，用 scipy.signal.lfilter
-    替代纯 Python 循环。基准测试 n=120/250 分别有 9x/16x 加速，输出与原循环
-    bit-for-bit 完全一致（max_abs_diff = 0.0）。
-    pd.Series.ewm 在 n<500 时由于 Series 创建开销反而比循环慢，故不用。
-    """
-    from scipy.signal import lfilter
-    alpha = 2.0 / (span + 1)
-    b = np.array([alpha])
-    a = np.array([1.0, -(1.0 - alpha)])
-    # zi 初始化让 y[0] = x[0]（与原循环 result[0] = data[0] 一致）
-    zi = np.array([(1.0 - alpha) * float(data[0])])
-    y, _ = lfilter(b, a, data, zi=zi)
-    return y
-
-
 def _detect_divergence_strokes(
     strokes: List[Stroke],
     bars: List[KBar],
@@ -447,8 +417,9 @@ def _detect_divergence_strokes(
     n = len(strokes)
 
     # ── 全序列MACD（一次性计算，避免热启动偏差）──
-    all_closes = np.array([b.close for b in bars], dtype=float)
-    all_dif, _, _ = _calc_macd(all_closes)
+    all_closes = pd.Series([b.close for b in bars], dtype=float)
+    dif_series, _, _ = calc_macd(all_closes)
+    all_dif = dif_series.to_numpy()
 
     # 找最近的下落笔（c段）和它之前的第一段下落笔（a段）
     for i in range(n - 1, 2, -1):
