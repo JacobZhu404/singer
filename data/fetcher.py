@@ -293,10 +293,42 @@ class MarketScanner:
         # 批量实时行情临时缓存（预计算阶段使用，避免逐只请求限流）
         self._realtime_batch: Dict[str, dict] = {}
         self._last_update_time: Optional[datetime] = None  # 最后更新时间
+        # 基本面快照：{code6: {pe, pb, mktcap_wan, nmc_wan, turnover}}，PE/PB 隔夜变化极小
+        self._fundamentals: Dict[str, Dict[str, Any]] = {}
 
     def load(self) -> bool:
         self._loaded = True
         return True
+
+    def ensure_fundamentals(
+        self,
+        force_refresh: bool = False,
+        progress_callback: Optional[Callable] = None,
+    ) -> Dict[str, dict]:
+        """加载或刷新全市场 PE/PB 快照，结果挂在 self._fundamentals 上。
+
+        失败时不抛异常（基本面是辅助维度，缺失只导致风险标签/惩罚不生效）。
+        """
+        if self._fundamentals and not force_refresh:
+            return self._fundamentals
+        try:
+            from .fundamentals import load_or_fetch_fundamentals
+            data = load_or_fetch_fundamentals(
+                force_refresh=force_refresh,
+                progress_callback=progress_callback,
+            )
+            self._fundamentals = data or {}
+        except Exception as e:
+            logger.warning(f"基本面加载失败（继续运行，无 PE/PB 维度）: {e}")
+            self._fundamentals = {}
+        return self._fundamentals
+
+    def get_fundamental(self, code: str) -> Dict[str, Any]:
+        """返回单只股票的基本面字典，未命中时返回空 dict"""
+        code6 = str(code).strip()
+        if len(code6) > 2 and code6[:2].lower() in ("sh", "sz", "bj"):
+            code6 = code6[2:]
+        return self._fundamentals.get(code6, {})
 
     def get_history(self, code: str, days: int = 60, pure: bool = False) -> pd.DataFrame:
         """
