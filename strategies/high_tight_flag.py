@@ -29,7 +29,7 @@ class HighTightFlagStrategy(BaseStrategy):
     """高紧旗形（欧奈尔）"""
     name = "high_tight_flag"
     description = "欧奈尔高紧旗形：旗杆暴涨+高位窄幅缩量整理，蓄势待突破"
-    base_win_rate = 0.55
+    base_win_rate = 0.47  # 30日实测胜率，2026-06-29 全量回测（仅18笔，噪声大）
 
     # 参数
     # 注：严格欧奈尔口径 POLE_MIN_GAIN=80% 在 52 周回测里只命中 3 笔（HTF 本就

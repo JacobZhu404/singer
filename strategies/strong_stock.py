@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class StrongStockStrategy(BaseStrategy):
     name = "strong_stock"
     description = "强势股 - 放量红肥绿瘦+小阳/缺口(互斥)+MACD零轴(v2优化)"
-    base_win_rate = 0.62
+    base_win_rate = 0.43  # 30日实测胜率，2026-06-29 全量回测
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         indicators = scanner.get_indicators(code, days=120)

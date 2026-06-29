@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class RightSideTradingStrategy(BaseStrategy):
     name = "right_side"
     description = "右侧交易 - 突破关键阻力位+放量+均线金叉"
-    base_win_rate = 0.58
+    base_win_rate = 0.49  # 30日实测胜率，2026-06-29 全量回测
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         indicators = scanner.get_indicators(code, days=120)

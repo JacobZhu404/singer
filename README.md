@@ -40,7 +40,8 @@ stock_screener/
 │   ├── td_sequential.py     # 神奇九转 (TD Sequential)
 │   ├── right_side.py        # 右侧交易
 │   ├── rsi_oversold.py      # RSI 超卖
-│   ├── bollinger_bands.py   # 布林带反弹
+│   ├── bollinger_lower_bounce.py # 布林下轨反弹（mean reversion）
+│   ├── bollinger_breakout.py     # 布林收口突破（波动率扩张）
 │   ├── volume_breakout.py   # 量价突破
 │   ├── chanlun_strict.py    # 缠论严格版（分型/笔/中枢/背驰/三类买点）
 │   ├── momentum.py          # 横截面动量
@@ -86,27 +87,45 @@ stock_screener/
 
 ---
 
-## 📊 选股策略（共 15 个）
+## 📊 选股策略（共 15 个，按语义簇分组）
 
-> 完整列表与详细审计见 `docs/strategies_index.md`；互补性矩阵（Jaccard + 嵌套率）见 `docs/strategies_phase_b.md`。
+> 完整列表与详细审计见 `docs/strategies_index.md`；互补性矩阵（Jaccard + 嵌套率）见 `docs/strategies_phase_b.md`；全策略 α 对照见 `docs/backtest_report.md`。
+
+### G1 · 趋势顺势（均线多头 + MACD 健康 + 顺势确认）
 
 | ID | 中文名 | 核心逻辑 |
 |---|---|---|
 | 📈 `macd_bull` | MACD 多头排列 | DIF/DEA 同时在零轴上，MACD 金叉 + 均线多头 |
-| 💪 `strong_stock` | 强势股 | 放量 + 红肥绿瘦 + 小阳/缺口 + MACD 零轴 |
-| 🔮 `td_sequential` | 神奇九转 | TD Sequential 买入九转 |
 | ⚡ `right_side` | 右侧交易 | 突破关键阻力 + 均线金叉 + MA60 + RSI 健康区 |
-| 📉 `rsi_oversold` | RSI 超卖 | RSI<30 + 回升 + 跌破 MA20 超跌 |
-| 📊 `bollinger_bands` | 布林带反弹 | 触及下轨 + 缩量止跌 |
-| 🚀 `volume_breakout` | 量价突破 | 量比 ≥2 + 突破 30 日高 |
-| 📐 `chanlun_strict` | 缠论严格版 | 分型→笔→中枢→背驰→三类买点 |
-| 🚀 `momentum` | 横截面动量 | 排名前 10% + 量能确认 |
+| 💪 `strong_stock` | 强势股 | 放量 + 红肥绿瘦 + 小阳/缺口 + MACD 零轴 |
 | ✨ `golden_cross` | 均线金叉（宽松） | 3 线多头 + RSI |
+| 🌅 `tail_market` | 尾盘强势 | 温和涨幅 + 量能 + 均线多头 + 收盘创新高 |
+| 🚀 `momentum` | 横截面动量 | 排名前 10% + 量能确认 |
+
+### G2 · 反转超跌（触底 / 超卖 / 均值回归）
+
+| ID | 中文名 | 核心逻辑 |
+|---|---|---|
+| 🔮 `td_sequential` | 神奇九转 | TD Sequential 买入九转 |
+| 📉 `rsi_oversold` | RSI 超卖 | RSI<30 + 回升 + 跌破 MA20 超跌 |
+| 📊 `bollinger_lower_bounce` | 布林下轨反弹 | 触及下轨 + 缩量止跌 |
+| 🔄 `reversal` | 横截面反转 | 近 5 日跌幅排名 + 当日企稳 |
+
+### G3 · 突破·创新高（量价突破 / RPS / 旗形 / 涨停基因）
+
+| ID | 中文名 | 核心逻辑 |
+|---|---|---|
+| 🚀 `volume_breakout` | 量价突破 | 量比 ≥2 + 突破 30 日高 |
+| 📊 `bollinger_breakout` | 布林收口突破 | 10 日最窄带宽 + 放量突破中轨/逼近上轨 |
 | 🏆 `rps_breakout` | RPS 相对强度突破 | 多周期 RPS 加权 + 创阶段新高 + 放量 |
 | 🚩 `high_tight_flag` | 高紧旗形 | 旗杆暴涨 + 高位窄幅缩量整理 |
-| 🌅 `tail_market` | 尾盘强势 | 温和涨幅 + 量能 + 均线多头 + 收盘创新高 |
-| 🔄 `reversal` | 横截面反转 | 近 5 日跌幅排名 + 当日企稳 |
 | 🔥 `limit_up_gene` | 涨停基因 v2 | 近期真封板 (`close==high`) + 回撤甜区 + 量价拐头 |
+
+### G4 · 形态独立（与全部其他策略 Jaccard < 8%）
+
+| ID | 中文名 | 核心逻辑 |
+|---|---|---|
+| 📐 `chanlun_strict` | 缠论严格版 | 分型→笔→中枢→背驰→三类买点 |
 
 ⚠️ 涨停次日可能无法实盘买入。回测中已用次日开盘价模拟入场，但仍可能不可得。
 
@@ -270,7 +289,7 @@ bash /opt/gezhe/stock_screener/deploy-tencent.sh
 
 回测细节：
 - 入场价：信号次日开盘价（T+1）；卖出按 horizon (2/5/10/30 日) close
-- 成本：双边滑点 0.10% × 2 + 佣金 0.03% × 2 + 印花税 0.05% ≈ **0.31% / 笔**
+- 成本：双边滑点 0.02%×2 + 佣金 万0.854×2 + 过户/规费 万1×2 + 印花税 0.05%(仅卖) ≈ **0.127% / 笔**（2026-06-26 实盘费率）
 - 基准：中证 1000 (`000852`)，因策略偏中小盘
 - 进程池：`spawn` context，避免 fork 状态污染
 
@@ -278,9 +297,9 @@ bash /opt/gezhe/stock_screener/deploy-tencent.sh
 
 **全策略 52 周 alpha 对照表见 [`docs/backtest_report.md`](docs/backtest_report.md)**，含：
 
-- 15 策略 × 4 个持有期（2/5/10/30 日）的 alpha 矩阵
+- 16 策略 × 4 个持有期（2/5/10/30 日）的 alpha 矩阵（全 universe 5052 只 × 51 交易日权威口径）
 - 短打型 / 长持型 / 均衡型 画像分类
-- 阶段 C 重构优先级（chanlun_strict 全场最弱、bollinger 拆双模式 等）
+- 阶段 C 优先级（全量下 tail_market/right_side/rps 居 30d 前三；bollinger_lower_bounce 全场最弱待去留；chanlun_strict 中游、弃用案作废）
 
 `backtest/results/*.json` 是每次回测的原始落盘，按 `.gitignore` 不入库；
 人工策展的报告（`docs/backtest_report.md`）随项目演进更新。

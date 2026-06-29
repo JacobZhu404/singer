@@ -37,7 +37,7 @@ class TailMarketStrategy(BaseStrategy):
     """尾盘强势（日线近似版）"""
     name = "tail_market"
     description = "尾盘选股法日线近似：温和上涨+量能配合+均线多头+收盘创新高"
-    base_win_rate = 0.54
+    base_win_rate = 0.50  # 30日实测胜率，2026-06-29 全量回测
 
     # 规则参数（略宽于原版以适应日线粒度）
     PCT_MIN = 2.5
