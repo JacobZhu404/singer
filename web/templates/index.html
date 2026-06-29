@@ -192,6 +192,8 @@
   .bt-table th, .bt-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .bt-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--bg, #0d1117); }
   .bt-table td.bt-name, .bt-table th.bt-name { text-align: left; }
+  .bt-name-cn { display: block; font-weight: 600; color: var(--text); }
+  .bt-name-en { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.2px; }
   .bt-table tr:hover td { background: rgba(255,255,255,0.03); }
   .bt-pos { color: var(--green, #3fb950); }
   .bt-neg { color: var(--red, #f85149); }
@@ -359,10 +361,18 @@
   .hold-days { font-size: 11px; color: var(--muted); }
 
   /* ── Result tabs (strategy tabs) ── */
-  .result-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
-  .result-tab { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; transition: all 0.15s; border-radius: 6px 6px 0 0; }
-  .result-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); }
-  .result-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(88,166,255,0.12); font-weight: 600; }
+  .result-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
+  .result-tab { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; cursor: help; color: var(--muted);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; transition: all 0.15s; line-height: 1.15; }
+  .result-tab .rt-icon { font-size: 15px; }
+  .result-tab .rt-names { display: flex; flex-direction: column; }
+  .result-tab .rt-cn { font-size: 13px; font-weight: 600; color: var(--text); }
+  .result-tab .rt-en { font-size: 10px; color: var(--muted); letter-spacing: 0.2px; text-transform: uppercase; opacity: 0.8; }
+  .result-tab .rt-count { font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--muted); }
+  .result-tab:hover { border-color: var(--accent); background: rgba(88,166,255,0.08); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+  .result-tab.active { border-color: var(--accent); background: rgba(88,166,255,0.16); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .result-tab.active .rt-cn { color: var(--accent); }
+  .result-tab.active .rt-count { background: var(--accent); color: #0d1117; }
 
   /* ── Modal ── */
   .modal h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
@@ -860,6 +870,7 @@ let riskFilter = 'all';  // all | safe | hide_high | conflict_only
 let _renderedStrategyTabs = new Set();  // 已渲染过的策略tab（用于增量更新）
 let lastPortfolioData = null;
 let portfolioSort = { key: null, asc: true };
+let _btCache = null;  // /api/backtest 结果缓存（策略tab悬停查实测效果用）
 
 async function loadRealtimeConfig() {
   try {
@@ -885,6 +896,8 @@ document.getElementById('realtimeToggle').addEventListener('change', async funct
 async function init() {
   await loadRealtimeConfig();
   await loadStrategies();
+  // 回测缓存先就绪，恢复上次结果时策略tab悬停即可显示实测效果
+  await initBacktestBadge();
   // 优先从 localStorage 恢复上次 UI 状态
   const hasRestored = restoreUIState();
   if (!hasRestored) {
@@ -896,7 +909,6 @@ async function init() {
   if (currentTopTab === 'portfolio') {
     switchTopTab('portfolio');
   }
-  initBacktestBadge();
 }
 
 // 在「📊 回测报告」按钮上显示最近一次回测的日期，提示数据新鲜度
@@ -907,12 +919,27 @@ async function initBacktestBadge() {
     const r = await fetch('/api/backtest');
     const j = await r.json();
     if (j.code === 0 && j.data && j.data.ran_at) {
+      _btCache = j.data;
       const n = Object.keys(j.data.strategies || {}).length;
       badge.textContent = `${n} 策略 · ${j.data.ran_at.slice(0, 10)}`;
     } else {
       badge.textContent = '未跑';
     }
   } catch (e) { badge.textContent = ''; }
+}
+
+// 策略tab悬停提示：返回该策略实测效果摘要（30日胜率/α + 各持有期α），供 title 属性用
+function btTabTitle(id) {
+  if (!_btCache || !_btCache.strategies) return '';
+  const st = _btCache.strategies[id];
+  if (!st) return '暂无回测数据';
+  const ps = st.period_stats || {};
+  const p30 = ps['30'];
+  const w30 = p30 ? (p30.win_rate * 100).toFixed(1) + '%' : '—';
+  const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const aLine = ['2', '5', '10', '30'].map(h => ps[h] ? `${h}日 α${fmt(ps[h].alpha)}` : `${h}日 —`).join('  ');
+  const thin = st.total_trades < 100 ? '  ⚠️笔数少噪声大' : '';
+  return `实测综合胜率(30日净收益为正占比) ${w30}\n${st.total_trades} 笔${thin}\n${aLine}`;
 }
 
 async function restoreLastResult() {
@@ -1371,7 +1398,10 @@ async function openBacktestReport() {
       <span>数据：${d.source}</span>`;
 
     const nameMap = {};
-    (strategies || []).forEach(s => { nameMap[s.id] = (s.icon ? s.icon + ' ' : '') + s.name; });
+    (strategies || []).forEach(s => {
+      const en = s.name_en ? `<span class="bt-name-en">${s.name_en}</span>` : '';
+      nameMap[s.id] = `<span class="bt-name-cn">${s.icon ? s.icon + ' ' : ''}${s.name}</span>${en}`;
+    });
     const holds = ['2', '5', '10', '30'];
     // 按 30 日 alpha 降序
     const rows = Object.entries(d.strategies)
@@ -2187,10 +2217,11 @@ function renderResult(data) {
   `;
 
   const tabs = document.getElementById('resultTabs');
-  let tabHtml = `<div class="result-tab active" onclick="switchResultTab('merged')">🏆 综合推荐 <span style="font-size:11px;color:var(--accent)">${picks.length}</span></div>`;
+  let tabHtml = mergedTabHtml(picks.length, true);
   Object.entries(details).forEach(([id, d]) => {
     const meta = strategies.find(s => s.id === id) || {};
-    tabHtml += `<div class="result-tab" onclick="switchResultTab('${id}')">${meta.icon||''} ${meta.name||id} <span style="font-size:11px;color:var(--muted)">${d.hit_count}</span></div>`;
+    const title = btTabTitle(id).replace(/"/g, '&quot;');
+    tabHtml += `<div class="result-tab" title="${title}" onclick="switchResultTab('${id}')">${resultTabInner(meta.icon, meta.name||id, meta.name_en||'', d.hit_count)}</div>`;
   });
   tabs.innerHTML = tabHtml;
 
@@ -2224,9 +2255,7 @@ function renderPartialResult(data) {
       <div class="info-card"><div class="label">📊 扫描股票</div><div class="value">-</div><div class="sub">计算中...</div></div>
       <div class="info-card"><div class="label">⚡ 执行策略</div><div class="value">0/${(data.strategies_run || []).length}</div><div class="sub">并行执行中</div></div>
     `;
-    document.getElementById('resultTabs').innerHTML = `
-      <div class="result-tab active" onclick="switchResultTab('merged')">🏆 综合推荐 <span style="font-size:11px;color:var(--accent)">-</span></div>
-    `;
+    document.getElementById('resultTabs').innerHTML = mergedTabHtml('-', true);
     const filterBar = document.getElementById('riskFilterBar');
     if (filterBar) filterBar.style.display = 'flex';
     document.getElementById('resultContent').innerHTML = `
@@ -2243,9 +2272,7 @@ function renderPartialResult(data) {
       // 新运行：重置结果框架（清除旧标签、计数）
       lastResult.strategies_run = newRun;
       lastResult.strategy_details = {};
-      document.getElementById('resultTabs').innerHTML = `
-        <div class="result-tab active" onclick="switchResultTab('merged')">🏆 综合推荐 <span style="font-size:11px;color:var(--accent)">-</span></div>
-      `;
+      document.getElementById('resultTabs').innerHTML = mergedTabHtml('-', true);
       document.getElementById('summaryCards').innerHTML = `
         <div class="info-card"><div class="label">📅 交易日</div><div class="value" style="font-size:18px">${data.trade_date || '-'}</div></div>
         <div class="info-card"><div class="label">🏆 综合推荐</div><div class="value">-</div><div class="sub">计算中...</div></div>
@@ -2283,6 +2310,19 @@ function renderPartialResult(data) {
   }
 }
 
+// 结果tab内部HTML（图标 + 中英文名 + 命中数），三处渲染共用
+function resultTabInner(icon, cn, en, count) {
+  return `<span class="rt-icon">${icon || ''}</span>`
+    + `<span class="rt-names"><span class="rt-cn">${cn}</span>`
+    + (en ? `<span class="rt-en">${en}</span>` : '')
+    + `</span><span class="rt-count">${count}</span>`;
+}
+// 综合推荐tab（中英文 + 悬停说明）
+function mergedTabHtml(count, active) {
+  return `<div class="result-tab${active ? ' active' : ''}" title="多策略加权合并的综合推荐榜" `
+    + `onclick="switchResultTab('merged')">${resultTabInner('🏆', '综合推荐', 'Top Picks', count)}</div>`;
+}
+
 function appendStrategyTab(id, detail) {
   const tabs = document.getElementById('resultTabs');
   if (!tabs) return;
@@ -2290,8 +2330,9 @@ function appendStrategyTab(id, detail) {
   const tab = document.createElement('div');
   tab.className = 'result-tab';
   tab.setAttribute('data-strategy', id);
+  tab.title = btTabTitle(id);
   tab.onclick = function(e) { switchResultTab(id, e); };
-  tab.innerHTML = `${meta.icon||''} ${meta.name||id} <span style="font-size:11px;color:var(--muted)">${detail.hit_count}</span>`;
+  tab.innerHTML = resultTabInner(meta.icon, meta.name || id, meta.name_en || '', detail.hit_count);
   tabs.appendChild(tab);
   _renderedStrategyTabs.add(id);
 }

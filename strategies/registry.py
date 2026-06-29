@@ -37,6 +37,7 @@ STRATEGY_REGISTRY = {
     "macd_bull": {
         "cls": MACDBullStrategy,
         "name": "MACD多头排列",
+        "name_en": "MACD Bull",
         "description": "DIF/DEA同时在零轴以上，MACD金叉，均线多头排列",
         "tags": ["趋势", "中线"],
         "icon": "📈",
@@ -46,6 +47,7 @@ STRATEGY_REGISTRY = {
     "right_side": {
         "cls": RightSideTradingStrategy,
         "name": "右侧交易",
+        "name_en": "Right-Side Trading",
         "description": "突破关键阻力位后介入，均线金叉，顺势而为",
         "tags": ["突破", "中线"],
         "icon": "⚡",
@@ -55,6 +57,7 @@ STRATEGY_REGISTRY = {
     "strong_stock": {
         "cls": StrongStockStrategy,
         "name": "强势股选股",
+        "name_en": "Strong Stock",
         "description": "放量+红肥绿瘦+小阳/缺口(互斥)+MACD零轴(v2优化)",
         "tags": ["强势", "短线"],
         "icon": "💪",
@@ -64,6 +67,7 @@ STRATEGY_REGISTRY = {
     "golden_cross": {
         "cls": GoldenCrossStrategy,
         "name": "均线金叉(宽松)",
+        "name_en": "Golden Cross (Loose)",
         "description": "macd_bull宽松版：3线多头+RSI，比macd_bull更早入场",
         "tags": ["金叉", "趋势", "均线", "宽松"],
         "icon": "✨",
@@ -73,6 +77,7 @@ STRATEGY_REGISTRY = {
     "tail_market": {
         "cls": TailMarketStrategy,
         "name": "尾盘强势(日线近似)",
+        "name_en": "Tail-Market Strength",
         "description": "温和涨幅+量能配合+均线多头+收盘创新高（缺市值/分时数据）",
         "tags": ["尾盘", "强势", "短线", "近似"],
         "icon": "🌅",
@@ -82,6 +87,7 @@ STRATEGY_REGISTRY = {
     "momentum": {
         "cls": MomentumStrategy,
         "name": "动量策略",
+        "name_en": "Momentum",
         "description": "价格动量排名前10%+量能确认，捕捉趋势延续",
         "tags": ["动量", "趋势", "强势"],
         "icon": "🚀",
@@ -95,6 +101,7 @@ STRATEGY_REGISTRY = {
     "td_sequential": {
         "cls": TDSequentialStrategy,
         "name": "神奇九转",
+        "name_en": "TD Sequential",
         "description": "TD Sequential买入九转，反转信号，适合短线抄底",
         "tags": ["反转", "短线"],
         "icon": "🔮",
@@ -104,6 +111,7 @@ STRATEGY_REGISTRY = {
     "rsi_oversold": {
         "cls": RSIOversoldStrategy,
         "name": "RSI 超卖",
+        "name_en": "RSI Oversold",
         "description": "RSI<30超卖区域，价格反弹概率高，适合震荡市抄底",
         "tags": ["超卖", "反弹", "短线"],
         "icon": "📉",
@@ -113,6 +121,7 @@ STRATEGY_REGISTRY = {
     "bollinger_lower_bounce": {
         "cls": BollingerLowerBounceStrategy,
         "name": "布林下轨反弹",
+        "name_en": "Bollinger Lower Bounce",
         "description": "价格触及布林带下轨或附近，配合缩量止跌，均值回归反弹",
         "tags": ["布林带", "反弹", "均值回归"],
         "icon": "📊",
@@ -122,6 +131,7 @@ STRATEGY_REGISTRY = {
     "reversal": {
         "cls": ReversalStrategy,
         "name": "横截面反转",
+        "name_en": "Cross-Sectional Reversal",
         "description": "全市场按近5日跌幅横截面排名+当日企稳，捕捉超跌反弹（A股短期反转效应）",
         "tags": ["反转", "超跌", "横截面", "短线"],
         "icon": "🔄",
@@ -135,6 +145,7 @@ STRATEGY_REGISTRY = {
     "volume_breakout": {
         "cls": VolumeBreakoutStrategy,
         "name": "量价突破",
+        "name_en": "Volume Breakout",
         "description": "量比>2倍 + 价格突破近期高点，视为有效突破信号",
         "tags": ["突破", "放量", "短线"],
         "icon": "🚀",
@@ -144,6 +155,7 @@ STRATEGY_REGISTRY = {
     "bollinger_breakout": {
         "cls": BollingerBreakoutStrategy,
         "name": "布林收口突破",
+        "name_en": "Bollinger Squeeze Breakout",
         "description": "布林带 10 日最窄 + 放量突破中轨 / 逼近上轨，捕捉波动率扩张起步",
         "tags": ["布林带", "收口", "突破", "波动率"],
         "icon": "📊",
@@ -153,6 +165,7 @@ STRATEGY_REGISTRY = {
     "rps_breakout": {
         "cls": RpsBreakoutStrategy,
         "name": "RPS相对强度突破",
+        "name_en": "RPS Breakout",
         "description": "欧奈尔RPS：多周期加权强度+创阶段新高+放量，捕捉领涨股",
         "tags": ["欧奈尔", "相对强度", "突破", "领涨"],
         "icon": "🏆",
@@ -162,6 +175,7 @@ STRATEGY_REGISTRY = {
     "high_tight_flag": {
         "cls": HighTightFlagStrategy,
         "name": "高紧旗形",
+        "name_en": "High Tight Flag",
         "description": "欧奈尔高紧旗形：旗杆暴涨+高位窄幅缩量整理，蓄势待突破",
         "tags": ["欧奈尔", "旗形", "强庄", "突破"],
         "icon": "🚩",
@@ -171,6 +185,7 @@ STRATEGY_REGISTRY = {
     "limit_up_gene": {
         "cls": LimitUpGeneStrategy,
         "name": "涨停基因",
+        "name_en": "Limit-Up Gene",
         "description": "近期真封板(close==high) + 回撤 5-18% 甜区 + 量价拐头 (v2，去循环引用)",
         "tags": ["涨停", "回踩", "短线"],
         "icon": "🔥",
@@ -184,6 +199,7 @@ STRATEGY_REGISTRY = {
     "chanlun_strict": {
         "cls": ChanlunStrictStrategy,
         "name": "缠论严格版",
+        "name_en": "Chanlun Strict",
         "description": "包含处理→分型(5K)→笔→中枢→背驰→三类买点（推荐）",
         "tags": ["缠论", "严格", "中枢", "背驰"],
         "icon": "📐",
@@ -207,6 +223,7 @@ def list_strategies():
         {
             "id": k,
             "name": v["name"],
+            "name_en": v.get("name_en", ""),
             "description": v["description"],
             "tags": v["tags"],
             "icon": v["icon"],
