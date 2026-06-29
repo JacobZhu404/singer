@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Callable
 
 import pandas as pd
 
-from ..strategies.base import ScreenResult, StockSignal
+from ..strategies.base import ScreenResult, StockSignal, bar_trade_date
 from ..strategies.registry import get_strategy, STRATEGY_REGISTRY
 from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
 from ..utils.market_trend import get_market_trend, get_market_trend_strength
@@ -1027,6 +1027,9 @@ class ScreenEngine:
                     try:
                         sig = future.result()
                         if sig is not None:
+                            # 信号日期对齐到所用数据最后一根 bar 的真实日期
+                            sig.trade_date = bar_trade_date(
+                                market_scanner, futures[future], fallback=trade_date)
                             signals.append(sig)
                     except Exception as e:
                         logger.debug(f"[持仓评估] {strategy_name} {futures[future]} 失败: {e}")

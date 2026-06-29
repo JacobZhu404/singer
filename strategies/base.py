@@ -16,6 +16,28 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def bar_trade_date(scanner, code: str, fallback: str = "") -> str:
+    """返回该股票所用数据**最后一根 bar 的真实日期**（YYYYMMDD）。
+
+    信号日期必须等于产生信号的那根 K 线的日期，而不是 wall-clock `datetime.now()`——
+    否则停牌/数据滞后的标的会被贴上"今天"的标签（历史上 000024 招商地产即此问题）。
+    所有策略都以最后一根 bar（`iloc[-1]`）作为"当前"，故取其日期即可对齐。
+    回测走 PIT scanner 时，最后一根 bar 即 as_of bar，同样自洽。
+
+    只在已命中的少量候选上调用；K 线已在评估阶段缓存，再取一次几乎零成本。
+    取不到日期时回退到 `fallback`（调用方传入的 wall-clock 兜底）。
+    """
+    try:
+        df = scanner.get_history(code, days=5)
+        if df is not None and len(df) and "date" in df.columns:
+            d = pd.to_datetime(df["date"].iloc[-1])
+            if pd.notna(d):
+                return d.strftime("%Y%m%d")
+    except Exception:
+        pass
+    return fallback
+
+
 @dataclass
 class StockSignal:
     """单只股票的策略信号"""
@@ -151,6 +173,9 @@ class BaseStrategy(ABC):
                 return None, False, None
             try:
                 sig = self._evaluate_single_stock(code, scanner, name_map, trade_date)
+                if sig is not None:
+                    # 信号日期对齐到所用数据最后一根 bar 的真实日期，而非 wall-clock
+                    sig.trade_date = bar_trade_date(scanner, code, fallback=trade_date)
                 return sig, True, None
             except self._SkipStock:
                 return None, False, None
@@ -265,11 +290,16 @@ class BaseStrategy(ABC):
             sig.score = round(sig.score * 0.6 + (1 - rank_pct) * 40, 1)
 
         candidates.sort(key=lambda x: x.score, reverse=True)
+        # 结果级日期对齐到命中信号里最新的那根 bar，标签与数据一致
+        result_date = trade_date
+        bar_dates = [s.trade_date for s in candidates if s.trade_date]
+        if bar_dates:
+            result_date = max(bar_dates)
         return ScreenResult(
             strategy_name=self.name,
             strategy_desc=self.description,
             signals=candidates[:self.top_n],
-            trade_date=trade_date,
+            trade_date=result_date,
             total_scanned=scanned,
             all_signals=candidates[:],
         )
