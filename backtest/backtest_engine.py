@@ -40,6 +40,7 @@ try:
         BACKTEST_SCORE_THRESHOLD as _ST,
         BACKTEST_SLIPPAGE_PCT as _SL,
         BACKTEST_COMMISSION_PCT as _CM,
+        BACKTEST_TRANSFER_PCT as _TR,
         BACKTEST_STAMP_DUTY_PCT as _SD,
         BACKTEST_BENCHMARK_CODE as _BC,
     )
@@ -47,21 +48,24 @@ try:
     SCORE_THRESHOLD = _ST
     SLIPPAGE_PCT = _SL
     COMMISSION_PCT = _CM
+    TRANSFER_PCT = _TR
     STAMP_DUTY_PCT = _SD
     BENCHMARK_CODE = _BC
 except ImportError:
     HOLD_PERIODS = [2, 5, 10, 30]
     SCORE_THRESHOLD = 40
-    SLIPPAGE_PCT = 0.0010
-    COMMISSION_PCT = 0.0003
+    SLIPPAGE_PCT = 0.0002
+    COMMISSION_PCT = 0.0000854
+    TRANSFER_PCT = 0.0001
     STAMP_DUTY_PCT = 0.0005
     BENCHMARK_CODE = "000001"
 
 # 双边交易成本 (%)：
-#   买入：滑点 + 佣金
-#   卖出：滑点 + 佣金 + 印花税（**单边收 0.05%**，A 股短周期回测里常被忽略，
+#   买入：滑点 + 佣金 + 过户/规费
+#   卖出：滑点 + 佣金 + 过户/规费 + 印花税（**单边收 0.05%**，A 股短周期回测里常被忽略，
 #          导致反转/T+N 信号收益被高估，见 factor-ic-findings）
-ROUND_TRIP_COST_PCT = ((SLIPPAGE_PCT + COMMISSION_PCT) * 2 + STAMP_DUTY_PCT) * 100
+# 2026-06-26 实盘费率调研后更新：双边 ≈ 0.127%（旧 0.31%）。
+ROUND_TRIP_COST_PCT = ((SLIPPAGE_PCT + COMMISSION_PCT + TRANSFER_PCT) * 2 + STAMP_DUTY_PCT) * 100
 
 # 缓存目录（本地 CSV 文件）
 _CACHE_DIR = os.path.join(

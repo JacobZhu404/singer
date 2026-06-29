@@ -6,6 +6,7 @@ from stock_screener.backtest.backtest_engine import (
     COMMISSION_PCT,
     ROUND_TRIP_COST_PCT,
     SLIPPAGE_PCT,
+    TRANSFER_PCT,
     STAMP_DUTY_PCT,
     _calc_future_returns,
     _calc_stats,
@@ -20,10 +21,10 @@ def test_round_trip_cost_positive():
 
 def test_round_trip_cost_includes_stamp_duty():
     """印花税仅卖出单边收，必须计入双边成本"""
-    expected = ((SLIPPAGE_PCT + COMMISSION_PCT) * 2 + STAMP_DUTY_PCT) * 100
+    expected = ((SLIPPAGE_PCT + COMMISSION_PCT + TRANSFER_PCT) * 2 + STAMP_DUTY_PCT) * 100
     assert abs(ROUND_TRIP_COST_PCT - expected) < 1e-9
-    # 比单纯滑点+佣金双倍大，差值正好是 stamp duty
-    without_stamp = (SLIPPAGE_PCT + COMMISSION_PCT) * 2 * 100
+    # 比单纯滑点+佣金+过户费双倍大，差值正好是 stamp duty
+    without_stamp = (SLIPPAGE_PCT + COMMISSION_PCT + TRANSFER_PCT) * 2 * 100
     assert abs((ROUND_TRIP_COST_PCT - without_stamp) - STAMP_DUTY_PCT * 100) < 1e-9
 
 
