@@ -777,7 +777,12 @@ class ChanlunStrictStrategy(BaseStrategy):
         trade_date: str,
     ) -> Optional[StockSignal]:
         """评估单只股票，返回StockSignal或None（并行架构）"""
-        df = scanner.get_history(code, days=120)
+        # 走 get_indicators（而非 get_history）以复用其新鲜度护栏：
+        # 实时盘会剔除停牌/退市标的；回测的 PointInTimeScanner 自带 as_of 切片，不受影响。
+        indicators = scanner.get_indicators(code, days=120)
+        if not indicators:
+            raise self._SkipStock()
+        df = indicators["kline"]
         if df is None or len(df) < 30:
             raise self._SkipStock()
 
