@@ -4,7 +4,7 @@
 不依赖 web、不发新网络请求，直接读 data/cache/klines/*.csv 跑：
   1. right_side  命中数（旧 60 阈值 + 未突破基础分 vs 新 80 阈值 + 必须突破）
   2. chanlun_strict 单只耗时（lfilter 优化已生效）
-  3. bollinger_bands 模式分布（mode1 / mode2 各占多少）
+  3. bollinger 双策略命中数（拆分后 lower_bounce vs breakout 各自独立）
 
 用法： python3 -m stock_screener.tools.bench_phase_c [N]
 N: 抽样股票数（默认 500，None 时全 5850）
@@ -26,7 +26,8 @@ logging.getLogger("stock_screener.utils.indicators").setLevel(logging.ERROR)
 from stock_screener.utils.indicators import compute_indicator_bundle
 from stock_screener.strategies.right_side import RightSideTradingStrategy
 from stock_screener.strategies.chanlun_strict import ChanlunStrictStrategy
-from stock_screener.strategies.bollinger_bands import BollingerBandsStrategy
+from stock_screener.strategies.bollinger_lower_bounce import BollingerLowerBounceStrategy
+from stock_screener.strategies.bollinger_breakout import BollingerBreakoutStrategy
 from stock_screener.strategies.volume_breakout import VolumeBreakoutStrategy
 
 
@@ -95,7 +96,8 @@ def main():
     bench_targets = [
         ("right_side", RightSideTradingStrategy()),
         ("chanlun_strict", ChanlunStrictStrategy()),
-        ("bollinger_bands", BollingerBandsStrategy()),
+        ("bollinger_lower_bounce", BollingerLowerBounceStrategy()),
+        ("bollinger_breakout", BollingerBreakoutStrategy()),
         ("volume_breakout", VolumeBreakoutStrategy()),
     ]
 
@@ -104,17 +106,12 @@ def main():
         hit = 0
         skipped = 0
         errored = 0
-        bb_mode_counter = {"lower_bounce": 0, "volatility_breakout": 0}
         t0 = time.perf_counter()
         for code in codes:
             try:
                 sig = strat._evaluate_single_stock(code, scanner, name_map, trade_date)
                 if sig is not None:
                     hit += 1
-                    if name == "bollinger_bands":
-                        m = (sig.extra or {}).get("mode")
-                        if m in bb_mode_counter:
-                            bb_mode_counter[m] += 1
                 else:
                     skipped += 1
             except strat._SkipStock:
@@ -132,10 +129,7 @@ def main():
             "elapsed_s": elapsed,
             "per_stock_us": per_stock_us,
         }
-        line = f"  {name:18s}: hit={hit:4d}  skip={skipped:4d}  err={errored:3d}  total={elapsed:6.2f}s  per={per_stock_us:7.0f}μs"
-        if name == "bollinger_bands":
-            line += f"  [mode1={bb_mode_counter['lower_bounce']} mode2={bb_mode_counter['volatility_breakout']}]"
-        print(line)
+        print(f"  {name:24s}: hit={hit:4d}  skip={skipped:4d}  err={errored:3d}  total={elapsed:6.2f}s  per={per_stock_us:7.0f}μs")
 
     print()
     print("📊 解读：")
@@ -143,8 +137,8 @@ def main():
     print(f"  • right_side hit={rs['hit']} (旧逻辑常 ≥300 被 top_n 截断)")
     cl = results["chanlun_strict"]
     print(f"  • chanlun_strict {cl['per_stock_us']/1000:.1f}ms/只 (lfilter 优化前 typical ≥10ms)")
-    bb = results["bollinger_bands"]
-    print(f"  • bollinger 总命中 {bb['hit']}（双模式互斥拆分后）")
+    lb = results["bollinger_lower_bounce"]; bk = results["bollinger_breakout"]
+    print(f"  • bollinger 拆分: lower_bounce={lb['hit']} / breakout={bk['hit']}（拆分前合并命中 ≈ 二者之和，互斥）")
 
 
 if __name__ == "__main__":
