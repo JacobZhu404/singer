@@ -31,7 +31,7 @@ class ReversalStrategy(BaseStrategy):
     """横截面反转（近 N 日跌幅居前 + 企稳确认）"""
     name = "reversal"
     description = "全市场横截面反转：近5日跌幅居前+当日企稳，捕捉超跌反弹（依据A股短期反转效应）"
-    base_win_rate = 0.53
+    base_win_rate = 0.43  # 30日实测胜率，2026-06-29 全量回测
 
     lookback = 5          # 反转窗口（交易日）
     min_rev_score = 70.0  # 横截面反转分阈值（取跌幅居前的约 30%）

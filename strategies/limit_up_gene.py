@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 class LimitUpGeneStrategy(BaseStrategy):
     name = "limit_up_gene"
     description = "涨停基因 - 近期真封板+回踩企稳+量价拐头（v2）"
-    base_win_rate = 0.55  # 旧版 0.65 无数据背书，下调至中性
+    base_win_rate = 0.45  # 30日实测胜率，2026-06-29 全量回测
 
     # 形态参数（可被回测网格替换）
     lookback = 15            # 回看几天找封板

@@ -187,6 +187,20 @@
   .diag-toolbar select, .diag-toolbar input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
   .diag-summary { padding: 8px 16px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; gap: 16px; flex-wrap: wrap; }
   .diag-events { flex:1; overflow-y: auto; padding: 8px 16px; font-family: monospace; font-size: 12px; }
+  /* 回测 alpha 表 */
+  .bt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .bt-table th, .bt-table td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .bt-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--bg, #0d1117); }
+  .bt-table td.bt-name, .bt-table th.bt-name { text-align: left; }
+  .bt-table tr:hover td { background: rgba(255,255,255,0.03); }
+  .bt-pos { color: var(--green, #3fb950); }
+  .bt-neg { color: var(--red, #f85149); }
+  .bt-thin { color: var(--yellow, #d29922); font-size: 11px; }
+  /* 策略 modal 内嵌的回测小表 */
+  .tt-bt-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .tt-bt-table th, .tt-bt-table td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--border); }
+  .tt-bt-table th { color: var(--muted); font-weight: 600; }
+  .tt-bt-table td.tt-bt-h, .tt-bt-table th.tt-bt-h { text-align: left; color: var(--muted); }
   .diag-row { padding: 6px 8px; margin: 4px 0; border-radius: 4px; border-left: 3px solid var(--border); background: rgba(255,255,255,0.02); }
   .diag-row.error { border-left-color: var(--red); background: rgba(248,81,73,0.05); }
   .diag-row.warn { border-left-color: var(--yellow); background: rgba(210,153,34,0.05); }
@@ -635,6 +649,12 @@
         <span id="diagBadgeContainer" style="display:flex;gap:4px"></span>
       </button>
 
+      <!-- 回测报告按钮 -->
+      <button class="diag-btn" id="backtestBtn" onclick="openBacktestReport()" title="查看全策略历史回测 alpha 对照" style="margin-top:6px">
+        <span>📊 回测报告</span>
+        <span id="backtestBadge" style="font-size:11px;color:var(--muted)"></span>
+      </button>
+
       <!-- 通达信离线数据一键导入 -->
       <button class="diag-btn" id="tdxImportBtn" onclick="openTdxImportModal()" title="从通达信官网下载完整日线数据包并导入到本地（解压到 data/tdx_vipdoc/）" style="margin-top:6px">
         <span>📦 导入通达信离线数据</span>
@@ -710,6 +730,18 @@
   <!-- Strategy Info Modal -->
   <div class="modal-overlay" id="strategyModal" onclick="if(event.target===this)closeStrategyModal()">
     <div class="modal-box" id="modalContent"></div>
+  </div>
+
+  <!-- Backtest Report Modal -->
+  <div class="diag-modal" id="backtestModal" onclick="if(event.target===this)closeBacktestReport()">
+    <div class="diag-box">
+      <div class="diag-head">
+        <h3>📊 全策略回测报告 <span style="font-size:11px;color:var(--muted);margin-left:8px">alpha = 策略收益 − 基准</span></h3>
+        <button class="modal-close" onclick="closeBacktestReport()">✕</button>
+      </div>
+      <div class="diag-summary" id="backtestSummary"></div>
+      <div class="diag-events" id="backtestBody" style="font-family:inherit">加载中...</div>
+    </div>
   </div>
 
   <!-- Main -->
@@ -864,6 +896,23 @@ async function init() {
   if (currentTopTab === 'portfolio') {
     switchTopTab('portfolio');
   }
+  initBacktestBadge();
+}
+
+// 在「📊 回测报告」按钮上显示最近一次回测的日期，提示数据新鲜度
+async function initBacktestBadge() {
+  const badge = document.getElementById('backtestBadge');
+  if (!badge) return;
+  try {
+    const r = await fetch('/api/backtest');
+    const j = await r.json();
+    if (j.code === 0 && j.data && j.data.ran_at) {
+      const n = Object.keys(j.data.strategies || {}).length;
+      badge.textContent = `${n} 策略 · ${j.data.ran_at.slice(0, 10)}`;
+    } else {
+      badge.textContent = '未跑';
+    }
+  } catch (e) { badge.textContent = ''; }
 }
 
 async function restoreLastResult() {
@@ -942,7 +991,7 @@ async function checkStatus() {
 // ── 默认策略集（不含涨停基因） ──
 const DEFAULT_STRATEGIES = [
   'macd_bull', 'strong_stock', 'td_sequential', 'right_side',
-  'rsi_oversold', 'bollinger_bands', 'volume_breakout', 'chanlun_strict'
+  'rsi_oversold', 'bollinger_lower_bounce', 'volume_breakout', 'chanlun_strict'
 ];
 
 function selectDefaultStrategies(silent = false) {
@@ -1034,7 +1083,7 @@ const STRATEGY_TOOLTIPS = {
       { text: 'DIF > DEA（持续金叉）', score: '+15', meaning: '快线领先慢线，涨势延续' },
       { text: 'MACD柱连续3日放大', score: '+15', meaning: '动能持续增强，红柱扩张' },
     ],
-    threshold: '综合评分 ≥ 50 分，胜率约 60%',
+    threshold: '综合评分 ≥ 50 分',
   },
   strong_stock: {
     title: '强势股选股策略',
@@ -1049,7 +1098,7 @@ const STRATEGY_TOOLTIPS = {
       { text: '跳空高开缺口', score: '+20', meaning: '强势跳空，动能强劲' },
       { text: '外盘 > 内盘（主动买盘）', score: '+10', meaning: '主动买盘强于卖盘' },
     ],
-    threshold: '综合评分 ≥ 50 分，胜率约 57%',
+    threshold: '综合评分 ≥ 50 分',
   },
   td_sequential: {
     title: '神奇九转策略',
@@ -1062,7 +1111,7 @@ const STRATEGY_TOOLTIPS = {
       { text: '成交量萎缩配合', score: '+15', meaning: '抛压枯竭，底部特征' },
       { text: '触发设置完成', score: '+15', meaning: '满足全部TD条件' },
     ],
-    threshold: '计数达到 9 为核心信号，胜率约 55%',
+    threshold: '计数达到 9 为核心信号',
   },
   right_side: {
     title: '右侧交易策略',
@@ -1077,7 +1126,7 @@ const STRATEGY_TOOLTIPS = {
       { text: 'MACD零轴以上', score: '+10', meaning: '动能充沛，确认趋势' },
       { text: '启动未过热（近5日涨幅<10%）', score: '+10', meaning: '非追高，低位启动' },
     ],
-    threshold: '综合评分 ≥ 40 分，胜率约 56%',
+    threshold: '综合评分 ≥ 40 分',
   },
   rsi_oversold: {
     title: 'RSI 超卖策略',
@@ -1089,10 +1138,10 @@ const STRATEGY_TOOLTIPS = {
       { text: 'RSI(14) 处于 30~40 低位', score: '+15', meaning: '相对弱势，但未超卖' },
       { text: '价格 < 20日均线超跌', score: '+10', meaning: '价格偏离均线，有回归需求' },
     ],
-    threshold: 'RSI < 30 是核心条件，评分 ≥ 40 分，胜率约 55%',
+    threshold: 'RSI < 30 是核心条件，评分 ≥ 40 分',
   },
-  bollinger_bands: {
-    title: '布林带反弹策略',
+  bollinger_lower_bounce: {
+    title: '布林下轨反弹策略',
     icon: '📊',
     principle: '布林带基于统计学原理，价格触及下轨属于小概率事件，反弹概率高。适合震荡市低位埋伏。',
     conditions: [
@@ -1101,7 +1150,20 @@ const STRATEGY_TOOLTIPS = {
       { text: '昨日触及下轨今日反弹', score: '+20', meaning: '短期触底信号' },
       { text: '缩量止跌（量比<0.6）', score: '+10', meaning: '抛压枯竭，空方衰竭' },
     ],
-    threshold: '触及布林下轨为核心条件，评分 ≥ 40 分，胜率约 55%',
+    threshold: '触及布林下轨为核心条件，评分 ≥ 60 分',
+  },
+  bollinger_breakout: {
+    title: '布林收口突破策略',
+    icon: '📊',
+    principle: '布林带收口意味着波动率被压缩，往往在短期内以「放量突破」形式释放。捕捉趋势启动而非均值回归，与下轨反弹互斥。',
+    conditions: [
+      { text: '布林带 10 日最窄 (×1.05 以内)', score: '+25', meaning: '波动率压缩，蓄势待发' },
+      { text: '放量（量比 > 1.5×）', score: '+20', meaning: '资金推动突破' },
+      { text: '量能温和（量比 > 1.2×）', score: '+10', meaning: '资金温和介入' },
+      { text: '价格突破布林中轨', score: '+15', meaning: '突破均值，多方占优' },
+      { text: '价格逼近布林上轨（≥0.98×upper）', score: '+30', meaning: '波动率扩张明显' },
+    ],
+    threshold: '收口 + 放量 + 突破中轨/逼近上轨为核心，评分 ≥ 60 分',
   },
   volume_breakout: {
     title: '量价突破策略',
@@ -1116,7 +1178,7 @@ const STRATEGY_TOOLTIPS = {
       { text: '量能持续放大（连续2日）', score: '+10', meaning: '资金持续流入，趋势延续' },
       { text: '今日收阳线', score: '+10', meaning: '多方占优，收盘强势' },
     ],
-    threshold: '量比>2 + 突破30日高点为核心，评分 ≥ 40 分，胜率约 56%',
+    threshold: '量比>2 + 突破30日高点为核心，评分 ≥ 40 分',
   },
   chanlun_strict: {
     title: '缠论严格版策略',
@@ -1160,7 +1222,7 @@ const STRATEGY_TOOLTIPS = {
       { text: 'RSI 50~65趋势确认', score: '+10', meaning: '趋势健康但未超买' },
       { text: 'MACD零轴上方', score: '+10', meaning: '多头动能确认' },
     ],
-    threshold: '综合评分 ≥ 40 分，胜率约 55%',
+    threshold: '综合评分 ≥ 40 分',
   },
   chan20: {
     title: '缠20策略',
@@ -1212,11 +1274,71 @@ function openStrategyModal(id) {
           <div class="tt-label">通过标准</div>
           <div class="tt-threshold">${t.threshold}</div>
         </div>
+        <div class="tt-section" id="modalBacktest_${id}">
+          <div class="tt-label">历史回测（含成本 alpha）</div>
+          <div style="color:var(--muted);font-size:12px">加载中...</div>
+        </div>
       </div>
     `;
+    fillStrategyBacktest(id);
   }
   overlay.classList.add('show');
   _activeModal = id;
+}
+
+// 拉取并渲染单策略回测小表，注入策略详情 modal
+async function fillStrategyBacktest(id) {
+  const box = document.getElementById('modalBacktest_' + id);
+  if (!box) return;
+  try {
+    const r = await fetch('/api/backtest?strategy=' + encodeURIComponent(id));
+    const j = await r.json();
+    if (j.code !== 0 || !j.data || !j.data.strategies[id]) {
+      box.innerHTML = `<div class="tt-label">历史回测</div><div style="color:var(--muted);font-size:12px">暂无回测数据</div>`;
+      return;
+    }
+    const st = j.data.strategies[id];
+    const ps = st.period_stats || {};
+    const holds = ['2', '5', '10', '30'];
+    const rows = holds.map(h => {
+      const s = ps[h];
+      if (!s) return `<tr><td class="tt-bt-h">${h} 日</td><td>—</td><td>—</td><td>—</td></tr>`;
+      return `<tr>
+        <td class="tt-bt-h">${h} 日</td>
+        <td class="${s.alpha >= 0 ? 'bt-pos' : 'bt-neg'}">${fmtPct(s.alpha)}</td>
+        <td>${(s.win_rate * 100).toFixed(1)}%</td>
+        <td>${fmtPct(s.avg_return)}</td>
+      </tr>`;
+    }).join('');
+    const meta = j.data.meta || {};
+    const cost = meta.round_trip_cost_pct != null ? meta.round_trip_cost_pct.toFixed(3) + '%' : '—';
+    const p30 = ps['30'];
+    const w30 = p30 ? (p30.win_rate * 100).toFixed(1) + '%' : '—';
+    const a30 = p30 ? fmtPct(p30.alpha) : '—';
+    const w30col = p30 ? (p30.win_rate >= 0.5 ? 'bt-pos' : 'bt-neg') : '';
+    box.innerHTML = `
+      <div class="tt-label">实测综合胜率（30 日持有 · 净收益为正占比）</div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin:2px 0 10px">
+        <span class="${w30col}" style="font-size:26px;font-weight:700">${w30}</span>
+        <span style="font-size:12px;color:var(--muted)">${st.total_trades} 笔 · 30 日 α ${a30}
+        ${st.total_trades < 100 ? '<span class="bt-thin"> · ⚠️ 笔数偏少，统计噪声大</span>' : ''}</span>
+      </div>
+      <div class="tt-label">各持有期明细（已扣双边成本 ${cost}）</div>
+      <table class="tt-bt-table">
+        <thead><tr><th class="tt-bt-h">持有期</th><th>α</th><th>胜率</th><th>策略收益</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="color:var(--muted);font-size:11px;margin-top:6px">
+        基准 ${meta.benchmark_code || '—'} · 跑出 ${j.data.ran_at} · 数据 ${j.data.source}
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="tt-label">历史回测</div><div style="color:var(--muted);font-size:12px">加载失败：${e}</div>`;
+  }
+}
+
+function fmtPct(x) {
+  if (x == null || isNaN(x)) return '—';
+  return (x >= 0 ? '+' : '') + x.toFixed(2) + '%';
 }
 
 function closeStrategyModal() {
@@ -1225,8 +1347,78 @@ function closeStrategyModal() {
   _activeModal = null;
 }
 
+// ── 全局回测报告 ──────────────────────────────────────────────────
+async function openBacktestReport() {
+  const modal = document.getElementById('backtestModal');
+  const summary = document.getElementById('backtestSummary');
+  const body = document.getElementById('backtestBody');
+  modal.classList.add('show');
+  body.innerHTML = '加载中...';
+  summary.innerHTML = '';
+  try {
+    const r = await fetch('/api/backtest');
+    const j = await r.json();
+    if (j.code !== 0 || !j.data) {
+      body.innerHTML = `<div style="color:var(--muted);padding:20px">${j.msg || '暂无回测数据，请先运行 tools/full_backtest.py'}</div>`;
+      return;
+    }
+    const d = j.data, meta = d.meta || {};
+    const cost = meta.round_trip_cost_pct != null ? meta.round_trip_cost_pct.toFixed(3) + '%' : '—';
+    summary.innerHTML = `
+      <span>跑出时间：<b>${d.ran_at}</b></span>
+      <span>双边成本：<b>${cost}</b></span>
+      <span>基准：<b>${meta.benchmark_code || '—'}</b></span>
+      <span>数据：${d.source}</span>`;
+
+    const nameMap = {};
+    (strategies || []).forEach(s => { nameMap[s.id] = (s.icon ? s.icon + ' ' : '') + s.name; });
+    const holds = ['2', '5', '10', '30'];
+    // 按 30 日 alpha 降序
+    const rows = Object.entries(d.strategies)
+      .map(([id, st]) => ({ id, st, a30: (st.period_stats && st.period_stats['30']) ? st.period_stats['30'].alpha : -1e9 }))
+      .sort((a, b) => b.a30 - a.a30);
+
+    const head = `<tr>
+      <th class="bt-name">策略</th><th>笔数</th>
+      ${holds.map(h => `<th>α(${h}d)</th>`).join('')}
+      <th>胜率(30d)</th></tr>`;
+    const trs = rows.map(({ id, st }) => {
+      const ps = st.period_stats || {};
+      const thin = st.total_trades < 100;
+      const aCells = holds.map(h => {
+        const s = ps[h];
+        if (!s) return '<td>—</td>';
+        return `<td class="${s.alpha >= 0 ? 'bt-pos' : 'bt-neg'}">${fmtPct(s.alpha)}</td>`;
+      }).join('');
+      const w30 = ps['30'] ? (ps['30'].win_rate * 100).toFixed(1) + '%' : '—';
+      return `<tr>
+        <td class="bt-name">${nameMap[id] || id}${thin ? ' <span class="bt-thin">⚠️</span>' : ''}</td>
+        <td>${st.total_trades}</td>
+        ${aCells}
+        <td>${w30}</td></tr>`;
+    }).join('');
+
+    body.innerHTML = `
+      <table class="bt-table">
+        <thead>${head}</thead>
+        <tbody>${trs}</tbody>
+      </table>
+      <div style="color:var(--muted);font-size:11px;margin-top:10px">
+        按 30 日 α 降序。<span class="bt-thin">⚠️</span> 标记笔数 &lt;100，统计噪声大、结论需谨慎。
+        点击左侧策略卡片的「?」可看单策略全持有期明细。
+      </div>`;
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--muted);padding:20px">加载失败：${e}</div>`;
+  }
+}
+
+function closeBacktestReport() {
+  const modal = document.getElementById('backtestModal');
+  if (modal) modal.classList.remove('show');
+}
+
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeStrategyModal();
+  if (e.key === 'Escape') { closeStrategyModal(); closeBacktestReport(); }
 });
 
 function renderStrategyList() {

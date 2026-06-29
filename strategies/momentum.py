@@ -40,7 +40,7 @@ class MomentumStrategy(BaseStrategy):
     """
     name = "momentum"
     description = "价格动量强度+量能确认，捕捉趋势延续"
-    base_win_rate = 0.58
+    base_win_rate = 0.42  # 30日实测胜率，2026-06-29 全量回测
 
     def __init__(self, top_n: int = 10, lookback_days: int = 20):
         super().__init__(top_n=top_n)

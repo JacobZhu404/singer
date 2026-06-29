@@ -14,6 +14,7 @@
 不包含：线段（需特征序列+线段破坏）、多级别递归
 """
 
+import os
 import pandas as pd
 import numpy as np
 from typing import List, Tuple, Optional, Dict, NamedTuple
@@ -24,6 +25,12 @@ from .base import BaseStrategy, StockSignal, ScreenResult, _compute_risk_flags
 from ..utils.indicators import calc_volume_ratio, calc_macd
 
 logger = logging.getLogger(__name__)
+
+# 参数扫描钩子（默认即生产值；通过 env 调整可让进程池 spawn 子进程同步生效）
+# CHANLUN_MIN_SCORE：最低评分门槛（默认 65）
+# CHANLUN_DIV_TOL：底背驰 DIF 容差，c_dif_min > a_dif_min * tol（默认 0.90，越大越严）
+_MIN_SCORE = int(os.environ.get("CHANLUN_MIN_SCORE", "65"))
+_DIVERGENCE_DIF_TOL = float(os.environ.get("CHANLUN_DIV_TOL", "0.90"))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 数据结构
@@ -460,8 +467,8 @@ def _detect_divergence_strokes(
         a_dif_min = float(np.min(a_dif_vals))
         c_dif_min = float(np.min(c_dif_vals))
 
-        # DIF未创新低 → 底背驰
-        dif_weak = c_dif_min > a_dif_min * 0.90  # 容差10%
+        # DIF未创新低 → 底背驰（容差由 _DIVERGENCE_DIF_TOL 控制，默认 0.90）
+        dif_weak = c_dif_min > a_dif_min * _DIVERGENCE_DIF_TOL
 
         if price_broke and dif_weak:
             price_drop = (a_stroke.end_price - c_stroke.end_price) / a_stroke.end_price
@@ -760,7 +767,7 @@ class ChanlunStrictStrategy(BaseStrategy):
     """
     name = "chanlun_strict"
     description = "严格缠论（均衡版）：包含处理→分型→笔→中枢→背驰→三类买点"
-    base_win_rate = 0.60  # 优化：加入中枢精度验证+线段验证
+    base_win_rate = 0.52  # 30日实测胜率，2026-06-29 全量回测
 
     def _evaluate_single_stock(
         self,
@@ -783,8 +790,8 @@ class ChanlunStrictStrategy(BaseStrategy):
         if not (has_buy_point or has_divergence):
             return None
 
-        # 收紧阈值：55→65，控制命中数
-        if score < 65:
+        # 阈值由 _MIN_SCORE 控制（默认 65；参数扫描走 env CHANLUN_MIN_SCORE）
+        if score < _MIN_SCORE:
             return None
 
         # 实时行情：与其他策略统一走 _get_quote（API 宕机自动兜底为 0），避免本策略

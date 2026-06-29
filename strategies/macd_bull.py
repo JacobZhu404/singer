@@ -45,7 +45,7 @@ class MACDBullStrategy(BaseStrategy):
     """
     name = "macd_bull"
     description = "MACD零轴金叉+四线多头+趋势确立，中线持仓首选"
-    base_win_rate = 0.60
+    base_win_rate = 0.46  # 30日实测胜率，2026-06-29 全量回测
 
     def _evaluate_single_stock(
         self,

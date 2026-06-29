@@ -30,7 +30,7 @@ class VolumeBreakoutStrategy(BaseStrategy):
     """量价突破策略（优化版）"""
     name = "volume_breakout"
     description = "量比>2倍+价格突破+回踩确认，有效突破信号"
-    base_win_rate = 0.58  # 优化：提高胜率预估
+    base_win_rate = 0.45  # 30日实测胜率，2026-06-29 全量回测
 
     def __init__(self, top_n: int = 20):
         super().__init__(top_n)

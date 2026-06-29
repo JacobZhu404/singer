@@ -30,7 +30,7 @@ class RSIOversoldStrategy(BaseStrategy):
     """RSI 超卖策略（优化版）"""
     name = "rsi_oversold"
     description = "RSI < 30 超卖+RSI背离检测+趋势过滤，震荡市抄底"
-    base_win_rate = 0.58  # 优化：提高胜率预估
+    base_win_rate = 0.66  # 30日实测胜率，2026-06-29 全量回测（全场最高）
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         indicators = scanner.get_indicators(code, days=120)

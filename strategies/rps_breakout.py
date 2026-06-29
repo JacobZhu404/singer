@@ -33,7 +33,7 @@ class RpsBreakoutStrategy(BaseStrategy):
     """RPS 相对强度突破（欧奈尔领涨股）"""
     name = "rps_breakout"
     description = "欧奈尔RPS：多周期加权强度+创阶段新高+放量突破，捕捉领涨股"
-    base_win_rate = 0.58
+    base_win_rate = 0.46  # 30日实测胜率，2026-06-29 全量回测
 
     def __init__(self, top_n: int = 10):
         super().__init__(top_n=top_n)

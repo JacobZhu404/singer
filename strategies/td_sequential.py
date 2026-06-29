@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class TDSequentialStrategy(BaseStrategy):
     name = "td_sequential"
     description = "神奇九转 - TD Sequential 买入九转信号（9计数完成+确认）"
-    base_win_rate = 0.58  # 优化：提前预警count=8，降低胜率预期
+    base_win_rate = 0.46  # 30日实测胜率，2026-06-29 全量回测
 
     def _evaluate_single_stock(self, code, scanner, name_map, trade_date):
         indicators = scanner.get_indicators(code, days=120)

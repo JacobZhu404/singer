@@ -717,6 +717,57 @@ def api_diagnostics_clear():
         return jsonify({"code": 1, "msg": str(e)}), 500
 
 
+@app.route("/api/backtest", methods=["GET"])
+def api_backtest():
+    """返回最新一次全策略回测结果（读 backtest/results/ 下最新 backtest_*.json）。
+
+    Query params:
+        strategy : 只返回指定策略的统计（可选）
+
+    Response data:
+        { ran_at, source, meta, strategies: { name: {total_trades, period_stats:{hold:{...}}} } }
+    """
+    import glob
+    try:
+        results_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "backtest", "results",
+        )
+        files = sorted(glob.glob(os.path.join(results_dir, "backtest_*.json")))
+        if not files:
+            return jsonify({"code": 1, "msg": "尚无回测结果，请先运行 tools/full_backtest.py", "data": None})
+        latest = files[-1]
+        with open(latest, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        meta = raw.pop("__meta__", {})
+        # 文件名形如 backtest_20260629_105237.json → 解析跑出时间
+        stem = os.path.splitext(os.path.basename(latest))[0].replace("backtest_", "")
+        try:
+            ran_at = datetime.strptime(stem, "%Y%m%d_%H%M%S").strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            try:
+                ran_at = datetime.strptime(stem, "%Y%m%d").strftime("%Y-%m-%d")
+            except ValueError:
+                ran_at = stem
+
+        want = request.args.get("strategy")
+        if want:
+            if want not in raw:
+                return jsonify({"code": 1, "msg": f"回测结果中无策略 {want}", "data": None})
+            strategies = {want: raw[want]}
+        else:
+            strategies = raw
+
+        return jsonify({"code": 0, "data": {
+            "ran_at": ran_at,
+            "source": os.path.basename(latest),
+            "meta": meta,
+            "strategies": strategies,
+        }})
+    except Exception as e:
+        return jsonify({"code": 1, "msg": str(e)}), 500
+
+
 @app.route("/api/screen/events")
 def api_screen_events():
     """SSE 端点：实时推送策略完成事件"""

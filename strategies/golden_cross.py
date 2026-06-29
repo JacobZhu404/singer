@@ -35,7 +35,7 @@ class GoldenCrossStrategy(BaseStrategy):
     """均线金叉策略（趋势启动初期：金叉+量能确认）"""
     name = "golden_cross"
     description = "MA5上穿MA10金叉+三线多头+量能确认，趋势启动信号"
-    base_win_rate = 0.52  # 比 macd_bull 低（更早入场，假信号更多）
+    base_win_rate = 0.44  # 30日实测胜率，2026-06-29 全量回测
 
     def __init__(self, top_n: int = 10):
         super().__init__(top_n=top_n)
