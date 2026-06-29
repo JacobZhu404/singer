@@ -10,7 +10,7 @@ import pandas as pd
 
 from ..strategies.base import ScreenResult, StockSignal, bar_trade_date
 from ..strategies.registry import get_strategy, STRATEGY_REGISTRY
-from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date
+from ..data.fetcher import get_stock_list, market_scanner, get_latest_trade_date, delisted_registry
 from ..utils.market_trend import get_market_trend, get_market_trend_strength
 from .constants import MAX_WORKERS_PREFETCH, PREFETCH_KLINE_DAYS
 from . import risk_scanner
@@ -196,8 +196,33 @@ class ScreenEngine:
     def _load_stock_list(self) -> pd.DataFrame:
         if self._stock_list is None:
             logger.info("加载股票列表")
-            self._stock_list = get_stock_list()
+            self._stock_list = self._drop_delisted(get_stock_list())
         return self._stock_list
+
+    @staticmethod
+    def _drop_delisted(stock_list: pd.DataFrame) -> pd.DataFrame:
+        """从**实时筛选** universe 剔除失效股，减少死票的下载重试 + 指标预计算。
+        两路：①名称含"退"的硬退市股；②学习型失效股名单（停牌/退市，含招商地产
+        这类干净名字的合并退市股，由新鲜度护栏自动登记）。仅作用于实时盘——
+        回测自建 universe（stocks.json ∩ cache），不走这里、无幸存者偏差。
+        """
+        if stock_list is None or stock_list.empty:
+            return stock_list
+        code_col = "代码" if "代码" in stock_list.columns else "ts_code"
+        name_col = "名称" if "名称" in stock_list.columns else "name"
+        before = len(stock_list)
+        mask = pd.Series(True, index=stock_list.index)
+        if name_col in stock_list.columns:
+            mask &= ~stock_list[name_col].astype(str).str.contains("退", na=False)
+        if code_col in stock_list.columns:
+            blocked = delisted_registry.active_blocked()
+            if blocked:
+                mask &= ~stock_list[code_col].astype(str).isin(blocked)
+        filtered = stock_list[mask]
+        dropped = before - len(filtered)
+        if dropped:
+            logger.info(f"实时 universe 剔除失效股 {dropped} 只（退市/学习名单），{before} → {len(filtered)}")
+        return filtered
 
     @staticmethod
     def _get_code_name_cols(stock_list: pd.DataFrame) -> tuple:
@@ -254,6 +279,9 @@ class ScreenEngine:
             f"[耗时] _precalc: {elapsed:.1f}秒 | 缓存条目 {cache_size_before}→{cache_size_after}"
             f"（净增 {cache_size_after - cache_size_before}）"
         )
+
+        # 新鲜度护栏在 precalc 期间登记的失效股落盘，下次筛选直接跳过
+        delisted_registry.save()
 
     def run_single(self, strategy_name: str) -> ScreenResult:
         """执行单个策略"""
@@ -538,6 +566,9 @@ class ScreenEngine:
 
         elapsed = (datetime.now() - t0).total_seconds()
         logger.info(f"[耗时] screen_strategies: {elapsed:.1f}秒")
+
+        # 筛选期间护栏新登记的失效股落盘（_precalc 提前返回时也能兜住）
+        delisted_registry.save()
 
         return {"status": "ok", "results": results}
 

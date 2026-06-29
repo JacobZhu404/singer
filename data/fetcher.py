@@ -2,6 +2,8 @@
 数据获取层：本地缓存 + 多数据源（新浪/腾讯/东财），无需 Token
 """
 
+import os
+import json
 import time
 import logging
 import threading
@@ -234,6 +236,96 @@ def _kline_is_fresh(df: "pd.DataFrame") -> bool:
     except Exception:
         _MAX_STALE = 15
     return (pd.Timestamp.now().normalize() - last.normalize()).days <= _MAX_STALE
+
+
+def _last_bar_date_str(df: "pd.DataFrame") -> str:
+    """取 df 最后一根 bar 的日期字符串（YYYYMMDD），取不到返回空串。"""
+    try:
+        date_col = "date" if "date" in df.columns else ("trade_date" if "trade_date" in df.columns else None)
+        if date_col is None:
+            return ""
+        d = pd.to_datetime(df[date_col].iloc[-1])
+        return "" if pd.isna(d) else d.strftime("%Y%m%d")
+    except Exception:
+        return ""
+
+
+class _DelistedRegistry:
+    """学习型「失效股」名单（停牌/退市）。
+
+    新鲜度护栏一旦确认某票最后一根 bar 已陈旧（停牌/退市），登记到此名单；
+    下次实时筛选在 `_load_stock_list` 阶段直接剔除，省去对死票的下载重试 +
+    指标预计算。**仅作用于实时盘**——回测走独立 universe，不读本名单。
+
+    TTL 重探：条目记录上次确认日期，超过 `REPROBE_DAYS` 未刷新即视为过期、
+    重新放回候选池下载一次。这样长期停牌后复牌的票不会被永久误杀——若仍停牌，
+    护栏会再次登记、续期 90 天；若已复牌，新鲜度通过、自动留在池中。
+    """
+
+    REPROBE_DAYS = 90
+
+    def __init__(self, path: str):
+        self._path = path
+        self._lock = threading.Lock()
+        self._data: Dict[str, Dict[str, str]] = {}  # code -> {"last_bar":, "flagged":}
+        self._dirty = False
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            if os.path.exists(self._path):
+                with open(self._path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                if isinstance(raw, dict):
+                    self._data = {str(k): v for k, v in raw.items() if isinstance(v, dict)}
+        except Exception as e:
+            logger.warning(f"失效股名单加载失败({self._path}): {e}")
+            self._data = {}
+
+    def _fresh_enough(self, flagged: str) -> bool:
+        """flagged 日期是否仍在 TTL 内（仍有效，无需重探）。"""
+        try:
+            d = datetime.strptime(flagged, "%Y%m%d")
+        except Exception:
+            return False
+        return (datetime.now() - d).days <= self.REPROBE_DAYS
+
+    def flag(self, code: str, last_bar: str) -> None:
+        """登记/续期一只失效股。线程安全。"""
+        today = datetime.now().strftime("%Y%m%d")
+        with self._lock:
+            cur = self._data.get(code)
+            if cur is None or cur.get("flagged") != today or cur.get("last_bar") != last_bar:
+                self._data[code] = {"last_bar": last_bar, "flagged": today}
+                self._dirty = True
+
+    def active_blocked(self) -> set:
+        """当前应跳过的代码集合（在 TTL 内的条目）；过期条目不返回，留待重探。"""
+        with self._lock:
+            return {c for c, v in self._data.items() if self._fresh_enough(v.get("flagged", ""))}
+
+    def save(self) -> None:
+        """脏数据落盘（原子写）。"""
+        with self._lock:
+            if not self._dirty:
+                return
+            data = dict(self._data)
+            self._dirty = False
+        try:
+            os.makedirs(os.path.dirname(self._path), exist_ok=True)
+            tmp = self._path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self._path)
+            logger.info(f"失效股名单已更新: {len(data)} 只 -> {self._path}")
+        except Exception as e:
+            logger.warning(f"失效股名单保存失败({self._path}): {e}")
+            with self._lock:
+                self._dirty = True
+
+
+_DELISTED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "delisted_blocklist.json")
+delisted_registry = _DelistedRegistry(_DELISTED_PATH)
 
 
 def get_limit_list(trade_date: Optional[str] = None) -> pd.DataFrame:
@@ -948,6 +1040,8 @@ class MarketScanner:
         # 若不拦截，策略会把"最后一根 bar"当成今日、用多年前的形态把它选出来。
         # 仅作用于实时盘；回测的 PointInTimeScanner 是独立类，不走这里。
         if not _kline_is_fresh(df):
+            # 登记到学习型失效股名单，下次实时筛选直接跳过该死票
+            delisted_registry.flag(code, _last_bar_date_str(df))
             return {}
         result = compute_indicator_bundle(df)
         if not result:
