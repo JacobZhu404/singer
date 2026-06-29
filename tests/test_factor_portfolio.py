@@ -10,6 +10,10 @@ from stock_screener.tools.factor_portfolio_backtest import (
     equal_weight_return,
     annualize,
     ROUND_TRIP,
+    SLIPPAGE,
+    COMMISSION,
+    TRANSFER,
+    STAMP_DUTY,
 )
 
 
@@ -81,4 +85,9 @@ def test_annualize_empty():
 
 
 def test_round_trip_matches_engine_cost():
-    assert abs(ROUND_TRIP - ((0.0010 + 0.0003) * 2 + 0.0005)) < 1e-12
+    # 双边 = (滑点 + 佣金 + 过户/规费) × 2 + 印花税(仅卖)
+    expected = (SLIPPAGE + COMMISSION + TRANSFER) * 2 + STAMP_DUTY
+    assert abs(ROUND_TRIP - expected) < 1e-12
+    # 与 backtest_engine 的口径必须一致
+    from stock_screener.backtest.backtest_engine import ROUND_TRIP_COST_PCT
+    assert abs(ROUND_TRIP * 100 - ROUND_TRIP_COST_PCT) < 1e-9

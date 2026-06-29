@@ -28,10 +28,12 @@ from stock_screener.tools.ic_validation import load_panels, CACHE_DIR
 from stock_screener.utils.indicators import get_limit_pct
 
 # 与 backtest_engine 保持一致的成本口径（fraction，非百分数）
-SLIPPAGE = 0.0010
-COMMISSION = 0.0003
-STAMP_DUTY = 0.0005
-ROUND_TRIP = (SLIPPAGE + COMMISSION) * 2 + STAMP_DUTY  # ≈ 0.0031
+# 2026-06-26 实盘费率调研后更新：佣金万0.854 + 过户/规费万1 + 印花税(仅卖) + 小额滑点。
+SLIPPAGE = 0.0002       # 单边滑点（执行偏差缓冲，旧 0.0010）
+COMMISSION = 0.0000854  # 单边佣金 万0.854（旧 0.0003）
+TRANSFER = 0.0001       # 单边过户费+规费 约万1
+STAMP_DUTY = 0.0005     # 印花税，仅卖出
+ROUND_TRIP = (SLIPPAGE + COMMISSION + TRANSFER) * 2 + STAMP_DUTY  # ≈ 0.0012708
 
 TRADING_DAYS_PER_YEAR = 244  # A 股年均交易日
 
