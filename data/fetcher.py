@@ -212,6 +212,30 @@ def get_latest_trade_date() -> str:
     return datetime.now().strftime("%Y%m%d")
 
 
+def _kline_is_fresh(df: "pd.DataFrame") -> bool:
+    """实时筛选用：最新 K 线 bar 距今是否在 SCREEN_MAX_STALE_DAYS 内。
+
+    无日期列/无法解析时返回 True（不拦截，交给后续长度/质量校验），
+    只在能确认数据陈旧（停牌/退市）时返回 False。
+    """
+    if df is None or len(df) == 0:
+        return True
+    date_col = "date" if "date" in df.columns else ("trade_date" if "trade_date" in df.columns else None)
+    if date_col is None:
+        return True
+    try:
+        last = pd.to_datetime(df[date_col].iloc[-1])
+        if pd.isna(last):
+            return True
+    except Exception:
+        return True
+    try:
+        from ..core.constants import SCREEN_MAX_STALE_DAYS as _MAX_STALE
+    except Exception:
+        _MAX_STALE = 15
+    return (pd.Timestamp.now().normalize() - last.normalize()).days <= _MAX_STALE
+
+
 def get_limit_list(trade_date: Optional[str] = None) -> pd.DataFrame:
     """
     获取涨停股票列表（按涨跌幅倒序）
@@ -919,6 +943,12 @@ class MarketScanner:
         from ..utils.indicators import compute_indicator_bundle
 
         df = self.get_history(code, days, pure=pure)
+        # ── 新鲜度护栏：剔除停牌/退市标的 ──
+        # 退市股（如 000024 招商地产，K 线冻结在 2015-12-07）历史数据仍可取到，
+        # 若不拦截，策略会把"最后一根 bar"当成今日、用多年前的形态把它选出来。
+        # 仅作用于实时盘；回测的 PointInTimeScanner 是独立类，不走这里。
+        if not _kline_is_fresh(df):
+            return {}
         result = compute_indicator_bundle(df)
         if not result:
             return {}
