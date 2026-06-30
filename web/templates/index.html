@@ -86,6 +86,10 @@
   }
   .buy-strategy-tag-wrap { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-start; max-width: 120px; }
 
+  /* ── Strategy group headers ── */
+  .strategy-group-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 6px; padding: 0 4px; border-left: 2px solid var(--accent); padding-left: 8px; }
+  .strategy-group-label:first-child { margin-top: 0; }
+
   /* ── Buttons ── */
   .btn { display: inline-flex; align-items: center; gap: 4px; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; justify-content: center; }
   .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); font-size: 12px; }
@@ -1453,29 +1457,40 @@ document.addEventListener('keydown', function(e) {
 
 function renderStrategyList() {
   const container = document.getElementById('strategyList');
-  container.innerHTML = strategies.map(s => `
-    <div class="strategy-card ${selectedStrategies.has(s.id) ? 'selected' : ''}"
-         id="sc_${s.id}" data-strategy="${s.id}" onclick="toggleStrategy('${s.id}')">
-      <div class="strategy-card-header">
-        <span class="strategy-icon">${s.icon}</span>
-        <span class="strategy-name">${s.name}</span>
-        <button class="info-btn" onclick="event.stopPropagation();openStrategyModal('${s.id}')">?</button>
-      </div>
-      <div class="strategy-desc">${s.description}</div>
-      <div class="strategy-tags">
-        ${s.tags.map(t => `<span class="tag">${t}</span>`).join('')}
-      </div>
-      <div class="strategy-card-progress">
-        <div class="strategy-card-progress-bar">
-          <div class="strategy-card-progress-fill"></div>
+  const groups = {};
+  strategies.forEach(s => {
+    const g = s.group || '其他';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(s);
+  });
+  let html = '';
+  for (const [group, items] of Object.entries(groups)) {
+    html += `<div class="strategy-group-label">${group}</div>`;
+    html += items.map(s => `
+      <div class="strategy-card ${selectedStrategies.has(s.id) ? 'selected' : ''}"
+           id="sc_${s.id}" data-strategy="${s.id}" onclick="toggleStrategy('${s.id}')">
+        <div class="strategy-card-header">
+          <span class="strategy-icon">${s.icon}</span>
+          <span class="strategy-name">${s.name}</span>
+          <button class="info-btn" onclick="event.stopPropagation();openStrategyModal('${s.id}')">?</button>
         </div>
-        <div class="strategy-card-progress-label">
-          <span class="strategy-card-progress-label-text"></span>
-          <span class="strategy-card-progress-count"></span>
+        <div class="strategy-desc">${s.description}</div>
+        <div class="strategy-tags">
+          ${s.tags.map(t => `<span class="tag">${t}</span>`).join('')}
+        </div>
+        <div class="strategy-card-progress">
+          <div class="strategy-card-progress-bar">
+            <div class="strategy-card-progress-fill"></div>
+          </div>
+          <div class="strategy-card-progress-label">
+            <span class="strategy-card-progress-label-text"></span>
+            <span class="strategy-card-progress-count"></span>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `).join('');
+  }
+  container.innerHTML = html;
 }
 
 function toggleStrategy(id) {
