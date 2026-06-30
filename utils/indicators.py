@@ -404,6 +404,49 @@ def calc_risk_flags(
             "desc": "价格跌破5日均线，短期走弱",
         })
 
+    # ── 高波动率风险 ──────────────────────────────────────
+    if len(close) >= 20:
+        daily_ret = close.pct_change().iloc[-20:]
+        ann_vol = float(daily_ret.std() * (252 ** 0.5))
+        if ann_vol > 0.80:
+            flags.append({
+                "type": "high_vol",
+                "label": "高波动",
+                "level": "danger",
+                "desc": f"年化波动率{ann_vol*100:.0f}%，远超正常水平，崩盘风险大",
+            })
+        elif ann_vol > 0.60:
+            flags.append({
+                "type": "high_vol",
+                "label": "波动偏高",
+                "level": "warn",
+                "desc": f"年化波动率{ann_vol*100:.0f}%，波动较大，注意仓位控制",
+            })
+
+    # ── 连板后高开低走（涨停打开出货）────────────────────────
+    if len(pct_chg) >= 3 and len(high) >= 3:
+        limit_pct = 9.5
+        has_recent_limit = any(float(pct_chg.iloc[j]) >= limit_pct for j in range(-3, -1))
+        if has_recent_limit:
+            today_open_gap = (float(close.iloc[-1]) - float(close.iloc[-2])) / float(close.iloc[-2]) * 100
+            today_pct = float(pct_chg.iloc[-1])
+            today_upper_shadow = float(high.iloc[-1]) - float(close.iloc[-1])
+            today_body = abs(float(close.iloc[-1]) - float(close.iloc[-2]))
+            if today_pct < 0 and today_upper_shadow > today_body * 0.5:
+                flags.append({
+                    "type": "limit_up_dump",
+                    "label": "连板后阴线",
+                    "level": "danger",
+                    "desc": "近期有涨停，今日高开低走收阴，可能主力出货",
+                })
+            elif today_pct < 2 and float(high.iloc[-1]) > float(close.iloc[-1]) * 1.05:
+                flags.append({
+                    "type": "limit_up_dump",
+                    "label": "涨停后冲高回落",
+                    "level": "warn",
+                    "desc": "近期有涨停，今日冲高回落，注意出货风险",
+                })
+
     return flags
 
 

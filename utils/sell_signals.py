@@ -107,6 +107,28 @@ def detect_sell_signals(df: pd.DataFrame) -> dict:
             sell_signals.append("RSI超买回落")
             sell_score += 20
     
+    # ── 信号6: 高波动率（持仓风险加大） ──
+    if len(close) >= 20:
+        daily_ret = close.pct_change().iloc[-20:]
+        ann_vol = float(daily_ret.std() * (252 ** 0.5))
+        if ann_vol > 0.80:
+            sell_signals.append(f"波动率异常({ann_vol*100:.0f}%年化)")
+            sell_score += 20
+
+    # ── 信号7: 连板后高开低走（主力出货） ──
+    if len(close) >= 3:
+        pct_col = "pct_chg" if "pct_chg" in df.columns else "daily_chg"
+        if pct_col in df.columns:
+            pct_chg = df[pct_col].astype(float)
+            has_recent_limit = any(float(pct_chg.iloc[j]) >= 9.5 for j in range(-3, -1))
+            if has_recent_limit:
+                today_pct = float(pct_chg.iloc[-1])
+                upper_shadow = float(high.iloc[-1]) - float(close.iloc[-1])
+                body = abs(float(close.iloc[-1]) - float(close.iloc[-2]))
+                if today_pct < 0 and upper_shadow > body * 0.5:
+                    sell_signals.append("连板后高开低走出货")
+                    sell_score += 30
+
     # ── 计算止损止盈价 ──
     current_price = close.iloc[-1]
     
