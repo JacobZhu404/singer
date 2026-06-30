@@ -80,10 +80,14 @@ class _Thresholds:
         MIN_SINGLE_SCORE, MIN_WEIGHTED_SCORE, RANK_BONUS_MAX,
         BEAR_FACTOR, BULL_FACTOR,
         RISK_SCAN_MIN_BARS, SELL_SCAN_MIN_BARS, BUY_RISK_MIN_BARS,
+        INTRA_GROUP_DECAY, WIN_FACTOR_BASE, WIN_FACTOR_SLOPE,
     )
     MIN_SINGLE_SCORE = MIN_SINGLE_SCORE
     MIN_WEIGHTED_SCORE = MIN_WEIGHTED_SCORE
     RANK_BONUS_MAX = RANK_BONUS_MAX
+    INTRA_GROUP_DECAY = INTRA_GROUP_DECAY
+    WIN_FACTOR_BASE = WIN_FACTOR_BASE
+    WIN_FACTOR_SLOPE = WIN_FACTOR_SLOPE
     BEAR_FACTOR = BEAR_FACTOR
     BULL_FACTOR = BULL_FACTOR
     RISK_SCAN_MIN_BARS = RISK_SCAN_MIN_BARS
@@ -680,9 +684,6 @@ class ScreenEngine:
 
         merged: Dict[str, Dict] = {}
 
-        # ── 组内去重衰减系数：同组第2个起打 30% ──
-        INTRA_GROUP_DECAY = 0.3
-
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
             weight = meta.get("weight", 1.0)
@@ -691,7 +692,7 @@ class ScreenEngine:
             # 0.66→1.13x, 0.52→1.02x, 0.42→0.94x（2026-06-29 全量回测）
             cls = meta.get("cls")
             base_wr = getattr(cls, "base_win_rate", 0.5) if cls else 0.5
-            win_factor = 0.6 + 0.8 * base_wr
+            win_factor = _Thresholds.WIN_FACTOR_BASE + _Thresholds.WIN_FACTOR_SLOPE * base_wr
 
             for sig in result.all_signals:
                 # ── 质量门槛1：单策略原始分过滤（使用大盘调整后的门槛）──
@@ -716,8 +717,7 @@ class ScreenEngine:
                         "all_signals": [],
                         "strategy_rank_sum": 0,
                         "strategy_count": 0,
-                        "_group_best": {},  # {group: best_weighted_score} 用于组内去重
-                        "n_groups": 0,
+                        "_group_contribs": {},  # {group: [raw_contrib, ...]} 组内去重用
                     }
                 entry = merged[code]
                 entry["strategies_hit"].append({
@@ -734,17 +734,11 @@ class ScreenEngine:
                 rank_bonus = (1 - rank_pct) * _Thresholds.RANK_BONUS_MAX
                 raw_contrib = sig.score * weight * win_factor + rank_bonus
 
-                # ── 组内衰减：每组首个全额，同组后续 ×0.3 ──
-                group_best = entry["_group_best"]
-                if group not in group_best:
-                    group_best[group] = raw_contrib
-                    effective_contrib = raw_contrib
-                    entry["n_groups"] += 1
-                else:
-                    effective_contrib = raw_contrib * INTRA_GROUP_DECAY
+                # ── 组内去重：先收集每组全部贡献，最终「组内头部全额、其余衰减」──
+                # 收集而非即时累加，保证与命中顺序无关（头部 = 组内最高分，非首个命中）
+                entry["_group_contribs"].setdefault(group, []).append(raw_contrib)
 
                 entry["total_score"] += sig.score
-                entry["weighted_score"] += effective_contrib
                 entry["all_signals"].extend(sig.signals)
                 entry["strategy_rank_sum"] += rank_pct
                 entry["strategy_count"] += 1
@@ -760,8 +754,18 @@ class ScreenEngine:
         for code, entry in merged.items():
             n_strategies = len(entry["strategies_hit"])
 
+            # ── 组内去重结算：每组「头部(最高分)全额 + 其余 ×INTRA_GROUP_DECAY」──
+            # 与命中顺序无关，实现用户要求的「组内先找头部，再跨组汇总」。
+            group_contribs = entry.pop("_group_contribs", {})
+            weighted_score = 0.0
+            for contribs in group_contribs.values():
+                contribs.sort(reverse=True)
+                weighted_score += contribs[0] + _Thresholds.INTRA_GROUP_DECAY * sum(contribs[1:])
+            entry["weighted_score"] = weighted_score
+            n_groups = len(group_contribs)
+
             # ── 质量门槛2：加权总分过滤（使用大盘调整后的门槛）──
-            if entry["weighted_score"] < adjusted_min_weighted:
+            if weighted_score < adjusted_min_weighted:
                 continue
 
             # ── 一次性获取K线，复用于三个扫描 ──
@@ -804,8 +808,7 @@ class ScreenEngine:
                             if entry["strategy_count"] > 0 else 1.0)
 
             # 综合评分 = 加权得分 + 排名加成 + 跨组共识 + 风险调整 + 基本面调整 + 大盘强度
-            # 共识加成基于跨组命中数（组内重复不额外加分）
-            n_groups = entry.get("n_groups", 1)
+            # 共识加成基于跨组命中数（组内重复不额外加分），n_groups 已在循环顶部结算
             risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * _ScoreWeights.RISK_FACTOR
             market_strength_adj = market_strength * _ScoreWeights.MARKET_STRENGTH if market_strength is not None else 0
             composite_score = (
@@ -817,9 +820,6 @@ class ScreenEngine:
                 market_strength_adj
             )
             composite_score = max(composite_score, 0)
-
-            # 清理内部字段
-            entry.pop("_group_best", None)
 
             final_list.append({
                 **entry,

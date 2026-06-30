@@ -16,12 +16,15 @@
 merge_results 里**决定选股的确定性核心**，逐项对应：
 
   1. 单策略内 `_build_result` 重打分： score = raw*0.6 + (1-rank_pct)*40，截断 Top-300。
-  2. 跨策略加权累加： weighted_score += score*weight + (1-rank_pct)*RANK_BONUS_MAX。
-  3. 综合分（仅 PIT 安全子集）：
-        composite = weighted_score*0.5 + (1-avg_rank_pct)*20 + n_strategies*5
+  2. 单策略贡献： raw_contrib = score*weight*win_factor + (1-rank_pct)*RANK_BONUS_MAX，
+     其中 win_factor = WIN_FACTOR_BASE + WIN_FACTOR_SLOPE*base_win_rate（实测胜率加权）。
+  3. 组内去重：按策略 group 收集贡献，每组「头部(最高)全额 + 其余 ×INTRA_GROUP_DECAY」，
+     再跨组累加得 weighted_score（避免同源雷同策略重复加分）。
+  4. 综合分（仅 PIT 安全子集）：
+        composite = weighted_score*0.5 + (1-avg_rank_pct)*20 + n_groups*5
      —— 丢弃 risk_adjustment / fundamental_adj / market_strength_adj（非 PIT 或中性=0）。
-  4. 质量门槛 min_single_score / min_weighted_score 与线上一致。
-  5. 排序键 (n_strategies, composite_score) 降序，取 Top-N——与 merge_results 完全一致。
+  5. 质量门槛 min_single_score / min_weighted_score 与线上一致。
+  6. 排序键 (n_groups, composite_score) 降序，取 Top-N——与 merge_results 完全一致。
 
 权重取自 `STRATEGY_REGISTRY[*]["weight"]`（即 derive_weights.py 推导并写回的那套）。
 未来收益与基准 α 完全复用 backtest_engine 的口径（T+1 开盘入场、双边成本、跌停顺延、
@@ -53,6 +56,9 @@ from stock_screener.core.constants import (
     MIN_WEIGHTED_SCORE,
     RANK_BONUS_MAX,
     HOLD_PERIODS,
+    INTRA_GROUP_DECAY,
+    WIN_FACTOR_BASE,
+    WIN_FACTOR_SLOPE,
 )
 from stock_screener.backtest import backtest_engine as bt
 from stock_screener.backtest.backtest_engine import (
@@ -98,17 +104,27 @@ def _rescore_strategy(hits: List[Tuple[str, float]]) -> List[Tuple[str, float]]:
 def _compose_one_date(
     per_strategy_hits: Dict[str, List[Tuple[str, float]]],
     weights: Dict[str, float],
+    win_factors: Dict[str, float],
+    groups: Dict[str, str],
     min_single: int,
     min_weighted: int,
     top_n: int,
 ) -> List[Tuple[str, int, float]]:
-    """复刻 merge_results 的确定性核心，返回当日综合 Top-N： (code, n_strategies, composite)。"""
-    # 1+2: 各策略内重打分 → 跨策略加权累加
+    """复刻 merge_results 的确定性核心，返回当日综合 Top-N： (code, n_groups, composite)。
+
+    与 engine.merge_results 严格对齐（2026-06-30 同步）：
+      - 单策略贡献 raw_contrib = score*weight*win_factor + rank_bonus
+      - 组内去重：每组「头部(最高分)全额 + 其余 ×INTRA_GROUP_DECAY」（与命中顺序无关）
+      - 综合分共识项与排序键均用跨组命中数 n_groups
+    """
+    # 1+2: 各策略内重打分 → 按 (code, group) 收集 raw_contrib
     merged: Dict[str, dict] = {}
     for strat, hits in per_strategy_hits.items():
         if not hits:
             continue
         weight = float(weights.get(strat, 1.0))
+        win_factor = float(win_factors.get(strat, 1.0))
+        group = groups.get(strat, "其他")
         scored = _rescore_strategy(hits)
         total = len(scored)
         for rank, (code, score) in enumerate(scored, 1):
@@ -116,22 +132,28 @@ def _compose_one_date(
                 continue
             rank_pct = rank / total if total > 0 else 1.0
             rank_bonus = (1 - rank_pct) * RANK_BONUS_MAX
-            e = merged.setdefault(code, {"w": 0.0, "rank_sum": 0.0, "n": 0})
-            e["w"] += score * weight + rank_bonus
+            raw_contrib = score * weight * win_factor + rank_bonus
+            e = merged.setdefault(code, {"group_contribs": {}, "rank_sum": 0.0, "n": 0})
+            e["group_contribs"].setdefault(group, []).append(raw_contrib)
             e["rank_sum"] += rank_pct
             e["n"] += 1
 
-    # 3: 综合分（PIT 子集）+ 质量门槛2
+    # 3: 组内去重结算 → 综合分（PIT 子集）+ 质量门槛2
     final: List[Tuple[str, int, float]] = []
     for code, e in merged.items():
-        if e["w"] < min_weighted:            # 质量门槛2：加权总分
+        weighted = 0.0
+        for contribs in e["group_contribs"].values():
+            contribs.sort(reverse=True)
+            weighted += contribs[0] + INTRA_GROUP_DECAY * sum(contribs[1:])
+        if weighted < min_weighted:          # 质量门槛2：加权总分
             continue
         n = e["n"]
+        n_groups = len(e["group_contribs"])
         avg_rank_pct = e["rank_sum"] / n if n else 1.0
-        composite = e["w"] * W_WEIGHTED + (1 - avg_rank_pct) * W_RANK + n * W_CONSENSUS
-        final.append((code, n, max(composite, 0.0)))
+        composite = weighted * W_WEIGHTED + (1 - avg_rank_pct) * W_RANK + n_groups * W_CONSENSUS
+        final.append((code, n_groups, max(composite, 0.0)))
 
-    # 5: 排序键 (n_strategies, composite) 降序，取 Top-N
+    # 5: 排序键 (n_groups, composite) 降序，取 Top-N
     final.sort(key=lambda x: (x[1], x[2]), reverse=True)
     return final[:top_n]
 
@@ -152,6 +174,13 @@ def run_composite(
     """
     strategy_names = list(STRATEGY_REGISTRY.keys())
     weights = {s: float(STRATEGY_REGISTRY[s].get("weight", 1.0)) for s in strategy_names}
+    groups = {s: STRATEGY_REGISTRY[s].get("group", "其他") for s in strategy_names}
+    # win_factor 与 engine.merge_results 同口径：base + slope*base_win_rate（取自策略类）
+    win_factors = {}
+    for s in strategy_names:
+        cls = STRATEGY_REGISTRY[s].get("cls")
+        base_wr = getattr(cls, "base_win_rate", 0.5) if cls else 0.5
+        win_factors[s] = WIN_FACTOR_BASE + WIN_FACTOR_SLOPE * base_wr
 
     engine = BacktestEngine(weeks=weeks)
     if max_workers is None:
@@ -212,7 +241,8 @@ def run_composite(
                 for t in tl:
                     returns_by_code.setdefault(t.code, t)
 
-            picks = _compose_one_date(per_strategy_hits, weights, min_single, min_weighted, top_n)
+            picks = _compose_one_date(per_strategy_hits, weights, win_factors, groups,
+                                      min_single, min_weighted, top_n)
             for code, n_strat, composite in picks:
                 base = returns_by_code.get(code)
                 if base is None:

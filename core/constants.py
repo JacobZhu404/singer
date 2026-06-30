@@ -52,6 +52,14 @@ CHANLUN_HIT_THRESHOLD = 65
 # 单策略命中数上限（避免满分扎堆）
 MAX_HITS_PER_STRATEGY = 300
 
+# ── merge_results 组内去重 / 胜率加权（engine 与 composite_backtest 共用，单一事实来源）──
+# 同组多策略命中时：组内得分最高者全额，其余 ×INTRA_GROUP_DECAY（避免雷同策略重复加分）
+INTRA_GROUP_DECAY = 0.3
+# 实测胜率因子 win_factor = WIN_FACTOR_BASE + WIN_FACTOR_SLOPE * base_win_rate
+# 以 0.5 为中性(=1.0x)：0.66→1.13x, 0.52→1.02x, 0.42→0.94x
+WIN_FACTOR_BASE = 0.6
+WIN_FACTOR_SLOPE = 0.8
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 市场过滤器（门槛调整系数）
