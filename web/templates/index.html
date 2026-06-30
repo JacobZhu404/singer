@@ -3361,21 +3361,21 @@ function exportCSV() {
     }
     picks = lastResult.comprehensive_picks;
     tradeDate = lastResult.trade_date || tradeDate;
-    headers = ['代码', '名称', '最新价', '涨跌额', '涨跌幅', '综合评分', 'PE', 'PB', '估值调整', '信号', '命中策略', '行业', '风险等级'];
+    headers = ['代码', '名称', '最新价', '涨跌幅', '量比', '综合评分', 'PE', 'PB', '估值调整', '信号', '命中策略', '风险等级', '卖出信号'];
     rows = picks.map(p => [
-      p.code || '',
+      p.ts_code || '',
       p.name || '',
-      p.price ?? '',
-      p.change ?? '',
-      p.change_pct ?? '',
-      p.score ?? '',
+      p.latest_price ?? '',
+      p.pct_chg != null ? `${parseFloat(p.pct_chg).toFixed(2)}%` : '',
+      p.volume_ratio != null ? parseFloat(p.volume_ratio).toFixed(2) : '',
+      p.composite_score ?? p.total_score ?? '',
       p.pe ?? '',
       p.pb ?? '',
       p.fundamental_adj ?? '',
-      (p.signals || []).map(s => s.name || s).join(';'),
-      (p.strategies || []).map(s => strategyNameMap[s] || s).join(';'),
-      p.industry || '',
-      p.risk_tag || 'unknown'
+      (p.all_signals || []).join(';'),
+      (p.strategies_hit || []).map(s => s.name || strategyNameMap[s.id] || s.id).join(';'),
+      p.risk_tag || 'unknown',
+      (p.sell_signals || []).join(';')
     ]);
   } else if (tab === 'portfolio') {
     if (!lastPortfolioData || !lastPortfolioData.positions || !lastPortfolioData.positions.length) {
@@ -3408,10 +3408,10 @@ function exportCSV() {
       s.ts_code || '',
       s.name || '',
       s.latest_price ?? '',
-      s.pct_chg ?? '',
-      s.volume_ratio ?? '',
+      s.pct_chg != null ? `${parseFloat(s.pct_chg).toFixed(2)}%` : '',
+      s.volume_ratio != null ? parseFloat(s.volume_ratio).toFixed(2) : '',
       s.score ?? '',
-      (s.signals || []).map(sig => sig).join(';'),
+      (s.signals || []).join(';'),
       (s.risk_flags || []).map(f => f.label || f).join(';')
     ]);
   }
@@ -3423,7 +3423,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `股票筛选_${tradeDate}.csv`;
+  a.download = `singer_${tradeDate}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

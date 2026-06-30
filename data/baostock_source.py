@@ -3,6 +3,7 @@ baostock 数据源：收盘数据，后复权
 """
 
 import logging
+import time
 from datetime import datetime, date, timedelta
 from typing import Optional
 
@@ -14,9 +15,38 @@ logger = logging.getLogger(__name__)
 # 延迟初始化
 _bs_conn = None
 
+# ── 登录熔断 ──────────────────────────────────────────────
+# baostock 登录失败（尤其「黑名单用户」）是账号级、会话级的持久失败：
+# 每只股票都重试一次 login 会拖垮整轮下载（3000+ 只 × 一次注定失败的登录）。
+# 失败后进入冷却期，期间直接跳过 baostock，让上层秒降级到多源（东财/新浪/腾讯）。
+_login_failures = 0
+_login_cooldown_until = 0.0
+_FAIL_THRESHOLD = 3          # 连续失败 N 次进入冷却
+_COOLDOWN_TRANSIENT = 300.0  # 普通失败冷却 5 分钟
+_COOLDOWN_BLACKLIST = 86400.0  # 黑名单：本会话基本放弃（24h）
+
+
+def _trip_cooldown(err_msg: str):
+    """根据错误类型设置冷却终点，并只在进入冷却时打一条日志（避免刷屏）。"""
+    global _login_failures, _login_cooldown_until
+    _login_failures += 1
+    is_blacklist = "黑名单" in (err_msg or "")
+    if is_blacklist:
+        _login_cooldown_until = time.monotonic() + _COOLDOWN_BLACKLIST
+        logger.error(f"baostock 登录被拉黑（{err_msg}），本会话停用 baostock，全部降级到多源数据")
+    elif _login_failures >= _FAIL_THRESHOLD:
+        _login_cooldown_until = time.monotonic() + _COOLDOWN_TRANSIENT
+        logger.warning(
+            f"baostock 连续登录失败 {_login_failures} 次（{err_msg}），"
+            f"熔断 {int(_COOLDOWN_TRANSIENT)}s，期间降级到多源数据"
+        )
+
 
 def _ensure_login():
-    global _bs_conn
+    global _bs_conn, _login_failures
+    # 冷却期内直接跳过，不再尝试 login（静默，不刷屏）
+    if _login_cooldown_until and time.monotonic() < _login_cooldown_until:
+        return False
     if _bs_conn is None:
         # baostock 自身不给 socket 设超时，登录/查询若遇服务端不响应会永久阻塞。
         # 在建连时给一个默认超时上限（登录用的持久 socket 会继承它），防止卡死整轮下载。
@@ -28,9 +58,12 @@ def _ensure_login():
         finally:
             socket.setdefaulttimeout(old_timeout)
         if _bs_conn is None or _bs_conn.error_code != "0":
-            logger.error(f"baostock 登录失败: {getattr(_bs_conn, 'error_msg', 'None')}")
+            err_msg = getattr(_bs_conn, "error_msg", "None")
             _bs_conn = None  # 重置，否则失败的连接对象会被缓存，后续调用误判为已登录
+            _trip_cooldown(err_msg)
             return False
+        # 登录成功，清零失败计数
+        _login_failures = 0
     return True
 
 

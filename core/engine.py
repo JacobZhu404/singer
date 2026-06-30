@@ -50,6 +50,20 @@ _EMPTY_POSITION_RESULT = {
     "avg_rank_pct": 1.0,
 }
 
+# 结构性非可交易代码段：北交所优先股 82xxxx、老三板 400xxx/420xxx。
+# 这些品种无连续日线行情，抓取必然失败，从扫描 universe 直接剔除。
+_NONTRADABLE_PREFIXES = ("82", "400", "420")
+
+
+def _is_nontradable_segment(code: str) -> bool:
+    """判断代码是否属于结构性非可交易品种（优先股/老三板）。"""
+    c = str(code).strip().lower()
+    for p in ("sh", "sz", "bj"):
+        if c.startswith(p):
+            c = c[len(p):]
+            break
+    return c.startswith(_NONTRADABLE_PREFIXES)
+
 
 class _ScoreWeights:
     """综合评分权重常量"""
@@ -374,6 +388,14 @@ class ScreenEngine:
             if before_bl > total:
                 logger.info(f"blocklist 剔除 {before_bl - total} 只，{before_bl} → {total}")
 
+        # ── 剔除结构性非可交易品种（北交所优先股 82xxxx / 老三板 400/420xxx）──
+        # 这些代码段无连续K线行情，永远抓取失败，属结构性规则（非失败学习型 blocklist）。
+        before_nt = len(codes)
+        codes = [c for c in codes if not _is_nontradable_segment(c)]
+        total = len(codes)
+        if before_nt > total:
+            logger.info(f"非可交易品种剔除 {before_nt - total} 只（82xxxx优先股/老三板），{before_nt} → {total}")
+
         # ── 根据 market 过滤代码 ──
         if self.market != "全部市场":
             before_filter = total
@@ -658,9 +680,18 @@ class ScreenEngine:
 
         merged: Dict[str, Dict] = {}
 
+        # ── 组内去重衰减系数：同组第2个起打 30% ──
+        INTRA_GROUP_DECAY = 0.3
+
         for strategy_name, result in results.items():
             meta = STRATEGY_REGISTRY.get(strategy_name, {})
             weight = meta.get("weight", 1.0)
+            group = meta.get("group", "其他")
+            # 实测胜率因子：以 0.5 为中性(1.0x)，高胜率策略命中更值钱
+            # 0.66→1.13x, 0.52→1.02x, 0.42→0.94x（2026-06-29 全量回测）
+            cls = meta.get("cls")
+            base_wr = getattr(cls, "base_win_rate", 0.5) if cls else 0.5
+            win_factor = 0.6 + 0.8 * base_wr
 
             for sig in result.all_signals:
                 # ── 质量门槛1：单策略原始分过滤（使用大盘调整后的门槛）──
@@ -685,6 +716,8 @@ class ScreenEngine:
                         "all_signals": [],
                         "strategy_rank_sum": 0,
                         "strategy_count": 0,
+                        "_group_best": {},  # {group: best_weighted_score} 用于组内去重
+                        "n_groups": 0,
                     }
                 entry = merged[code]
                 entry["strategies_hit"].append({
@@ -694,13 +727,24 @@ class ScreenEngine:
                     "score": sig.score,
                     "weight": weight,
                     "signals": sig.signals,
+                    "group": group,
                 })
 
-                # 策略内部排名加成：排名越靠前，加成越高
+                # 策略内部排名加成 + 实测胜率加权
                 rank_bonus = (1 - rank_pct) * _Thresholds.RANK_BONUS_MAX
+                raw_contrib = sig.score * weight * win_factor + rank_bonus
+
+                # ── 组内衰减：每组首个全额，同组后续 ×0.3 ──
+                group_best = entry["_group_best"]
+                if group not in group_best:
+                    group_best[group] = raw_contrib
+                    effective_contrib = raw_contrib
+                    entry["n_groups"] += 1
+                else:
+                    effective_contrib = raw_contrib * INTRA_GROUP_DECAY
 
                 entry["total_score"] += sig.score
-                entry["weighted_score"] += sig.score * weight + rank_bonus
+                entry["weighted_score"] += effective_contrib
                 entry["all_signals"].extend(sig.signals)
                 entry["strategy_rank_sum"] += rank_pct
                 entry["strategy_count"] += 1
@@ -759,22 +803,28 @@ class ScreenEngine:
             avg_rank_pct = (entry["strategy_rank_sum"] / entry["strategy_count"]
                             if entry["strategy_count"] > 0 else 1.0)
 
-            # 综合评分 = 加权得分 + 排名加成 + 多策略共识 + 风险调整 + 基本面调整 + 大盘强度
+            # 综合评分 = 加权得分 + 排名加成 + 跨组共识 + 风险调整 + 基本面调整 + 大盘强度
+            # 共识加成基于跨组命中数（组内重复不额外加分）
+            n_groups = entry.get("n_groups", 1)
             risk_adjustment = buy_risk_info["adjustment"] + (risk_score / 100.0) * _ScoreWeights.RISK_FACTOR
             market_strength_adj = market_strength * _ScoreWeights.MARKET_STRENGTH if market_strength is not None else 0
             composite_score = (
                 entry["weighted_score"] * _ScoreWeights.WEIGHTED +
                 (1 - avg_rank_pct) * _ScoreWeights.RANK +
-                n_strategies * _ScoreWeights.CONSENSUS +
+                n_groups * _ScoreWeights.CONSENSUS +
                 risk_adjustment +
                 fundamental_adj +
                 market_strength_adj
             )
             composite_score = max(composite_score, 0)
 
+            # 清理内部字段
+            entry.pop("_group_best", None)
+
             final_list.append({
                 **entry,
                 "n_strategies": n_strategies,
+                "n_groups": n_groups,
                 "all_signals": list(dict.fromkeys(entry["all_signals"])),  # 去重保序保留频次（不转set）
                 # 基本面（缺失为 None，前端按需展示）
                 "pe": pe,
@@ -801,8 +851,8 @@ class ScreenEngine:
                 "avg_rank_pct": round(avg_rank_pct, 3),
             })
 
-        # 排序：命中策略数 > 综合评分
-        final_list.sort(key=lambda x: (x["n_strategies"], x["composite_score"]), reverse=True)
+        # 排序：跨组命中数 > 综合评分（同组重复不提升排名）
+        final_list.sort(key=lambda x: (x["n_groups"], x["composite_score"]), reverse=True)
         return final_list[:top_n]
 
     # 风险扫描 / 卖出信号 / 买入风险评估 — 已抽到 core/risk_scanner.py
