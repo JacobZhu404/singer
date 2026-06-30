@@ -717,6 +717,41 @@ def api_diagnostics_clear():
         return jsonify({"code": 1, "msg": str(e)}), 500
 
 
+@app.route("/api/blocklist", methods=["GET", "POST", "DELETE"])
+def api_blocklist():
+    """手动管理失效股 blocklist。
+
+    GET:    返回当前 blocklist 全部条目
+    POST:   body {"codes": ["831445", ...]} → 将指定代码加入 blocklist
+    DELETE: body {"codes": ["831445", ...]} → 将指定代码移出 blocklist
+    """
+    from ..data.fetcher import delisted_registry
+
+    if request.method == "GET":
+        with delisted_registry._lock:
+            data = dict(delisted_registry._data)
+        return jsonify({"code": 0, "data": data, "active_count": len(delisted_registry.active_blocked())})
+
+    codes = request.json.get("codes", []) if request.is_json else []
+    if not codes:
+        return jsonify({"code": 1, "msg": "缺少 codes 参数"}), 400
+
+    if request.method == "POST":
+        for c in codes:
+            delisted_registry.flag(str(c), "manual")
+        delisted_registry.save()
+        return jsonify({"code": 0, "msg": f"已加入 blocklist: {len(codes)} 只", "codes": codes})
+
+    if request.method == "DELETE":
+        with delisted_registry._lock:
+            removed = [c for c in codes if str(c) in delisted_registry._data]
+            for c in removed:
+                del delisted_registry._data[str(c)]
+            delisted_registry._dirty = True
+        delisted_registry.save()
+        return jsonify({"code": 0, "msg": f"已移出 blocklist: {len(removed)} 只", "codes": removed})
+
+
 @app.route("/api/backtest", methods=["GET"])
 def api_backtest():
     """返回最新一次全策略回测结果（读 backtest/results/ 下最新 backtest_*.json）。
