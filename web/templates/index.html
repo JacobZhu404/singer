@@ -365,18 +365,19 @@
   .hold-days { font-size: 11px; color: var(--muted); }
 
   /* ── Result tabs (strategy tabs) ── */
-  .result-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
-  .result-tab { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; cursor: help; color: var(--muted);
-    background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; transition: all 0.15s; line-height: 1.15; }
-  .result-tab .rt-icon { font-size: 15px; }
+  .result-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; border-bottom: 2px solid var(--border); padding-bottom: 10px; align-items: center; }
+  .result-tab { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; cursor: help; color: var(--muted);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; transition: all 0.15s; line-height: 1.15; }
+  .result-tab .rt-icon { font-size: 13px; }
   .result-tab .rt-names { display: flex; flex-direction: column; }
-  .result-tab .rt-cn { font-size: 13px; font-weight: 600; color: var(--text); }
-  .result-tab .rt-en { font-size: 10px; color: var(--muted); letter-spacing: 0.2px; text-transform: uppercase; opacity: 0.8; }
-  .result-tab .rt-count { font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--muted); }
+  .result-tab .rt-cn { font-size: 12px; font-weight: 600; color: var(--text); }
+  .result-tab .rt-en { display: none; }
+  .result-tab .rt-count { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--muted); }
   .result-tab:hover { border-color: var(--accent); background: rgba(88,166,255,0.08); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
   .result-tab.active { border-color: var(--accent); background: rgba(88,166,255,0.16); box-shadow: 0 0 0 1px var(--accent) inset; }
   .result-tab.active .rt-cn { color: var(--accent); }
   .result-tab.active .rt-count { background: var(--accent); color: #0d1117; }
+  .rt-group-sep { width: 1px; height: 20px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
 
   /* ── Modal ── */
   .modal h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
@@ -1270,6 +1271,93 @@ const STRATEGY_TOOLTIPS = {
       { text: '温和放量（量比>1.2）', score: '+5', meaning: '资金开始流入' },
     ],
     threshold: '综合评分 ≥ 45 分，核心条件：MACD零轴下金叉+SKDJ共振',
+  },
+  momentum: {
+    title: '风险调整动量策略',
+    icon: '🚀',
+    principle: '基于 Barroso 2015 论文核心洞察：用已实现波动率标准化动量信号（z-score），奖励平滑趋势、过滤高波动噪声股。高波动股（年化>80%）直接排除。',
+    conditions: [
+      { text: '年化波动率 < 80%（准入）', score: '过滤', meaning: '高波动股是崩盘候选，直接排除' },
+      { text: '5日风险调整动量 > 0.8σ（准入）', score: '过滤', meaning: '5日涨幅需超过期望波动的0.8倍' },
+      { text: '5日风险调整动量 z-score', score: '最高+35', meaning: '涨幅/期望5日波动，信噪比越高分越高' },
+      { text: '10日风险调整动量 z-score', score: '最高+25', meaning: '中期趋势信噪比' },
+      { text: '20日风险调整动量 z-score', score: '最高+20', meaning: '长期趋势信噪比' },
+      { text: '趋势一致性（阳线占比>60%）', score: '最高+15', meaning: '平滑上涨优于单日暴涨' },
+      { text: '放量确认（量比>1.5）', score: '+15', meaning: '资金推动趋势' },
+      { text: 'RSI未超买（<70）', score: '+10', meaning: '趋势健康，未过热' },
+      { text: '价格在MA20上方', score: '+10', meaning: '中期趋势支撑' },
+    ],
+    threshold: '综合评分 ≥ 70 分',
+  },
+  tail_market: {
+    title: '尾盘强势策略',
+    icon: '🌅',
+    principle: '日线层面模拟尾盘拉升特征：温和涨幅+量能配合+均线多头+收盘创新高。因缺乏分时数据，以日线形态近似识别尾盘强势。',
+    conditions: [
+      { text: '当日温和涨幅（0.5%~5%）', score: '+15', meaning: '不追涨停，温和上涨更安全' },
+      { text: '换手率适中（1%~8%）', score: '+15', meaning: '流动性充足，非冷门股' },
+      { text: '放量（量比>1.5）', score: '+18', meaning: '资金活跃介入' },
+      { text: '均线四线多头', score: '+20', meaning: '趋势结构完整' },
+      { text: '收盘创20日新高', score: '+22', meaning: '日内最强势收盘，模拟尾盘拉升' },
+      { text: '量能稳定（近5日偏离<150%）', score: '+10', meaning: '量能不异常，非一日游' },
+    ],
+    threshold: '综合评分 ≥ 70 分',
+  },
+  reversal: {
+    title: '横截面反转策略',
+    icon: '🔄',
+    principle: '全市场按近5日跌幅排名，取超跌最深的股票，配合当日企稳信号（收阳/放量），捕捉短期反转。利用A股短期反转效应。',
+    conditions: [
+      { text: '5日跌幅排名前10%（横截面超跌）', score: '准入', meaning: '全市场最超跌的一批股票' },
+      { text: '当日止跌回升（涨幅>0）', score: '+10', meaning: '跌势初步企稳' },
+      { text: '当日收阳线', score: '+5', meaning: '多方开始反击' },
+      { text: '企稳放量（量比>1.2）', score: '+5', meaning: '资金开始关注' },
+    ],
+    threshold: '横截面排名为核心条件',
+  },
+  rps_breakout: {
+    title: 'RPS相对强度突破策略',
+    icon: '🏆',
+    principle: '欧奈尔 CANSLIM 选股体系核心：多周期加权相对强度排名，筛选市场前10%领涨股，配合创新高+放量确认突破有效性。',
+    conditions: [
+      { text: '超强相对强度（RPS≥60）', score: '+45', meaning: '多周期涨幅位列全市场前5%' },
+      { text: '强相对强度（RPS≥30）', score: '+35', meaning: '全市场前15%领涨' },
+      { text: '创阶段新高（突破平台高点）', score: '+25', meaning: '打开上方空间，趋势加速' },
+      { text: '创120日新高', score: '+10', meaning: '中长期趋势突破确认' },
+      { text: '放量突破（量比≥2）', score: '+15', meaning: '大资金推动，突破有效' },
+      { text: '价格站上MA50', score: '+10', meaning: '中期趋势支撑' },
+    ],
+    threshold: '综合评分 ≥ 75 分',
+  },
+  high_tight_flag: {
+    title: '高紧旗形策略',
+    icon: '🚩',
+    principle: '欧奈尔经典图形：先出现旗杆（短期暴涨≥80%），随后高位窄幅缩量整理（旗面），最终放量突破旗面。强庄股蓄势的典型形态。',
+    conditions: [
+      { text: '旗杆暴涨≥120%', score: '+40', meaning: '极强主力资金拉升' },
+      { text: '旗杆翻倍（≥100%）', score: '+35', meaning: '主力实力雄厚' },
+      { text: '旗杆强涨（≥80%）', score: '+30', meaning: '满足最低旗杆条件' },
+      { text: '旗面极紧（回撤<10%）', score: '+30', meaning: '主力高度控盘，无抛压' },
+      { text: '旗面紧致（回撤<20%）', score: '+22', meaning: '回调有序，筹码稳定' },
+      { text: '旗面缩量', score: '+15', meaning: '整理期量能萎缩，蓄势' },
+      { text: '放量突破旗面（量比≥1.3）', score: '+25', meaning: '突破确认，新一波启动' },
+    ],
+    threshold: '综合评分 ≥ 75 分',
+  },
+  limit_up_gene: {
+    title: '涨停基因策略',
+    icon: '🔥',
+    principle: '近期有真实涨停封板（收盘=最高价），随后回踩5-18%甜区，配合量价拐头信号。捕捉涨停板后洗盘结束的二次启动。',
+    conditions: [
+      { text: '近期真封板≥3次', score: '+35', meaning: '连板龙头，市场关注度极高' },
+      { text: '近期真封板2次', score: '+25', meaning: '强势股反复封板' },
+      { text: '近期真封板1次', score: '+15', meaning: '有涨停基因' },
+      { text: '回撤甜区（5%~18%）', score: '+20', meaning: '回调幅度适中，非破位' },
+      { text: '当日阳线企稳', score: '+10', meaning: '洗盘结束信号' },
+      { text: '温和放量（1.2~2倍）', score: '+10', meaning: '资金回流' },
+      { text: 'MACD近零轴', score: '+10', meaning: '动能即将由负转正' },
+    ],
+    threshold: '综合评分 ≥ 45 分',
   },
 };
 
@@ -2233,11 +2321,7 @@ function renderResult(data) {
 
   const tabs = document.getElementById('resultTabs');
   let tabHtml = mergedTabHtml(picks.length, true);
-  Object.entries(details).forEach(([id, d]) => {
-    const meta = strategies.find(s => s.id === id) || {};
-    const title = btTabTitle(id).replace(/"/g, '&quot;');
-    tabHtml += `<div class="result-tab" title="${title}" onclick="switchResultTab('${id}')">${resultTabInner(meta.icon, meta.name||id, meta.name_en||'', d.hit_count)}</div>`;
-  });
+  tabHtml += buildGroupedTabs(details);
   tabs.innerHTML = tabHtml;
 
   // 显示风险过滤器（综合推荐 tab 默认激活）
@@ -2335,7 +2419,31 @@ function resultTabInner(icon, cn, en, count) {
 // 综合推荐tab（中英文 + 悬停说明）
 function mergedTabHtml(count, active) {
   return `<div class="result-tab${active ? ' active' : ''}" title="多策略加权合并的综合推荐榜" `
-    + `onclick="switchResultTab('merged')">${resultTabInner('🏆', '综合推荐', 'Top Picks', count)}</div>`;
+    + `onclick="switchResultTab('merged')">${resultTabInner('🏆', '综合推荐', '', count)}</div>`;
+}
+
+// 按 group 分组生成所有策略 tab（带分隔线），用于完整结果渲染
+function buildGroupedTabs(details) {
+  const groupOrder = ['趋势顺势', '反转超跌', '突破创新高', '形态独立', '其他'];
+  const grouped = {};
+  Object.entries(details).forEach(([id, d]) => {
+    const meta = strategies.find(s => s.id === id) || {};
+    const g = meta.group || '其他';
+    if (!grouped[g]) grouped[g] = [];
+    grouped[g].push({ id, d, meta });
+  });
+  let html = '';
+  let first = true;
+  groupOrder.forEach(g => {
+    if (!grouped[g]) return;
+    if (!first) html += '<div class="rt-group-sep"></div>';
+    first = false;
+    grouped[g].forEach(({ id, d, meta }) => {
+      const title = btTabTitle(id).replace(/"/g, '&quot;');
+      html += `<div class="result-tab" data-strategy="${id}" title="${title}" onclick="switchResultTab('${id}')">${resultTabInner(meta.icon, meta.name||id, '', d.hit_count)}</div>`;
+    });
+  });
+  return html;
 }
 
 function appendStrategyTab(id, detail) {
@@ -2347,7 +2455,7 @@ function appendStrategyTab(id, detail) {
   tab.setAttribute('data-strategy', id);
   tab.title = btTabTitle(id);
   tab.onclick = function(e) { switchResultTab(id, e); };
-  tab.innerHTML = resultTabInner(meta.icon, meta.name || id, meta.name_en || '', detail.hit_count);
+  tab.innerHTML = resultTabInner(meta.icon, meta.name || id, '', detail.hit_count);
   tabs.appendChild(tab);
   _renderedStrategyTabs.add(id);
 }
