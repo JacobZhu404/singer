@@ -137,17 +137,16 @@ class ChanlunAnalysis:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _to_kbars(df: pd.DataFrame) -> List[KBar]:
-    """将DataFrame转换为KBar列表"""
-    bars = []
-    for i, row in df.iterrows():
-        bars.append(KBar(
-            index=int(i),
-            open=float(row["open"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            close=float(row["close"]),
-        ))
-    return bars
+    """将DataFrame转换为KBar列表（向量化提取，避免 iterrows）"""
+    opens = df["open"].astype(float).values
+    highs = df["high"].astype(float).values
+    lows = df["low"].astype(float).values
+    closes = df["close"].astype(float).values
+    indices = df.index.values
+    return [
+        KBar(index=int(indices[i]), open=opens[i], high=highs[i], low=lows[i], close=closes[i])
+        for i in range(len(df))
+    ]
 
 
 def _merge_inclusive_strict(raw_bars: List[KBar]) -> List[KBar]:
