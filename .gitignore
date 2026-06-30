@@ -34,4 +34,6 @@ data/cache/*.json
 
 # 回测自动生成的带时间戳结果转储（保留人工策展的命名结果）
 backtest/results/backtest_*_*.json
+backtest/results/composite_backtest_*.json
+backtest/results/chanlun_sweep_*.json
 backtest/results/.checkpoint*.json
