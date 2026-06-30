@@ -284,11 +284,11 @@
   .loading-state { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 80px; color: var(--muted); }
 
   /* ── Info cards ── */
-  .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .info-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-  .info-card .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .info-card .value { font-size: 22px; font-weight: 700; color: var(--text); }
-  .info-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .info-grid { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+  .info-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px; display: flex; align-items: center; gap: 8px; }
+  .info-card .label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .info-card .value { font-size: 16px; font-weight: 700; color: var(--text); }
+  .info-card .sub { font-size: 11px; color: var(--muted); margin-left: 4px; }
 
   /* ── Notification ── */
   .notification { position: fixed; top: 20px; right: 20px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; font-size: 14px; max-width: 320px; z-index: 1000; transform: translateX(120%); transition: transform 0.3s; }
@@ -377,7 +377,7 @@
   .result-tab.active { border-color: var(--accent); background: rgba(88,166,255,0.16); box-shadow: 0 0 0 1px var(--accent) inset; }
   .result-tab.active .rt-cn { color: var(--accent); }
   .result-tab.active .rt-count { background: var(--accent); color: #0d1117; }
-  .rt-group-sep { width: 1px; height: 20px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
+  .rt-group-sep { font-size: 10px; color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; flex-shrink: 0; white-space: nowrap; opacity: 0.8; }
 
   /* ── Modal ── */
   .modal h3 { font-size: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
@@ -2300,22 +2300,19 @@ function renderResult(data) {
   document.getElementById('summaryCards').innerHTML = `
     <div class="info-card">
       <div class="label">📅 交易日</div>
-      <div class="value" style="font-size:18px">${data.trade_date || '-'}</div>
+      <div class="value">${data.trade_date || '-'}</div>
     </div>
     <div class="info-card">
       <div class="label">🏆 综合推荐</div>
       <div class="value">${picks.length}</div>
-      <div class="sub">多策略共识股票</div>
     </div>
     <div class="info-card">
-      <div class="label">📊 扫描股票</div>
+      <div class="label">📊 扫描</div>
       <div class="value">${Math.round(totalScanned)}</div>
-      <div class="sub">单策略平均</div>
     </div>
     <div class="info-card">
-      <div class="label">⚡ 执行策略</div>
+      <div class="label">⚡ 策略</div>
       <div class="value">${nStrategies}</div>
-      <div class="sub">策略数</div>
     </div>
   `;
 
@@ -2349,10 +2346,10 @@ function renderPartialResult(data) {
     const area = document.getElementById('resultArea');
     area.style.display = 'block';
     document.getElementById('summaryCards').innerHTML = `
-      <div class="info-card"><div class="label">📅 交易日</div><div class="value" style="font-size:18px">${data.trade_date || '-'}</div></div>
-      <div class="info-card"><div class="label">🏆 综合推荐</div><div class="value">-</div><div class="sub">计算中...</div></div>
-      <div class="info-card"><div class="label">📊 扫描股票</div><div class="value">-</div><div class="sub">计算中...</div></div>
-      <div class="info-card"><div class="label">⚡ 执行策略</div><div class="value">0/${(data.strategies_run || []).length}</div><div class="sub">并行执行中</div></div>
+      <div class="info-card"><div class="label">📅 交易日</div><div class="value">${data.trade_date || '-'}</div></div>
+      <div class="info-card"><div class="label">🏆 综合推荐</div><div class="value">-</div></div>
+      <div class="info-card"><div class="label">📊 扫描</div><div class="value">-</div></div>
+      <div class="info-card"><div class="label">⚡ 策略</div><div class="value">0/${(data.strategies_run || []).length}</div></div>
     `;
     document.getElementById('resultTabs').innerHTML = mergedTabHtml('-', true);
     const filterBar = document.getElementById('riskFilterBar');
@@ -2373,10 +2370,10 @@ function renderPartialResult(data) {
       lastResult.strategy_details = {};
       document.getElementById('resultTabs').innerHTML = mergedTabHtml('-', true);
       document.getElementById('summaryCards').innerHTML = `
-        <div class="info-card"><div class="label">📅 交易日</div><div class="value" style="font-size:18px">${data.trade_date || '-'}</div></div>
-        <div class="info-card"><div class="label">🏆 综合推荐</div><div class="value">-</div><div class="sub">计算中...</div></div>
-        <div class="info-card"><div class="label">📊 扫描股票</div><div class="value">-</div><div class="sub">计算中...</div></div>
-        <div class="info-card"><div class="label">⚡ 执行策略</div><div class="value">0/${newRun.length}</div><div class="sub">并行执行中</div></div>
+        <div class="info-card"><div class="label">📅 交易日</div><div class="value">${data.trade_date || '-'}</div></div>
+        <div class="info-card"><div class="label">🏆 综合推荐</div><div class="value">-</div></div>
+        <div class="info-card"><div class="label">📊 扫描</div><div class="value">-</div></div>
+        <div class="info-card"><div class="label">⚡ 策略</div><div class="value">0/${newRun.length}</div></div>
       `;
       document.getElementById('resultContent').innerHTML = `
         <div class="empty"><div class="empty-icon">⏳</div><div>策略并行执行中...</div></div>
@@ -2422,7 +2419,7 @@ function mergedTabHtml(count, active) {
     + `onclick="switchResultTab('merged')">${resultTabInner('🏆', '综合推荐', '', count)}</div>`;
 }
 
-// 按 group 分组生成所有策略 tab（带分隔线），用于完整结果渲染
+// 按 group 分组生成所有策略 tab（带组名标签），用于完整结果渲染
 function buildGroupedTabs(details) {
   const groupOrder = ['趋势顺势', '反转超跌', '突破创新高', '形态独立', '其他'];
   const grouped = {};
@@ -2433,11 +2430,9 @@ function buildGroupedTabs(details) {
     grouped[g].push({ id, d, meta });
   });
   let html = '';
-  let first = true;
   groupOrder.forEach(g => {
     if (!grouped[g]) return;
-    if (!first) html += '<div class="rt-group-sep"></div>';
-    first = false;
+    html += `<div class="rt-group-sep">${g}</div>`;
     grouped[g].forEach(({ id, d, meta }) => {
       const title = btTabTitle(id).replace(/"/g, '&quot;');
       html += `<div class="result-tab" data-strategy="${id}" title="${title}" onclick="switchResultTab('${id}')">${resultTabInner(meta.icon, meta.name||id, '', d.hit_count)}</div>`;
