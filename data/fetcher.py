@@ -609,6 +609,7 @@ class MarketScanner:
         # 并发自适应降级：20 → 10 → 5 → 串行（降低并发避免卡死）
         concurrency_levels = [max_workers, 20, 10, 5]
         failed = []
+        prev_eff = None  # 上一轮的有效并发，用于跳过等价轮次
         for round_idx, cur_workers in enumerate(concurrency_levels):
             if not need_fetch:
                 break
@@ -616,11 +617,17 @@ class MarketScanner:
             if stop_event and stop_event.is_set():
                 logger.info("prefetch_batch: 收到停止信号，中止下载")
                 break
-            label = f"第{round_idx+1}轮(并发{cur_workers})"
+            # 有效并发 = min(并发上限, 剩余数量)。剩余 2 只时 20/10/5 上限完全等价，
+            # 跳过这些重复轮次，避免每轮白白卡死 30s（仅在数量大于上限时降级才有意义）。
+            eff_workers = min(cur_workers, len(need_fetch))
+            if eff_workers == prev_eff:
+                continue
+            prev_eff = eff_workers
+            label = f"第{round_idx+1}轮(并发{eff_workers})"
             attempted = len(need_fetch)
             logger.info(f"{label}: 尝试 {attempted} 只")
             failed = self._fetch_round(
-                need_fetch, days, cur_workers, label,
+                need_fetch, days, eff_workers, label,
                 progress_callback, force_refresh=force_refresh,
                 stop_event=stop_event  # ← 传递停止事件
             )
@@ -643,14 +650,20 @@ class MarketScanner:
                     logger.debug("obs.warn sources_unavailable failed", exc_info=True)
                 break
             need_fetch = failed
+            # 计算后续真正会执行的有效并发：剩余数量 ≤ 上限的轮次会被跳过
+            next_eff = next(
+                (min(w, len(failed)) for w in concurrency_levels[round_idx + 1:]
+                 if min(w, len(failed)) < eff_workers),
+                1,  # 没有更低的有效并发了 → 直接串行兜底
+            )
             if round_idx + 1 < len(concurrency_levels):
-                logger.warning(f"{label} 失败 {len(failed)} 只，降级到并发 {concurrency_levels[round_idx+1]}")
+                logger.warning(f"{label} 失败 {len(failed)} 只，降级到有效并发 {next_eff}")
                 try:
                     from ..core.observability import obs
                     obs.warn("data.fetch", "concurrency_downgrade",
-                             f"{label} 失败 {len(failed)}，降级到并发 {concurrency_levels[round_idx+1]}",
+                             f"{label} 失败 {len(failed)}，降级到有效并发 {next_eff}",
                              context={"failed_count": len(failed),
-                                      "next_workers": concurrency_levels[round_idx+1],
+                                      "next_workers": next_eff,
                                       "samples": failed[:5]})
                 except Exception:
                     logger.debug("obs.warn concurrency_downgrade failed", exc_info=True)
