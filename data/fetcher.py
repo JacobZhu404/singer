@@ -676,13 +676,16 @@ class MarketScanner:
 
         if failed:
             logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
+            for c in failed:
+                delisted_registry.flag(c, "no_data")
+            delisted_registry.save()
             try:
                 from ..core.observability import obs
                 obs.error("data.fetch", "final_failure",
-                          f"K线最终失败 {len(failed)} 只",
+                          f"K线最终失败 {len(failed)} 只，已加入 blocklist",
                           context={"failed_count": len(failed),
                                    "samples": failed[:20],
-                                   "action": "标记失败，使用本地旧缓存兜底"})
+                                   "action": "标记失败并加入blocklist，下次筛选自动跳过"})
             except Exception:
                 logger.debug("obs.error final_failure failed", exc_info=True)
 
@@ -1035,6 +1038,10 @@ class MarketScanner:
         from ..utils.indicators import compute_indicator_bundle
 
         df = self.get_history(code, days, pure=pure)
+        # ── 零数据护栏：数据源无覆盖的代码（北交所旧码/退市/老三板）──
+        if df is None or len(df) == 0:
+            delisted_registry.flag(code, "no_data")
+            return {}
         # ── 新鲜度护栏：剔除停牌/退市标的 ──
         # 退市股（如 000024 招商地产，K 线冻结在 2015-12-07）历史数据仍可取到，
         # 若不拦截，策略会把"最后一根 bar"当成今日、用多年前的形态把它选出来。
