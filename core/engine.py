@@ -365,6 +365,15 @@ class ScreenEngine:
             logger.info("收到停止信号，中止下载（确定代码后）")
             return {"status": "stopped", "cached_count": 0, "downloaded": 0, "failed_count": 0}
 
+        # ── 剔除 blocklist（手动确认的失效股） ──
+        blocked = delisted_registry.active_blocked()
+        if blocked:
+            before_bl = len(codes)
+            codes = [c for c in codes if c not in blocked]
+            total = len(codes)
+            if before_bl > total:
+                logger.info(f"blocklist 剔除 {before_bl - total} 只，{before_bl} → {total}")
+
         # ── 根据 market 过滤代码 ──
         if self.market != "全部市场":
             before_filter = total
