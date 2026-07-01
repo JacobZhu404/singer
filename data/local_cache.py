@@ -180,19 +180,44 @@ def save_stock_list(df: pd.DataFrame):
         logger.warning(f"保存股票列表缓存失败: {e}")
 
 
+_HEADER_ONLY_CSV_MAX_BYTES = 40  # 表头 "date,open,high,low,close,vol\n"=29B；1 行数据至少加 ~15B
+
+
 def get_cached_codes() -> list:
     """
     返回本地缓存中已有的股票代码列表（扫描 klines 目录）。
     供 MarketScanner.get_cached_codes() 调用，避免在 fetcher.py 里重复拼路径。
+
+    过滤两类"僵尸"条目，避免反复喂进 fetch 队列失败：
+      1) meta 已登记且 records<=0 —— 权威依据（clean_nontrading_bars/异常写入残留）
+      2) meta 缺失时用 CSV 文件大小兜底：<=40B 判 header-only 空壳
     """
     import traceback
     codes = []
+    skipped_zero = 0
+    skipped_empty = 0
     try:
         if os.path.isdir(_KLINE_DIR):
+            meta = _load_meta()
             for fname in os.listdir(_KLINE_DIR):
-                if fname.endswith(".csv"):
-                    codes.append(fname[:-4])
-        logger.info(f"get_cached_codes: 扫描到 {len(codes)} 个CSV文件, 路径={_KLINE_DIR}")
+                if not fname.endswith(".csv"):
+                    continue
+                code = fname[:-4]
+                if code in meta:
+                    if meta[code].get("records", 0) <= 0:
+                        skipped_zero += 1
+                        continue
+                else:
+                    # meta 缺失 → 文件大小兜底
+                    try:
+                        if os.path.getsize(os.path.join(_KLINE_DIR, fname)) <= _HEADER_ONLY_CSV_MAX_BYTES:
+                            skipped_empty += 1
+                            continue
+                    except OSError:
+                        pass
+                codes.append(code)
+        logger.info(f"get_cached_codes: 扫描到 {len(codes)} 个有效CSV文件"
+                    f"（跳过 records=0 {skipped_zero} 只 + 空壳 {skipped_empty} 只）, 路径={_KLINE_DIR}")
     except Exception as e:
         logger.error(f"get_cached_codes 扫描磁盘异常: {e}\n{traceback.format_exc()}")
     return codes
