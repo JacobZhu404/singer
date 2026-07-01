@@ -111,7 +111,7 @@ class StrongStockStrategy(BaseStrategy):
                 signals.append(f"相对强度正(+{rel_strength:.1f}%)")
                 score += 15
             elif rel_strength > -5:
-                signals.append(f"相对强度弱(+{rel_strength:.1f}%)")
+                signals.append(f"相对强度弱({rel_strength:.1f}%)")
                 score += 5
 
         if score < 55:  # 放宽从80到55，同时去掉红肥绿瘦的强制过滤
