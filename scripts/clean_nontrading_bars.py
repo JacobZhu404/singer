@@ -40,7 +40,7 @@ def parse_date(s: str):
 
 def scan_and_clean(apply_changes: bool) -> dict:
     stats = {"files": 0, "dirty_files": 0, "dropped_rows": 0,
-             "by_date": {}, "meta_updates": 0}
+             "by_date": {}, "meta_updates": 0, "deleted_files": 0}
 
     if not os.path.isdir(KLINES_DIR):
         print(f"未找到 {KLINES_DIR}")
@@ -82,22 +82,26 @@ def scan_and_clean(apply_changes: bool) -> dict:
         stats["dropped_rows"] += len(dropped)
 
         if apply_changes:
-            # 重写 CSV
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(header)
-                w.writerows(kept)
-            # 更新 meta
-            info = meta.get(code)
-            if isinstance(info, dict):
-                if kept:
+            if kept:
+                # 重写 CSV
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    w = csv.writer(f)
+                    w.writerow(header)
+                    w.writerows(kept)
+                info = meta.get(code)
+                if isinstance(info, dict):
                     last_date = kept[-1][0]   # YYYY-MM-DD
                     info["end_date"] = last_date.replace("-", "")
                     info["records"] = len(kept)
-                else:
-                    info["end_date"] = ""
-                    info["records"] = 0
-                stats["meta_updates"] += 1
+                    stats["meta_updates"] += 1
+            else:
+                # 全部行都被判为非交易日 → 删 CSV + pop meta，不留 header-only 空壳
+                # (空壳会被 get_cached_codes 反复扫回 fetch 队列，永远失败)
+                os.remove(path)
+                if code in meta:
+                    del meta[code]
+                    stats["meta_updates"] += 1
+                stats["deleted_files"] = stats.get("deleted_files", 0) + 1
 
     if apply_changes and stats["meta_updates"]:
         # 安全写 meta:先写临时再 rename
@@ -127,6 +131,7 @@ def main():
             print(f"    {d}: {n}")
     if args.apply:
         print(f"  meta.json 更新: {s['meta_updates']} 只")
+        print(f"  空壳 CSV 删除: {s.get('deleted_files', 0)} 只")
     else:
         print("  (dry-run,未修改任何文件;加 --apply 实际执行)")
 

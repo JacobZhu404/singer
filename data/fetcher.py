@@ -689,13 +689,27 @@ class MarketScanner:
 
         if failed:
             logger.warning(f"最终仍有 {len(failed)} 只无法获取: {failed[:20]}...")
+            # 自动 flag「本地无历史 + 全源失败」的死码进 blocklist（TTL 90 天，到期自动重探）。
+            # 关闭 get_indicators.flag() 只登记「有陈旧数据」的空档 —— 从未取到的代码永远漏登记。
+            fresh_meta = cache._load_meta()
+            auto_flagged: List[str] = []
+            for c in failed:
+                m = fresh_meta.get(c, {})
+                if m.get("records", 0) <= 0:
+                    delisted_registry.flag(c, "")
+                    auto_flagged.append(c)
+            if auto_flagged:
+                delisted_registry.save()
+                logger.info(f"自动登记 blocklist（无历史+全源失败）: {len(auto_flagged)} 只")
             try:
                 from ..core.observability import obs
                 obs.error("data.fetch", "final_failure",
-                          f"K线最终失败 {len(failed)} 只",
+                          f"K线最终失败 {len(failed)} 只，其中 {len(auto_flagged)} 只已自动进 blocklist",
                           context={"failed_count": len(failed),
                                    "codes": failed,
-                                   "action": "需人工确认后加入 blocklist"})
+                                   "auto_flagged_count": len(auto_flagged),
+                                   "auto_flagged": auto_flagged,
+                                   "action": "TTL 90 天到期自动重探；其余为暂时性失败"})
             except Exception:
                 logger.debug("obs.error final_failure failed", exc_info=True)
 
