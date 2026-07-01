@@ -51,6 +51,7 @@ _engine: Optional[ScreenEngine] = None
 _engine_lock = threading.Lock()
 _last_result: Optional[dict] = None
 _is_running = False
+_task_lock = threading.Lock()  # 保护 _is_running / _task_start_time
 _task_start_time = 0.0
 _task_timeout = 900.0  # 15分钟超时
 _stop_event = threading.Event()
@@ -178,8 +179,11 @@ def api_screen():
     """
     global _last_result, _is_running
 
-    if _is_running:
-        return jsonify({"code": 1, "msg": "筛选任务正在进行中，请稍候..."})
+    with _task_lock:
+        if _is_running and (time.time() - _task_start_time) < _task_timeout:
+            return jsonify({"code": 1, "msg": "筛选任务正在进行中，请稍候..."})
+        _is_running = True
+        _task_start_time = time.time()
 
     body = request.get_json() or {}
     strategies = body.get("strategies", None)
@@ -218,11 +222,6 @@ def api_screen():
                 _screen_progress["strategies"] = dict(engine.get_progress().get("strategies", {}))
 
         try:
-            # 超时检测：防止异常导致任务卡住
-            if _is_running and (time.time() - _task_start_time) < _task_timeout:
-                return jsonify({"code": 1, "msg": "任务正在进行中，请稍后重试"})
-            _is_running = True
-            _task_start_time = time.time()
             _stop_event.clear()
             # 重置进度和部分结果
             with _progress_lock:
@@ -269,7 +268,8 @@ def api_screen():
                 logger.debug("obs.error run_task failed", exc_info=True)
             _last_result = {"error": str(e)}
         finally:
-            _is_running = False
+            with _task_lock:
+                _is_running = False
             _stop_event.clear()
             with _progress_lock:
                 _screen_progress["phase"] = "done"
@@ -330,19 +330,24 @@ def api_screen_stop():
     except Exception:
         obs = None
 
-    if not _is_running:
-        return jsonify({"code": 1, "msg": "当前没有正在运行的筛选任务"})
+    with _task_lock:
+        if not _is_running:
+            return jsonify({"code": 1, "msg": "当前没有正在运行的筛选任务"})
 
     _stop_event.set()
     stop_requested_at = time.time()
     if obs:
+        with _task_lock:
+            task_age = round(stop_requested_at - _task_start_time, 1)
         obs.warn("web.api", "screen_stop", "收到用户停止请求，已置 stop_event",
-                 context={"task_age_sec": round(stop_requested_at - _task_start_time, 1)})
+                 context={"task_age_sec": task_age})
 
     # 轮询等待自然退出（最多 5s）
     deadline = stop_requested_at + 5.0
     while time.time() < deadline:
-        if not _is_running:
+        with _task_lock:
+            running = _is_running
+        if not running:
             elapsed = time.time() - stop_requested_at
             if obs:
                 obs.info("web.api", "screen_stop",
@@ -356,7 +361,8 @@ def api_screen_stop():
 
     # 5s 仍未退出 —— 强制重置标志位，让前端可以重新发起筛选
     # 注意：后台线程会在自身阻塞的网络调用结束后走到 finally 自然退出
-    _is_running = False
+    with _task_lock:
+        _is_running = False
     with _progress_lock:
         _screen_progress["phase"] = "done"
         _screen_progress["current"] = "已强制中止（后台请求可能仍在完成）"
@@ -460,17 +466,15 @@ def api_download():
     force = bool(body.get("force_refresh", False))
     market = body.get("market", "主板")  # ← 修复：获取 market 参数
 
-    if _is_running:
-        return jsonify({"code": 2, "msg": "当前有任务正在运行，请稍后再试"})
+    with _task_lock:
+        if _is_running and (time.time() - _task_start_time) < _task_timeout:
+            return jsonify({"code": 2, "msg": "当前有任务正在运行，请稍后再试"})
+        _is_running = True
+        _task_start_time = time.time()
 
     def download_task():
         global _is_running
         try:
-            # 超时检测：防止异常导致任务卡住
-            if _is_running and (time.time() - _task_start_time) < _task_timeout:
-                return
-            _is_running = True
-            _task_start_time = time.time()
             _stop_event.clear()
             with _progress_lock:
                 _screen_progress["phase"] = "prefetch"
@@ -504,7 +508,8 @@ def api_download():
                 _screen_progress["phase"] = "download_done"
                 _screen_progress["current"] = f"下载失败: {e}"
         finally:
-            _is_running = False
+            with _task_lock:
+                _is_running = False
             with _progress_lock:
                 if _screen_progress["phase"] != "download_done":
                     _screen_progress["phase"] = "download_done"
