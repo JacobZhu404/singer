@@ -41,7 +41,7 @@ STRATEGY_REGISTRY = {
         "description": "DIF/DEA同时在零轴以上，MACD金叉，均线多头排列",
         "tags": ["趋势", "中线"],
         "icon": "📈",
-        "weight": 0.93,
+        "weight": 0.91,
         "group": "趋势顺势",
     },
     "right_side": {
@@ -51,7 +51,7 @@ STRATEGY_REGISTRY = {
         "description": "突破关键阻力位后介入，均线金叉，顺势而为",
         "tags": ["突破", "中线"],
         "icon": "⚡",
-        "weight": 1.07,
+        "weight": 1.05,
         "group": "趋势顺势",
     },
     "strong_stock": {
@@ -61,7 +61,7 @@ STRATEGY_REGISTRY = {
         "description": "放量+红肥绿瘦+小阳/缺口(互斥)+MACD零轴(v2优化)",
         "tags": ["强势", "短线"],
         "icon": "💪",
-        "weight": 0.98,
+        "weight": 0.92,
         "group": "趋势顺势",
     },
     "golden_cross": {
@@ -71,7 +71,7 @@ STRATEGY_REGISTRY = {
         "description": "macd_bull宽松版：3线多头+RSI，比macd_bull更早入场",
         "tags": ["金叉", "趋势", "均线", "宽松"],
         "icon": "✨",
-        "weight": 0.84,
+        "weight": 0.79,
         "group": "趋势顺势",
     },
     "tail_market": {
@@ -81,7 +81,7 @@ STRATEGY_REGISTRY = {
         "description": "温和涨幅+量能配合+均线多头+收盘创新高（缺市值/分时数据）",
         "tags": ["尾盘", "强势", "短线", "近似"],
         "icon": "🌅",
-        "weight": 1.06,
+        "weight": 1.17,
         "group": "趋势顺势",
     },
     "momentum": {
@@ -91,7 +91,7 @@ STRATEGY_REGISTRY = {
         "description": "波动率标准化动量(z-score)+趋势一致性+高波动过滤",
         "tags": ["动量", "趋势", "风险调整"],
         "icon": "🚀",
-        "weight": 0.94,
+        "weight": 0.92,
         "group": "趋势顺势",
     },
 
@@ -105,7 +105,7 @@ STRATEGY_REGISTRY = {
         "description": "TD Sequential买入九转，反转信号，适合短线抄底",
         "tags": ["反转", "短线"],
         "icon": "🔮",
-        "weight": 0.95,
+        "weight": 0.99,
         "group": "反转超跌",
     },
     "rsi_oversold": {
@@ -115,7 +115,7 @@ STRATEGY_REGISTRY = {
         "description": "RSI<30超卖区域，价格反弹概率高，适合震荡市抄底",
         "tags": ["超卖", "反弹", "短线"],
         "icon": "📉",
-        "weight": 1.07,
+        "weight": 0.94,
         "group": "反转超跌",
     },
     "bollinger_lower_bounce": {
@@ -125,7 +125,7 @@ STRATEGY_REGISTRY = {
         "description": "价格触及布林带下轨或附近，配合缩量止跌，均值回归反弹",
         "tags": ["布林带", "反弹", "均值回归"],
         "icon": "📊",
-        "weight": 0.81,
+        "weight": 0.75,
         "group": "反转超跌",
     },
     "reversal": {
@@ -149,7 +149,7 @@ STRATEGY_REGISTRY = {
         "description": "量比>2倍 + 价格突破近期高点，视为有效突破信号",
         "tags": ["突破", "放量", "短线"],
         "icon": "🚀",
-        "weight": 1.05,
+        "weight": 1.02,
         "group": "突破创新高",
     },
     "bollinger_breakout": {
@@ -159,7 +159,7 @@ STRATEGY_REGISTRY = {
         "description": "布林带 10 日最窄 + 放量突破中轨 / 逼近上轨，捕捉波动率扩张起步",
         "tags": ["布林带", "收口", "突破", "波动率"],
         "icon": "📊",
-        "weight": 0.94,
+        "weight": 0.95,
         "group": "突破创新高",
     },
     "rps_breakout": {
@@ -169,7 +169,7 @@ STRATEGY_REGISTRY = {
         "description": "欧奈尔RPS：多周期加权强度+创阶段新高+放量，捕捉领涨股",
         "tags": ["欧奈尔", "相对强度", "突破", "领涨"],
         "icon": "🏆",
-        "weight": 1.21,
+        "weight": 1.39,
         "group": "突破创新高",
     },
     "high_tight_flag": {
@@ -179,7 +179,7 @@ STRATEGY_REGISTRY = {
         "description": "欧奈尔高紧旗形：旗杆暴涨+高位窄幅缩量整理，蓄势待突破",
         "tags": ["欧奈尔", "旗形", "强庄", "突破"],
         "icon": "🚩",
-        "weight": 1.03,
+        "weight": 1.02,
         "group": "突破创新高",
     },
     "limit_up_gene": {
@@ -189,7 +189,7 @@ STRATEGY_REGISTRY = {
         "description": "近期真封板(close==high) + 回撤 5-18% 甜区 + 量价拐头 (v2，去循环引用)",
         "tags": ["涨停", "回踩", "短线"],
         "icon": "🔥",
-        "weight": 0.98,
+        "weight": 0.92,
         "group": "突破创新高",
     },
 
@@ -203,7 +203,7 @@ STRATEGY_REGISTRY = {
         "description": "包含处理→分型(5K)→笔→中枢→背驰→三类买点（推荐）",
         "tags": ["缠论", "严格", "中枢", "背驰"],
         "icon": "📐",
-        "weight": 0.98,
+        "weight": 0.8,
         "group": "形态独立",
     },
 }

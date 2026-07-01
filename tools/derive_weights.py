@@ -43,7 +43,7 @@ from stock_screener.strategies.registry import STRATEGY_REGISTRY
 # ── 公式常量（改这里即可调参，注释见模块头）────────────────────────────────
 PERIODS = [5, 10, 30]
 CREDIBILITY_K = 150       # 可信度收缩半衰量（≈ 健康样本量）
-GAIN = 0.18               # eff → 权重的斜率
+GAIN = 0.35               # eff → 权重的斜率（0.18→0.35：让1σ α优势映射±12%权重差）
 W_MIN, W_MAX = 0.6, 1.4   # 权重夹取区间
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
