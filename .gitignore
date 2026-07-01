@@ -6,7 +6,8 @@ dist/
 build/
 
 # Data
-data/cache/klines/*.csv
+data/cache/**/*.csv
+data/cache/backup_*/
 data/cache/temp/
 data/cache/meta.json
 data/last_screen_result.json
