@@ -235,15 +235,17 @@ class BaseStrategy(ABC):
         return None
 
     def _get_name_map(self, stock_list: pd.DataFrame) -> Dict[str, str]:
-        """构建 代码 -> name 映射（过滤ST股）"""
+        """构建 代码 -> name 映射（全量，含 ST/退）。
+
+        _get_codes 不按 ST 过滤，ST 股会进入筛选；若此处剔除 ST，
+        命中的 ST 股查不到名称会回退成代码本身（name==code）。故映射必须全量。
+        """
         if stock_list.empty:
             return {}
         code_col = self._resolve_code_col(stock_list)
         name_col = self._resolve_name_col(stock_list)
         if code_col and name_col and name_col in stock_list.columns:
-            valid = ~stock_list[name_col].str.contains("ST|退", na=False)
-            df_clean = stock_list[valid]
-            return dict(zip(df_clean[code_col].astype(str), df_clean[name_col].astype(str)))
+            return dict(zip(stock_list[code_col].astype(str), stock_list[name_col].astype(str)))
         return {}
 
     def _get_codes(self, stock_list: pd.DataFrame) -> List[str]:
