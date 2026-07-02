@@ -148,3 +148,21 @@ def test_all_strategies_instantiate():
         assert inst.name == key, f"{key}: name '{inst.name}' != registry key"
         assert isinstance(inst.description, str)
         assert 0 < inst.base_win_rate < 1
+
+
+def test_name_map_includes_st_stocks():
+    """name_map 必须含 ST/退 股 —— 否则命中的 ST 股名称回退成代码本身（name==code）。
+
+    回归：_get_codes 不按 ST 过滤，_get_name_map 曾错误地剔除 ST，
+    导致 *ST和科(002816) 等被选出后显示成 '002816'。
+    """
+    strat = next(iter(STRATEGY_REGISTRY.values()))["cls"](top_n=5)
+    stock_list = pd.DataFrame({
+        "ts_code": ["000001", "002816", "000488", "688646"],
+        "name":    ["平安银行", "*ST和科", "ST晨鸣", "ST逸飞"],
+    })
+    name_map = strat._get_name_map(stock_list)
+    assert name_map.get("002816") == "*ST和科"
+    assert name_map.get("000488") == "ST晨鸣"
+    assert name_map.get("688646") == "ST逸飞"
+    assert name_map.get("000001") == "平安银行"
