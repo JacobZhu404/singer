@@ -142,7 +142,32 @@ Hero 头部(渐变背景 + 日期 + 总条数)
   - `WX_APP_ID` / `WX_APP_SECRET`
   - `WX_HTML_FILE` / `WX_COVER_FILE` / `WX_LINKS_URL`
 
-### 脚本行为
+### 排版模板（已确认）— 公众号文章
+
+排版标准来自已发布的公众号文章 `https://mp.weixin.qq.com/s/7rbTr-XzNLWSndHfi1HfSw`。所有 inline style 以此为基准，不可随意改动。
+
+参考脚本: `scripts/clone_template.py`（含完整 inline style 配置）
+
+**核心样式:**
+- **Header**: `linear-gradient(135deg,#064e3b,#059669)` 渐变绿色
+  - 副标题: `AUTONOMOUS DRIVING · DAILY BRIEF` (11px, opacity 0.7)
+  - 标题: `自动驾驶晨报` (24px bold)
+  - 日期: 14px, opacity 0.85
+  - "本期精选" + 数字 (22px, color #a7f3d0)
+- **概览表**: 4列 table (编号 | 标题 | 板块 | 来源)
+  - 编号: 绿色圆底数字 (16px, bg #059669)
+  - 板块枚举值: 行业动态 / 产品发布 / 模型发布 / 前沿论文 / 其他消息
+- **版块标题**: `border-left:4px solid #059669`, 18px bold, color #047857
+- **卡片**: `border:1px solid #e5e7eb`, `background:#fafafa`, `border-radius:8px`
+  - 编号行: 13px, color #6b7280（含 22px 绿色圆底编号 + 来源 · 日期 · 维度）
+  - 标题: 16px bold, color #111827
+  - 摘要: 14px, color #374151, line-height 1.7
+  - 维度值: 🏢 企业动向 / 📜 政策法规 / ⚠️ 事故舆情 / 🔬 前沿研究
+- **Footer**: `background:#f0fdf4`, `border:1px solid #bbf7d0`
+- **⚠️ 不需要** 小程序卡片、relevance行、额外装饰
+- **⚠️ 不允许** 外部 `<a>` 标签、`<style>`、`<script>`
+
+### 公众号脚本行为
 1. 从 config.json 加载配置(环境变量可覆盖)
 2. 质量门禁检查(verify_links + check_url_quality)
 3. 读取 HTML → 解析标题/摘要/正文

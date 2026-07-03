@@ -278,14 +278,20 @@ def parse_html(html_text: str) -> dict:
                 f'</tr>'
             )
 
-            # 详情卡片(微信不支持外部链接)
+            # 详情卡片(使用已确认的 inline style)
+            clean_date = time_str.replace("🔥", "").replace("📅", "").strip()
             card_html = (
-                f'<section style="margin:14px 0;padding:14px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa;">'
+                f'<section style="margin:14px 0;padding:14px 16px;border:1px solid #e5e7eb;'
+                f'border-radius:8px;background:#fafafa;">'
                 f'<p style="margin:0 0 6px;font-size:13px;color:#6b7280;">'
-                f'<span style="display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;background:#059669;color:#fff;border-radius:50%;font-weight:bold;margin-right:6px;">{html.escape(num)}</span>'
-                f'{html.escape(source)} · {html.escape(time_str)} {html.escape(dim_text)}</p>'
-                f'<p style="margin:6px 0;font-size:16px;font-weight:bold;color:#111827;">{html.escape(card_title)}</p>'
-                f'<p style="margin:6px 0;font-size:14px;color:#374151;line-height:1.7;">{html.escape(summary)}</p>'
+                f'<span style="display:inline-block;min-width:22px;height:22px;line-height:22px;'
+                f'text-align:center;background:#059669;color:#fff;border-radius:50%;'
+                f'font-weight:bold;margin-right:6px;">{html.escape(num)}</span>'
+                f'{html.escape(source)} · {html.escape(clean_date)} {html.escape(dim_text)}</p>'
+                f'<p style="margin:6px 0;font-size:16px;font-weight:bold;color:#111827;">'
+                f'{html.escape(card_title)}</p>'
+                f'<p style="margin:6px 0;font-size:14px;color:#374151;line-height:1.7;">'
+                f'{html.escape(summary)}</p>'
                 f'</section>'
             )
             detail_cards.append((sec_full, card_html))
@@ -325,20 +331,23 @@ def parse_html(html_text: str) -> dict:
 
 
 def to_wechat_article(parsed: dict) -> str:
-    """组装公众号文章 HTML 完整正文"""
+    """组装公众号文章 HTML 完整正文（使用已确认的 inline style）"""
     head = (
-        f'<section style="padding:18px 14px;background:linear-gradient(135deg,#064e3b,#059669);color:#fff;border-radius:8px;margin-bottom:18px;">'
+        f'<section style="padding:18px 14px;background:linear-gradient(135deg,#064e3b,#059669);'
+        f'color:#fff;border-radius:8px;margin-bottom:18px;">'
         f'<p style="margin:0;font-size:11px;letter-spacing:2px;opacity:.7;">AUTONOMOUS DRIVING · DAILY BRIEF</p>'
         f'<p style="margin:6px 0;font-size:24px;font-weight:bold;">自动驾驶晨报</p>'
         f'<p style="margin:0;font-size:14px;opacity:.85;">{html.escape(parsed["date_display"])}</p>'
-        f'<p style="margin:10px 0 0;font-size:15px;">本期精选 <strong style="font-size:22px;color:#a7f3d0;">{parsed["total"]}</strong> 条</p>'
-        f'<p style="margin:8px 0 0;font-size:13px;opacity:.85;">{" · ".join(parsed["stats_lines"])}</p>'
+        f'<p style="margin:10px 0 0;font-size:15px;">本期精选 '
+        f'<strong style="font-size:22px;color:#a7f3d0;">{parsed["total"]}</strong> 条</p>'
         f'</section>'
     )
     footer_section = (
-        '<section style="margin:24px 0 0;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;">'
+        '<section style="margin:24px 0 0;padding:14px;background:#f0fdf4;'
+        'border:1px solid #bbf7d0;border-radius:8px;text-align:center;">'
         '<p style="margin:0;font-size:14px;font-weight:600;color:#065f46;">📎 全部原文链接汇总</p>'
-        '<p style="margin:6px 0 0;font-size:13px;color:#4a5568;">点击文章底部「阅读原文」查看所有原文链接</p>'
+        '<p style="margin:6px 0 0;font-size:13px;color:#4a5568;">'
+        '点击文章底部「阅读原文」查看所有原文链接</p>'
         '</section>'
     )
     return head + parsed["content_html"] + footer_section

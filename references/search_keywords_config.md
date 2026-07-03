@@ -22,9 +22,9 @@
 
 ## 第一组:头部企业动向 (权重最高)
 # 核心关键词（通用）
-智能驾驶 智驾
-Autonomous Vehicle robotaxi
-Robotaxi autonomous vehicle
+智能驾驶 智驾 自动驾驶
+Autonomous Vehicle 
+robotaxi
 Waymo
 Tesla FSD Cybercab
 百度Apollo 萝卜快跑
@@ -45,10 +45,9 @@ Uber robotaxi
 Stellantis Wayve
 
 # 技术方向关键词(与头部企业交叉命中)
-端到端 end-to-end 智驾
-E2E autonomous driving
+端到端 end-to-end 智驾 E2E
 scaling law 智驾
-泛化性 智驾
+泛化性 
 无图 NOA 智能驾驶
 激光雷达 LiDAR
 纯视觉 vision-only
@@ -91,10 +90,12 @@ CVPR 2026 自动驾驶 论文
 智驾 离职 人事变动
 智驾 裁员 扩招
 车企 智驾 高管 调整
+自动驾驶 团队 跳槽 创业
 
 ## 第六组:行业峰会 → 标记为「行业动态」
 MOVE 智能驾驶
 CES 自动驾驶
+车展 亮相 自动驾驶 智能驾驶
 智能驾驶 峰会 论坛
 百人会 智能驾驶
 中国电动汽车百人会
