@@ -1,0 +1,30 @@
+{
+  "wechat": {
+    "app_id": "wx4bd59eaceaddd0cf",
+    "app_secret": "8181bc6dac277487e0627ac14108b732",
+    "account_name": "自驾车早"
+  },
+  "dchat": {
+    "username": "zhuzhenxia",
+    "app_id": "519170",
+    "app_secret": "",
+    "api_url": "http://10.88.128.40:8000/dichat/snitch_openapi_online_lb/v1/message.create"
+  },
+  "paths": {
+    "base_dir": "/Users/jacob/personal/ad-newsletter",
+    "output_dir": "/Users/jacob/personal/ad-newsletter/data"
+  },
+  "newsletter": {
+    "title_template": "自动驾驶晨报 {date}",
+    "digest_template": "今日{total}条自动驾驶动态精选",
+    "max_digest_bytes": 54,
+    "max_title_bytes": 60,
+    "sections": [
+      {"id": "sec-1", "name": "行业动态", "icon": "📊"},
+      {"id": "sec-2", "name": "产品发布", "icon": "🚀"},
+      {"id": "sec-3", "name": "模型发布", "icon": "🧠"},
+      {"id": "sec-4", "name": "前沿论文", "icon": "📄"},
+      {"id": "sec-5", "name": "其他消息", "icon": "💡"}
+    ]
+  }
+}
