@@ -29,6 +29,12 @@ agent_created: true
 - **路径**: 所有脚本从 config.json 读取路径，或从自身位置推断 `_BASE_DIR`
 - **板块配置**: sections 数组定义板块名称、ID、图标
 
+### Git 仓库
+- 仓库地址: `https://github.com/JacobZhu404/ad-newsletter` (私有)
+- 本地路径: `/Users/jacob/personal/ad-newsletter/`
+- push 方式: WorkBuddy沙箱网络受限无法直接push，需本地终端执行 `cd /Users/jacob/personal/ad-newsletter && git push`
+- 修改后记得 commit + push 保持同步
+
 ## 阶段1：数据采集
 
 读取 `references/search_keywords_config.md` 获取完整关键词配置，按以下8组并行搜索：
