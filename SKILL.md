@@ -112,16 +112,24 @@ Hero 头部(渐变背景 + 日期 + 总条数)
 
 ## 阶段4：封面图生成
 
-使用 image-creator agent，HY-Image-V3.0 模型生成每日封面图。
+封面图直接影响文章打开率，**不能用 PIL 简单占位图**。按以下流程生成：
+
+1. 使用 `ImageGen` 工具生成高质量封面(科技感、自动驾驶主题、品牌绿色渐变)
+2. 提示词应包含：自动驾驶视觉元素、绿色渐变、日期、中文标题
+3. 生成后通过 PIL 裁剪/缩放为 **900x500** 像素
+4. 保存到 `data/cover_YYYYMMDD_fixed.png` 或保留 ImageGen 原始文件名
+5. `scripts/push_today.py` 会优先使用这些预生成封面，找不到时才降级为占位图
 
 ### 封面设计要求
 - 尺寸：900x500 (公众号封面图比例)
 - 视觉：科技感、未来感，深色背景+品牌绿渐变
-- 文字：自动驾驶晨报、当天日期 YYYY.MM.DD、精选数
+- 文字：自动驾驶晨报、当天日期 YYYY.MM.DD
 - 5个版块名称标注(行业动态/产品发布/模型发布/前沿论文/其他消息)
-- 文件名：`cover_YYYYMMDD.png`，保存到 `data/` 目录
+- 文件名：`cover_YYYYMMDD_fixed.png` 或 `data/A_futuristic_*_YYYY-MM-DD.png`
 
-### 问题记录：先 spawn image-creator，封面生成后立刻进入阶段5。
+### 问题记录
+- 2026-07-04曾因图省事用PIL占位图导致封面回退，已修复：push_today.py优先使用ImageGen预生成封面。
+- 先 spawn image-creator / ImageGen，封面生成后立刻进入阶段5。
 
 ## 阶段5：链接汇总页
 
