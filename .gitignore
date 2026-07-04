@@ -5,8 +5,7 @@ __pycache__/
 dist/
 build/
 
-# Daily output data (auto-generated)
-data/links_*.html
+# Daily output: cover images (large, auto-generated, excluded)
 data/cover_*.png
 
 # Environment
