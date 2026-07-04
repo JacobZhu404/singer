@@ -206,28 +206,45 @@ def parse():
 
 
 def upload_cover(token):
-    """生成封面图并上传到微信素材库"""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        print("  ⚠️ 无PIL库,跳过封面上传")
-        return ""
+    """上传封面图到微信素材库。优先使用预生成的高质量封面(如ImageGen产物),否则降级为PIL占位图。"""
+    date_str = _DATE_STR  # YYYYMMDD
     
-    img = Image.new("RGB", (900, 500), (6, 78, 59))
-    draw = ImageDraw.Draw(img)
+    # 1. 查找预生成封面(按优先级)
+    candidates = [
+        BASE / f"data/cover_{date_str}_fixed.png",
+        BASE / f"data/cover_{date_str}.png",
+    ]
+    # 也支持任意ImageGen生成文件
+    for p in BASE.glob("data/*_2026-*-*.png"):
+        candidates.insert(0, p)
     
-    try:
-        ft = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 44)
-        fs = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 24)
-    except:
-        ft = fs = None
+    cover_path = None
+    for cand in candidates:
+        if cand.exists():
+            cover_path = cand
+            break
     
-    draw.text((450, 190), "自动驾驶晨报", fill=(167, 243, 208), font=ft, anchor="mm")
-    draw.text((450, 255), "2026.07.04", fill=(209, 250, 229), font=fs, anchor="mm")
-    
-    cover_path = BASE / "data/cover_20260704.png"
-    img.save(str(cover_path))
-    print(f"  ✅ 封面图已生成")
+    if cover_path:
+        print(f"  ✅ 使用预生成封面: {cover_path.name}")
+    else:
+        print("  ⚠️ 未找到预生成封面,降级为PIL占位图")
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except ImportError:
+            print("  ❌ 无PIL库,跳过封面上传")
+            return ""
+        
+        img = Image.new("RGB", (900, 500), (6, 78, 59))
+        draw = ImageDraw.Draw(img)
+        try:
+            ft = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 44)
+            fs = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 24)
+        except:
+            ft = fs = None
+        draw.text((450, 190), "自动驾驶晨报", fill=(167, 243, 208), font=ft, anchor="mm")
+        draw.text((450, 255), "2026.07.04", fill=(209, 250, 229), font=fs, anchor="mm")
+        cover_path = BASE / f"data/cover_{date_str}.png"
+        img.save(str(cover_path))
     
     url = "https://api.weixin.qq.com/cgi-bin/material/add_material"
     with open(cover_path, "rb") as f:
