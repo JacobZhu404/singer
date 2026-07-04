@@ -259,13 +259,75 @@ def upload_cover(token):
     return d["media_id"]
 
 
+def generate_links_page() -> Path:
+    """从HTML仪表盘提取所有卡片URL,生成本地链接汇总页"""
+    html_text = HTML_FILE.read_text("utf-8")
+    
+    card_pat = re.compile(
+        r'<a class="card".*?href="([^"]+)".*?'
+        r'<span class="card-num"[^>]*>(\d+)</span>.*?'
+        r'<span class="card-source">([^<]+)</span>.*?'
+        r'<span class="card-date">([^<]+)</span>.*?'
+        r'<div class="card-title">([^<]+)</div>',
+        re.S
+    )
+    
+    sec_blocks = list(re.finditer(r'<div class="sec sec-\d+" id="(sec-\d+)"', html_text))
+    sec_names = {"sec-1": "📊 行业动态", "sec-2": "🚀 产品发布", "sec-4": "📄 前沿论文", "sec-5": "💡 其他消息"}
+    grouped = {name: [] for name in sec_names.values()}
+    
+    for i, sm in enumerate(sec_blocks):
+        sec_id = sm.group(1)
+        sec_name = sec_names.get(sec_id)
+        if not sec_name:
+            continue
+        end = sec_blocks[i + 1].start() if i + 1 < len(sec_blocks) else len(html_text)
+        for url, num, source, date, title in card_pat.findall(html_text[sm.start():end]):
+            grouped[sec_name].append((num, title.strip(), url))
+    
+    links_body = ""
+    for sec_name, items in grouped.items():
+        if not items:
+            continue
+        links_body += f'<h2 style="margin:20px 0 10px;font-size:16px;color:#059669;">{html_mod.escape(sec_name)}</h2>\n'
+        for num, title, url in items:
+            links_body += (
+                f'<div style="margin:8px 0;padding:10px 12px;background:#f9fafb;border-radius:6px;">'
+                f'<div style="font-size:13px;color:#6b7280;">#{html_mod.escape(num)}</div>'
+                f'<div style="font-size:14px;font-weight:600;margin:4px 0;">'
+                f'<a href="{html_mod.escape(url)}" target="_blank" rel="noopener noreferrer" style="color:#059669;text-decoration:none;">'
+                f'{html_mod.escape(title)} →</a></div>'
+                f'</div>\n'
+            )
+    
+    date_display = datetime.now().strftime("%Y年%m月%d日")
+    all_items = sum(grouped.values(), [])
+    links_html = (
+        f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        f'<title>自动驾驶晨报 原文链接汇总</title>'
+        f'<style>body{{font-family:-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:20px;background:#f4f6f9;color:#1a1a2e;}}h1{{font-size:18px;color:#047857;}}</style>'
+        f'</head><body>'
+        f'<h1>🚗 自动驾驶晨报 · 原文链接汇总</h1>'
+        f'<p style="color:#6b7280;font-size:13px;">{date_display} · 共 {len(all_items)} 篇</p>'
+        f'{links_body}'
+        f'<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:30px;">由 WorkBuddy 生成</p>'
+        f'</body></html>'
+    )
+    
+    links_path = BASE / f"data/links_{_DATE_STR}.html"
+    links_path.write_text(links_html, encoding="utf-8")
+    print(f"  ✅ 链接汇总页已生成: {links_path}")
+    return links_path
+
+
 def create_draft(token, article):
     url = "https://api.weixin.qq.com/cgi-bin/draft/add"
     body = json.dumps({"articles": [{
         "title": article["title"],
         "digest": article["digest"],
         "content": article["content"],
-        "content_source_url": "",
+        "content_source_url": article.get("content_source_url", ""),
         "thumb_media_id": article.get("thumb_media_id", ""),
         "need_open_comment": 0,
         "only_fans_can_comment": 0,
@@ -291,6 +353,17 @@ def main():
     print(f"   标题: {article['title']}")
     print(f"   摘要: {article['digest']}")
     print(f"   正文长度: {len(article['content'])} 字符")
+    
+    print("\n🔗 生成链接汇总页...")
+    links_path = generate_links_page()
+    
+    # content_source_url: 优先环境变量,否则空(需部署后手动更新)
+    links_url = os.environ.get("WX_LINKS_URL", "")
+    article["content_source_url"] = links_url
+    if links_url:
+        print(f"   阅读原文链接: {links_url}")
+    else:
+        print(f"   ⚠️ 未设置 WX_LINKS_URL,阅读原文为空。请部署 {links_path} 后更新")
     
     print("\n🔑 获取token...")
     token = get_token()
