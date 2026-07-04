@@ -243,8 +243,9 @@ python3 /workspace/ad-newsletter/ad-newsletter/scripts/dchat_push.py
 ### Python 陷阱
 1. `OrderedDict.setdefault()` 在 Python 3.7 不存在 → 用 dict + index 列表代替
 2. Python for 循环变量会泄露到外层作用域 → 循环变量名避免与已有变量冲突
-3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 用 `json.dumps(ensure_ascii=False).encode("utf-8")` + 显式 Content-Type header
-4. `re.S` 标记让 `.` 匹换行符，跨行匹配时小心非贪婪 `.*?` 的边界
+3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 微信接口场景反而需要 `ensure_ascii=True` 让中文以 `\uXXXX` 发送，避免服务器把 UTF-8 字节误解析为 Latin-1
+4. 正文 HTML 中的非 ASCII 字符必须转换为 HTML 数字实体（`&#x81EA;`），否则微信编辑器会显示乱码
+5. `re.S` 标记让 `.` 匹换行符，跨行匹配时小心非贪婪 `.*?` 的边界
 
 ### 论文链接
 - papernotes.org 等聚合器不是原始论文 → 搜索时加 `site:arxiv.org` / `site:openaccess.thecvf.com`
