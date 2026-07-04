@@ -2,7 +2,8 @@
 """紧凑版仪表盘 CSS 优化"""
 from pathlib import Path
 
-HTML_PATH = Path("/Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/index.html")
+_BASE = Path(__file__).resolve().parent.parent
+HTML_PATH = _BASE / "data/dashboard_20260703.html"
 
 html = HTML_PATH.read_text("utf-8")
 

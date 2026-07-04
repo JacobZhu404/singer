@@ -8,8 +8,9 @@ from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
 
-DASHBOARD_PATH = "/Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/index.html"
-OUTPUT_DIR = Path("/Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/wechat_publish")
+_BASE = Path(__file__).resolve().parent.parent
+DASHBOARD_PATH = str(_BASE / "data/dashboard_20260703.html")
+OUTPUT_DIR = _BASE / "data"
 DASHBOARD_URL = "https://32fe3baecb0740f68497897bd222c58c.app.codebuddy.work"
 
 def extract_cards(html_path):

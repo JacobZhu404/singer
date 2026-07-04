@@ -1,0 +1,18 @@
+
+=== 公众号发布指引 ===
+
+方式一：复制 HTML 粘贴到公众号编辑器
+  1. 用浏览器打开: /Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/wechat_publish/wechat_article_20260703.html
+  2. Cmd+A 全选 → Cmd+C 复制
+  3. 打开微信公众平台 → 新建图文 → Cmd+V 粘贴
+  4. 检查图片和链接是否正常
+  5. 发布
+
+方式二：使用订阅号助手 App（手机端）
+  1. 打开 /Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/wechat_publish/wechat_article_20260703.txt 复制文本内容
+  2. 打开订阅号助手 App → 新建文章 → 粘贴
+  3. 手动添加链接和图片
+  4. 发布
+
+完整仪表盘（可放在「阅读原文」）：
+  https://32fe3baecb0740f68497897bd222c58c.app.codebuddy.work

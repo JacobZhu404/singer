@@ -4,8 +4,9 @@ from bs4 import BeautifulSoup
 import re
 from pathlib import Path
 
-SRC = Path("/Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/index.html")
-DST = Path("/Users/jacob/WorkBuddy/2026-07-01-09-18-45/dashboard_assets/index.html")
+_BASE = Path(__file__).resolve().parent.parent
+SRC = _BASE / "data/dashboard_20260703.html"
+DST = _BASE / "data/dashboard_20260703.html"
 
 with open(SRC) as f:
     soup = BeautifulSoup(f.read(), "html.parser")
