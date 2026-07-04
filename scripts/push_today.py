@@ -9,7 +9,7 @@ except ImportError:
     os.system(f"{sys.executable} -m pip install requests -q")
     import requests
 
-BASE = Path("/Users/jacob/personal/ad-newsletter")
+BASE = Path(__file__).resolve().parent.parent
 HTML_FILE = BASE / "data/自动驾驶晨报_20260704.html"
 _DATE_STR = datetime.now().strftime("%Y%m%d")
 CONFIG = json.loads((BASE / "config.json").read_text())
