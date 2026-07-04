@@ -11,6 +11,7 @@ except ImportError:
 
 BASE = Path("/Users/jacob/personal/ad-newsletter")
 HTML_FILE = BASE / "data/自动驾驶晨报_20260704.html"
+_DATE_STR = datetime.now().strftime("%Y%m%d")
 CONFIG = json.loads((BASE / "config.json").read_text())
 WX = CONFIG["wechat"]
 
@@ -123,7 +124,7 @@ def parse():
     overview_rows = ""
     for c in cards:
         num_e = html_mod.escape(c["num"])
-        title_e = html_mod.escape(c["title"][:25])
+        title_e = html_mod.escape(c["title"])
         src_e = html_mod.escape(c["source"])
         sec_s = html_mod.escape(c["sec_short"])
         overview_rows += (
