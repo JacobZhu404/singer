@@ -329,7 +329,7 @@ def create_draft(token, article):
         "content": article["content"],
         "content_source_url": article.get("content_source_url", ""),
         "thumb_media_id": article.get("thumb_media_id", ""),
-        "need_open_comment": 0,
+        "need_open_comment": 1,
         "only_fans_can_comment": 0,
     }]}, ensure_ascii=False)
     
