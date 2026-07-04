@@ -144,38 +144,19 @@ Hero 头部(渐变背景 + 日期 + 总条数)
 
 ## 阶段6：推送到微信草稿箱
 
-运行 `scripts/push_to_wechat.py`
+运行 `scripts/push_to_wechat.py` 或 `scripts/push_today.py`
 
-### 前置条件
-- 配置: `config.json` 中已填入 app_id 和 app_secret
-- 环境变量(可选覆盖):
-  - `WX_APP_ID` / `WX_APP_SECRET`
-  - `WX_HTML_FILE` / `WX_COVER_FILE` / `WX_LINKS_URL`
+### 关键编码要求
+- JSON 序列化：**必须**使用 `ensure_ascii=False`
+- 请求体：`json.dumps(..., ensure_ascii=False).encode("utf-8")`
+- Content-Type：`application/json; charset=utf-8`
+- 正文 HTML 保持原始中文，**不要**转成 HTML 数字实体（会导致编辑器显示 `&#xxxxx;`）
+- 标题/摘要保持原始中文，**不要**用 `\uXXXX` 转义（会被微信原样显示）
 
-### 排版模板（已确认）— 公众号文章
-
-排版标准来自已发布的公众号文章 `https://mp.weixin.qq.com/s/7rbTr-XzNLWSndHfi1HfSw`。所有 inline style 以此为基准，不可随意改动。
-
-参考脚本: `scripts/clone_template.py`（含完整 inline style 配置）
-
-**核心样式:**
-- **Header**: `linear-gradient(135deg,#064e3b,#059669)` 渐变绿色
-  - 副标题: `AUTONOMOUS DRIVING · DAILY BRIEF` (11px, opacity 0.7)
-  - 标题: `自动驾驶晨报` (24px bold)
-  - 日期: 14px, opacity 0.85
-  - "本期精选" + 数字 (22px, color #a7f3d0)
-- **概览表**: 4列 table (编号 | 标题 | 板块 | 来源)
-  - 编号: 绿色圆底数字 (16px, bg #059669)
-  - 板块枚举值: 行业动态 / 产品发布 / 模型发布 / 前沿论文 / 其他消息
-- **版块标题**: `border-left:4px solid #059669`, 18px bold, color #047857
-- **卡片**: `border:1px solid #e5e7eb`, `background:#fafafa`, `border-radius:8px`
-  - 编号行: 13px, color #6b7280（含 22px 绿色圆底编号 + 来源 · 日期 · 维度）
-  - 标题: 16px bold, color #111827
-  - 摘要: 14px, color #374151, line-height 1.7
-  - 维度值: 🏢 企业动向 / 📜 政策法规 / ⚠️ 事故舆情 / 🔬 前沿研究
-- **Footer**: `background:#f0fdf4`, `border:1px solid #bbf7d0`
-- **⚠️ 不需要** 小程序卡片、relevance行、额外装饰
-- **⚠️ 不允许** 外部 `<a>` 标签、`<style>`、`<script>`
+### 常见错误
+- `ensure_ascii=True` → 标题/摘要显示为 `\u81ea\u52a8...` 字面量
+- HTML 数字实体 → 正文显示为 `&#128203;` 字面量
+- PIL 占位图 → 封面回退
 
 ### 公众号脚本行为
 1. 从 config.json 加载配置(环境变量可覆盖)
@@ -243,9 +224,10 @@ python3 /workspace/ad-newsletter/ad-newsletter/scripts/dchat_push.py
 ### Python 陷阱
 1. `OrderedDict.setdefault()` 在 Python 3.7 不存在 → 用 dict + index 列表代替
 2. Python for 循环变量会泄露到外层作用域 → 循环变量名避免与已有变量冲突
-3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 微信接口场景反而需要 `ensure_ascii=True` 让中文以 `\uXXXX` 发送，避免服务器把 UTF-8 字节误解析为 Latin-1
-4. 正文 HTML 中的非 ASCII 字符必须转换为 HTML 数字实体（`&#x81EA;`），否则微信编辑器会显示乱码
-5. `re.S` 标记让 `.` 匹换行符，跨行匹配时小心非贪婪 `.*?` 的边界
+3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 微信 draft/add 接口**必须**用 `json.dumps(..., ensure_ascii=False).encode("utf-8")` + 显式 `Content-Type: application/json; charset=utf-8`
+4. 不要用 HTML 数字实体替代中文（如 `&#128203;`），微信编辑器会原样显示字面量
+5. 不要用 `ensure_ascii=True` 发送标题/摘要，微信会原样显示 `\uXXXX` 字面量
+6. `re.S` 标记让 `.` 匹配换行符，跨行匹配时小心非贪婪 `.*?` 的边界
 
 ### 论文链接
 - papernotes.org 等聚合器不是原始论文 → 搜索时加 `site:arxiv.org` / `site:openaccess.thecvf.com`

@@ -196,8 +196,6 @@ def parse():
     )
     
     content = "\n".join(body_parts)
-    # 微信服务器会误将UTF-8字节解析为Latin-1导致乱码，将正文非ASCII字符转为HTML数字实体
-    content = "".join(f"&#{ord(ch)};" if ord(ch) > 127 else ch for ch in content)
     
     return {
         "title": title,
@@ -270,7 +268,7 @@ def create_draft(token, article):
         "thumb_media_id": article.get("thumb_media_id", ""),
         "need_open_comment": 0,
         "only_fans_can_comment": 0,
-    }]}, ensure_ascii=True)
+    }]}, ensure_ascii=False)
     
     r = requests.post(url, params={"access_token": token},
         data=body.encode("utf-8"),
