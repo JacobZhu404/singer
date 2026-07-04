@@ -6,7 +6,7 @@ agent_created: true
 
 # 自动驾驶晨报公众号自动化
 
-**项目目录**: `/Users/jacob/personal/ad-newsletter/`
+**项目目录**: `/workspace/ad-newsletter/ad-newsletter/`
 
 所有脚本、配置、参考文件都在此目录下，不受 WorkBuddy 临时工作区清理影响。
 
@@ -20,7 +20,7 @@ agent_created: true
 {
   "wechat": { "app_id": "...", "app_secret": "..." },
   "dchat": { "username": "...", "app_id": "...", "api_url": "..." },
-  "paths": { "base_dir": "/Users/jacob/personal/ad-newsletter", "output_dir": "..." },
+  "paths": { "base_dir": "/workspace/ad-newsletter/ad-newsletter", "output_dir": "..." },
   "newsletter": { "sections": [...], "max_title_bytes": 60, "max_digest_bytes": 54 }
 }
 ```
@@ -31,8 +31,8 @@ agent_created: true
 
 ### Git 仓库
 - 仓库地址: `https://github.com/JacobZhu404/ad-newsletter` (私有)
-- 本地路径: `/Users/jacob/personal/ad-newsletter/`
-- push 方式: WorkBuddy沙箱网络受限无法直接push，需本地终端执行 `cd /Users/jacob/personal/ad-newsletter && git push`
+- 本地路径: `/workspace/ad-newsletter/ad-newsletter/`
+- push 方式: 沙箱内可直接 `cd /workspace/ad-newsletter/ad-newsletter && git push`
 - 修改后记得 commit + push 保持同步
 
 ## 阶段1：数据采集
@@ -64,13 +64,13 @@ agent_created: true
 
 ```bash
 # 链接可达性验证
-python3 /Users/jacob/personal/ad-newsletter/scripts/verify_links.py <dashboard.html>
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/verify_links.py <dashboard.html>
 
 # URL质量检查(登录墙/聚合器/首页)
-python3 /Users/jacob/personal/ad-newsletter/scripts/check_url_quality.py <dashboard.html>
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/check_url_quality.py <dashboard.html>
 
 # 内容新鲜度检查(可选)
-python3 /Users/jacob/personal/ad-newsletter/scripts/check_freshness.py <items.json> --max-age 30
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/check_freshness.py <items.json> --max-age 30
 ```
 
 ### 门禁标准
@@ -180,13 +180,13 @@ Hero 头部(渐变背景 + 日期 + 总条数)
 
 ### 运行命令
 ```bash
-python3 /Users/jacob/personal/ad-newsletter/scripts/push_to_wechat.py
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py
 # 跳过质量门禁:
-python3 /Users/jacob/personal/ad-newsletter/scripts/push_to_wechat.py --skip-qa
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py --skip-qa
 # 覆盖配置:
 export WX_APP_SECRET="<新密钥>"
 export WX_LINKS_URL="<CloudStudio部署URL>"
-python3 /Users/jacob/personal/ad-newsletter/scripts/push_to_wechat.py
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py
 ```
 
 ## 阶段7：D-Chat 推送
@@ -205,7 +205,7 @@ python3 /Users/jacob/personal/ad-newsletter/scripts/push_to_wechat.py
 
 ### 运行命令
 ```bash
-python3 /Users/jacob/personal/ad-newsletter/scripts/dchat_push.py
+python3 /workspace/ad-newsletter/ad-newsletter/scripts/dchat_push.py
 ```
 
 ### ⚠️ D-Chat 注意事项
@@ -255,7 +255,7 @@ python3 /Users/jacob/personal/ad-newsletter/scripts/dchat_push.py
 ## 路径规范(⚠️ 无硬编码)
 
 所有路径从 config.json 或脚本位置推断，不硬编码:
-- **项目根目录**: `/Users/jacob/personal/ad-newsletter/` (config.json `paths.base_dir`)
+- **项目根目录**: `/workspace/ad-newsletter/ad-newsletter/` (config.json `paths.base_dir`)
 - **输出目录**: `data/` — HTML/封面/链接页全部在此
 - **脚本目录**: `scripts/` (所有 Python 脚本)
 - **参考目录**: `references/` (关键词/排版/教训/D-Chat格式)
