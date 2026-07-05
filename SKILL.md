@@ -88,6 +88,28 @@ agent_created: true
 - papernotes.org 等聚合器链接会被 `check_url_quality.py` 标记为 reject
 - 如果搜索结果只有聚合器链接，需要二次搜索原始论文标题+site:arxiv.org
 
+## 阶段1.5a：多源对比与合并（质量提升关键步骤）
+
+### 为什么需要多源对比
+单一搜索源容易遗漏关键新闻。用户可能同时使用其他大模型/工具生成晨报，**必须对比合并**，取各源之长。
+
+### 合并流程
+1. **读取用户提供的对比版本**：如果用户提供了其他模型生成的晨报内容（文字/链接/outline），先解析其条目列表
+2. **去重比对**：将对比版本的标题与我方采集结果做近似匹配（标题相似度>70%或URL相同视为重复）
+3. **互补增补**：对比版本中有、我方没有的条目 → 补充进我方 outline（需验证URL有效性和日期真实性）
+4. **择优替换**：同一新闻双方都有 → 选择摘要更精准、来源更权威、日期更近的版本
+5. **标注来源**：在 outline 的 `metadata` 中记录 `merged_from: ["user_v1", "auto_search"]`
+
+### 国内大厂AI动态专项规则（5B组）
+- **收录范围**：美团/阿里/字节/腾讯/百度/华为/京东/小米的AI战略、内部工具政策、大模型应用
+- **典型事件**：
+  - 美团全面使用龙猫(LongCat)模型，禁用外部AI工具
+  - 阿里禁用Claude Code，推广内部IDE和通义灵码
+  - 字节豆包大模型内部战略调整
+  - 各厂AI编程助手/智能体的内部推广政策
+- **标记规则**：归入「其他消息」版块，每日精选1-3条头部热点即可
+- **搜索策略**：优先搜索 `36氪 + 大厂名 + AI` / `虎嗅 + 大厂名 + 内部` / `晚点 + 大厂名 + 大模型`
+
 ## 阶段1.5：生成核心大纲 (outline)
 
 采集完成后，先生成结构化大纲文件，作为后续所有产出的唯一数据源。路径: `data/outline_YYYYMMDD.json`
@@ -95,7 +117,7 @@ agent_created: true
 ### 大纲结构
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "generated_at": "YYYY-MM-DD",
   "date_display": "YYYY年M月D日 星期X",
   "title": "自动驾驶晨报 M月D日",
@@ -111,15 +133,19 @@ agent_created: true
     {"id": "sec-4", "name": "前沿论文", "icon": "📄", "count": 0, "items": [...]},
     {"id": "sec-5", "name": "其他消息", "icon": "💡", "count": 0, "items": [...]}
   ],
-```
-
-**注意：** `total` 和 `count` 均为实际值，不强制凑数。某版块无新闻时 `count=0`，`items=[]`。`total` = 所有非空版块 items 数量之和。
   "metadata": {
     "all_urls": ["url1", "url2", ...],
-    "all_titles": ["title1", "title2", ...]
+    "all_titles": ["title1", "title2", ...],
+    "merged_from": ["auto_search", "user_v1"],
+    "quality_notes": "合并说明: 补充了美团龙猫、阿里Claude Code等5B组内容"
   }
 }
 ```
+
+**注意：**
+- `total` 和 `count` 均为实际值，不强制凑数。某版块无新闻时 `count=0`，`items=[]`。
+- `metadata.merged_from` 记录内容来源，便于追溯和质量分析
+- `metadata.quality_notes` 记录合并过程中的关键决策
 
 ### 大纲用途
 - **去重依据**: `metadata.all_urls` 和 `metadata.all_titles` 用于未来日期搜索时排除已收录内容
@@ -193,8 +219,26 @@ Hero 头部(渐变背景 + 日期 + 总条数)
 - 5个版块名称标注(行业动态/产品发布/模型发布/前沿论文/其他消息)
 - 文件名：`cover_YYYYMMDD_fixed.png` 或 `data/A_futuristic_*_YYYY-MM-DD.png`
 
+### 封面图持久化方案（避免每日重新生成）
+封面图风格统一后，**不需要每天重新生成**。采用以下策略：
+
+1. **模板复用**：生成一张高质量封面模板（如 `assets/cover_template.png`），仅替换日期文字
+2. **日期叠加**：用 PIL 在模板上叠加当天日期，保存为 `data/cover_YYYYMMDD.png`
+3. **PIL 文字叠加代码示例**：
+   ```python
+   from PIL import Image, ImageDraw, ImageFont
+   template = Image.open("assets/cover_template.png")
+   draw = ImageDraw.Draw(template)
+   draw.text((center_x, date_y), "2026.07.05", fill=(167,243,208), font=font, anchor="mm")
+   template.save(f"data/cover_YYYYMMDD.png")
+   ```
+4. **触发条件**：
+   - 默认：使用模板+PIL叠加日期（秒级生成，零API调用）
+   - 例外：每周一或重大节日时，用 ImageGen 生成新主题封面
+
 ### 问题记录
 - 2026-07-04曾因图省事用PIL占位图导致封面回退，已修复：push_today.py优先使用ImageGen预生成封面。
+- 2026-07-05新增持久化方案：模板复用+PIL日期叠加，避免每日ImageGen调用。
 - 先 spawn image-creator / ImageGen，封面生成后立刻进入阶段5。
 
 ## 阶段5：链接汇总页
