@@ -10,8 +10,8 @@ except ImportError:
     import requests
 
 BASE = Path(__file__).resolve().parent.parent
-HTML_FILE = BASE / "data/自动驾驶晨报_20260704.html"
 _DATE_STR = datetime.now().strftime("%Y%m%d")
+HTML_FILE = BASE / f"data/自动驾驶晨报_{_DATE_STR}.html"
 CONFIG = json.loads((BASE / "config.json").read_text())
 WX = CONFIG["wechat"]
 
@@ -210,14 +210,18 @@ def upload_cover(token):
     """上传封面图到微信素材库。优先使用预生成的高质量封面(如ImageGen产物),否则降级为PIL占位图。"""
     date_str = _DATE_STR  # YYYYMMDD
     
-    # 1. 查找预生成封面(按优先级)
-    candidates = [
+    # 查找预生成封面: 今日ImageGen > 今日cover_fixed > 今日cover
+    candidates = []
+    # ImageGen今日生成的文件
+    candidates += sorted(BASE.glob(f"data/*_{date_str}T*.png"))
+    candidates += sorted(BASE.glob(f"data/*_{date_str}T*.jpg"))
+    # 今日命名封面
+    candidates += [
         BASE / f"data/cover_{date_str}_fixed.png",
+        BASE / f"data/cover_{date_str}_fixed.jpg",
         BASE / f"data/cover_{date_str}.png",
+        BASE / f"data/cover_{date_str}.jpg",
     ]
-    # 也支持任意ImageGen生成文件
-    for p in BASE.glob("data/*_2026-*-*.png"):
-        candidates.insert(0, p)
     
     cover_path = None
     for cand in candidates:
@@ -243,7 +247,7 @@ def upload_cover(token):
         except:
             ft = fs = None
         draw.text((450, 190), "自动驾驶晨报", fill=(167, 243, 208), font=ft, anchor="mm")
-        draw.text((450, 255), "2026.07.04", fill=(209, 250, 229), font=fs, anchor="mm")
+        draw.text((450, 255), date_str[:4] + "." + date_str[4:6] + "." + date_str[6:8], fill=(209, 250, 229), font=fs, anchor="mm")
         cover_path = BASE / f"data/cover_{date_str}.png"
         img.save(str(cover_path))
     
