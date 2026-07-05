@@ -60,6 +60,41 @@ agent_created: true
 - papernotes.org 等聚合器链接会被 `check_url_quality.py` 标记为 reject
 - 如果搜索结果只有聚合器链接，需要二次搜索原始论文标题+site:arxiv.org
 
+## 阶段1.5：生成核心大纲 (outline)
+
+采集完成后，先生成结构化大纲文件，作为后续所有产出的唯一数据源。路径: `data/outline_YYYYMMDD.json`
+
+### 大纲结构
+```json
+{
+  "version": "1.0",
+  "generated_at": "YYYY-MM-DD",
+  "date_display": "YYYY年M月D日 星期X",
+  "title": "自动驾驶晨报 M月D日",
+  "digest": "一句话摘要",
+  "total": 30,
+  "sections": [
+    {
+      "id": "sec-1", "name": "行业动态", "icon": "📊", "count": 10,
+      "items": [{"num": 1, "title": "...", "source": "...", "url": "...", "date": "...", "dimension": "🏢 企业动向", "summary": "≤60字"}]
+    },
+    {"id": "sec-2", "name": "产品发布", "icon": "🚀", "count": 5, "items": [...]},
+    {"id": "sec-3", "name": "模型发布", "icon": "🧠", "count": 3, "items": [...]},
+    {"id": "sec-4", "name": "前沿论文", "icon": "📄", "count": 7, "items": [...]},
+    {"id": "sec-5", "name": "其他消息", "icon": "💡", "count": 5, "items": [...]}
+  ],
+  "metadata": {
+    "all_urls": ["url1", "url2", ...],
+    "all_titles": ["title1", "title2", ...]
+  }
+}
+```
+
+### 大纲用途
+- **去重依据**: `metadata.all_urls` 和 `metadata.all_titles` 用于未来日期搜索时排除已收录内容
+- **双版同源**: HTML 仪表盘和公众号推文都基于同一份 outline 生成，确保内容一致
+- **历史回溯**: 所有 outline 文件随 Git 同步，便于长期分析和数据挖掘
+
 ## 阶段2：质量门禁
 
 在生成 HTML 和推送前，运行质量检查脚本：
@@ -84,7 +119,7 @@ python3 /workspace/ad-newsletter/ad-newsletter/scripts/check_freshness.py <items
 
 ## 阶段3：HTML 仪表盘生成
 
-生成 `data/自动驾驶晨报_YYYYMMDD.html`（输出到项目 data/ 目录）。
+读取阶段1.5生成的 `data/outline_YYYYMMDD.json`，基于此生成 `data/自动驾驶晨报_YYYYMMDD.html`（输出到项目 data/ 目录）。HTML 内容必须与 outline 完全一致，禁止在 HTML 生成阶段修改任何标题/摘要/URL。
 
 ### 推文结构(固化)
 
