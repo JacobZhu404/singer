@@ -70,6 +70,12 @@ agent_created: true
 
 如果某个版块当天确实没有符合标准的新闻，**直接留空（count=0）**，不要在标题里硬凑。宁可少而精，不要多而杂。总条数可以是 15 条、20 条、25 条，没有必须凑到 30 条的硬性要求。
 
+### ⚠️ URL与日期真实性规则（军规）
+1. **所有 URL 必须来自真实搜索**：严禁编造/猜测 URL，每条链接必须从 WebSearch 结果中提取，不可用搜索无关的链接
+2. **日期必须匹配文章实际发表时间**：2026-07-05 曾踩坑：何小鹏文章 URL 指向了英伟达 Cosmos3（完全无关），理想CVPR 文章 URL 指向了 Waymo 世界模型文章。必须用 WebFetch 验证每篇文章的实际发表日期
+3. **verify_links.py 必须 100% 通过**：不可达 > 0 条则禁止推送。宁少勿假，删除不可达条目
+4. **无法获取有效链接/正确日期的条目直接删除**：不充数、不保留占位
+
 ### ⚠️ 论文链接规则
 - 前沿论文条目的 URL 必须是原始论文链接(arxiv.org/openaccess.thecvf.com/openreview.net)
 - papernotes.org 等聚合器链接会被 `check_url_quality.py` 标记为 reject
@@ -293,6 +299,12 @@ python3 /workspace/ad-newsletter/ad-newsletter/scripts/dchat_push.py
 ### 封面设计
 - image-creator 生成的封面可能带「图片由AI生成」水印
 - 封面图必须上传到微信素材库拿到 media_id 才能使用
+
+### 链接与日期真实性
+1. 2026-07-05 踩坑：何小鹏文章 URL 指向了英伟达 Cosmos3 文章（完全无关），理想CVPR 文章 URL 指向了 Waymo 世界模型文章——根源是凭主题猜 URL，没有验证
+2. **教训**：所有 URL 必须直接从 WebSearch 结果中提取，每条都需用 WebFetch 验证文章标题和日期是否匹配
+3. 新闻日期不能凭主题猜测，必须从文章实际页面提取
+4. 宁少勿假：无法获取有效链接的条目直接删除，不充数
 
 ### 链接汇总页
 - CloudStudio 沙箱是临时环境，链接会失效
