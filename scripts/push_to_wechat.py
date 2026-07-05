@@ -76,7 +76,7 @@ if not COVER_FILE:
     COVER_FILE = str(default_cover) if default_cover.exists() else str(default_cover)
 
 # 链接汇总页URL
-LINKS_URL = os.environ.get("WX_LINKS_URL", "")
+LINKS_URL = os.environ.get("WX_LINKS_URL", "https://32fe3baecb0740f68497897bd222c58c.app.codebuddy.work")
 
 # 质量门禁控制
 SKIP_QA = "--skip-qa" in sys.argv
@@ -278,19 +278,19 @@ def parse_html(html_text: str) -> dict:
                 # 新版 card-tag 只有1个捕获组，旧版 card-dimension 有2个
                 dim_text = m_dim.group(2) if len(m_dim.groups()) >= 2 else m_dim.group(1)
 
-            # 概览行
+            # 概览行（标题列加宽至50%，来源列缩窄）
             num_esc = html.escape(num)
             title_esc = html.escape(card_title)
             src_esc = html.escape(source)
             sec_esc = html.escape(sec_short)
             overview_rows += (
                 f'<tr>'
-                f'<td style="padding:6px 2px;width:20px;vertical-align:middle;text-align:center;">'
+                f'<td style="padding:6px 2px;width:28px;vertical-align:middle;text-align:center;">'
                 f'<span style="display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;background:#059669;color:#fff;border-radius:50%;font-size:9px;font-weight:bold;">{num_esc}</span>'
                 f'</td>'
-                f'<td style="padding:6px 4px;font-size:12px;color:#1a1a2e;line-height:1.4;">{title_esc}</td>'
-                f'<td style="padding:6px 2px;font-size:10px;color:#059669;white-space:nowrap;vertical-align:middle;">{sec_esc}</td>'
-                f'<td style="padding:6px 2px;font-size:10px;color:#6b7280;white-space:nowrap;vertical-align:middle;">{src_esc}</td>'
+                f'<td style="padding:6px 6px;font-size:12px;color:#1a1a2e;line-height:1.4;width:50%;">{title_esc}</td>'
+                f'<td style="padding:6px 4px;font-size:10px;color:#059669;white-space:nowrap;vertical-align:middle;width:18%;">{sec_esc}</td>'
+                f'<td style="padding:6px 2px;font-size:10px;color:#6b7280;white-space:nowrap;vertical-align:middle;width:20%;overflow:hidden;text-overflow:ellipsis;">{src_esc}</td>'
                 f'</tr>'
             )
 
@@ -410,7 +410,7 @@ def create_draft(token: str, article: dict) -> dict:
             "content": article["content"],
             "content_source_url": article.get("content_source_url", ""),
             "thumb_media_id": article["thumb_media_id"],
-            "need_open_comment": 0,
+            "need_open_comment": 1,
             "only_fans_can_comment": 0,
         }]},
         ensure_ascii=False,
