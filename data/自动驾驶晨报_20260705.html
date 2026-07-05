@@ -6,551 +6,243 @@
 <title>自动驾驶晨报 | 2026年7月5日</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f4f6f9;color:#333;line-height:1.5;font-size:14px;-webkit-font-smoothing:antialiased}
-
-/* Header */
-.header{background:linear-gradient(135deg,#064e3b,#059669);padding:20px 16px;text-align:center}
-.header .sub{font-size:11px;color:#a7f3d0;letter-spacing:2px;opacity:.75;margin-bottom:6px;text-transform:uppercase}
-.header h1{font-size:22px;font-weight:700;color:#fff;margin:0}
-.header .meta{font-size:12px;color:#d1fae5;margin-top:6px;opacity:.9}
-.header .meta strong{color:#a7f3d0}
-
-/* Stats Bar */
-.stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 14px;background:#fff;border-radius:10px;padding:14px 10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.stat-item{text-align:center}
-.stat-num{font-size:22px;font-weight:800;color:#064e3b;line-height:1}
-.stat-label{font-size:10px;color:#666;margin-top:2px;font-weight:500}
-.stat-item:nth-child(1) .stat-num{color:#059669}
-.stat-item:nth-child(2) .stat-num{color:#8b5cf6}
-.stat-item:nth-child(3) .stat-num{color:#6366f1}
-.stat-item:nth-child(4) .stat-num{color:#ec4899}
-.stat-item:nth-child(5) .stat-num{color:#f59e0b}
-
-/* Overview Table */
-.overview{background:#fff;margin:12px 14px;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
-.overview-title{font-size:14px;font-weight:700;color:#064e3b;padding:12px 14px 8px}
-.overview .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.overview table{width:100%;border-collapse:collapse;font-size:11px;min-width:500px}
-.overview th{background:#f0fdf4;color:#047857;font-weight:600;padding:7px 10px;text-align:left;border-bottom:2px solid #d1fae5;position:sticky;top:0}
-.overview td{padding:7px 10px;border-bottom:1px solid #f3f4f6;vertical-align:middle}
-.overview tr:last-child td{border-bottom:none}
-.overview tr:hover{background:#f0fdf4}
-.num{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:#059669;flex-shrink:0}
-.sec-badge{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:500;white-space:nowrap}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#f4f6f9;color:#333;line-height:1.5;font-size:14px;-webkit-font-smoothing:antialiased}
+.header{background:linear-gradient(135deg,#064e3b,#059669);padding:16px 14px;text-align:center}
+.header .sub{font-size:10px;color:#a7f3d0;letter-spacing:1px;opacity:.7;margin-bottom:2px}
+.header h1{font-size:20px;font-weight:700;color:#fff;margin:0}
+.header .meta{font-size:11px;color:#d1fae5;margin-top:4px;opacity:.85}
+.overview{background:#fff;margin:10px 14px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow-x:auto}
+.overview-title{font-size:13px;font-weight:700;color:#064e3b;padding:10px 12px 6px}
+.overview table{width:100%;border-collapse:collapse;font-size:11px;min-width:460px}
+.overview th{background:#f0fdf4;color:#047857;font-weight:600;padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb}
+.overview td{padding:6px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+.overview .num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;background:#059669;flex-shrink:0}
+.sec-badge{font-size:9px;padding:1px 6px;border-radius:4px;font-weight:500;white-space:nowrap}
 .sec-badge-1{background:#dbeafe;color:#1d4ed8}
-.sec-badge-2{background:#ede9fe;color:#6d28d9}
+.sec-badge-2{background:#d1fae5;color:#047857}
 .sec-badge-3{background:#e0e7ff;color:#4338ca}
 .sec-badge-4{background:#fce7f3;color:#be185d}
 .sec-badge-5{background:#fef3c7;color:#b45309}
-
-/* Nav */
-.nav-bar{position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 0;display:flex;gap:3px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:12px 14px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
-.nav-link{display:flex;align-items:center;gap:3px;padding:6px 12px;font-size:11px;font-weight:600;color:#666;text-decoration:none;border-radius:8px;white-space:nowrap;transition:all .15s;flex-shrink:0}
+.nav-bar{position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 0;display:flex;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 14px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.nav-link{display:flex;align-items:center;gap:3px;padding:4px 10px;font-size:11px;font-weight:600;color:#666;text-decoration:none;border-radius:6px;white-space:nowrap;transition:all .15s;flex-shrink:0}
 .nav-link.active,.nav-link:active{background:#059669;color:#fff}
-
-/* Sections */
-.sec{margin:12px 14px;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}
-.sec-title{font-size:16px;font-weight:700;padding:12px 14px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:8px}
-.sec-title .badge{font-size:10px;background:#e5e7eb;color:#666;padding:2px 10px;border-radius:10px;font-weight:600;margin-left:auto}
-
-/* Cards */
-.card{display:block;padding:12px 14px;text-decoration:none;color:inherit;border-bottom:1px solid #f3f4f6;transition:background .1s}
+.sec{margin:10px 14px;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden}
+.sec-title{font-size:15px;font-weight:700;padding:10px 12px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;gap:6px}
+.sec-title .badge{font-size:10px;background:#e5e7eb;color:#666;padding:1px 8px;border-radius:8px;font-weight:600;margin-left:auto}
+.card{display:block;padding:10px 12px;text-decoration:none;color:inherit;border-bottom:1px solid #f3f4f6}
 .card:last-child{border-bottom:none}
-.card:hover{background:#f8fffe}
-.card:active{background:#f0fdf4}
+.card:active{background:#f8f9fa}
 .card-top{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
-.card-num{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
-.card-source{font-size:11px;color:#059669;font-weight:600}
+.card-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;color:#fff;flex-shrink:0}
+.card-source{font-size:10px;color:#059669;font-weight:600}
 .card-date{font-size:10px;color:#999;margin-left:auto}
-.card-title{font-size:14px;font-weight:600;color:#111;margin-bottom:4px;line-height:1.45}
-.card-summary{font-size:12px;color:#666;line-height:1.55;margin-bottom:4px}
+.card-title{font-size:13px;font-weight:600;color:#111;margin-bottom:3px;line-height:1.4}
+.card-summary{font-size:12px;color:#666;line-height:1.5;margin-bottom:4px}
 .card-tags{display:flex;gap:4px;flex-wrap:wrap}
-.card-tag{font-size:9px;color:#888;background:#f3f4f6;padding:2px 7px;border-radius:4px;white-space:nowrap}
-
-/* Section accent colors */
-.sec-1 .sec-title{border-left:4px solid #059669}
-.sec-2 .sec-title{border-left:4px solid #8b5cf6}
-.sec-3 .sec-title{border-left:4px solid #6366f1}
-.sec-4 .sec-title{border-left:4px solid #ec4899}
-.sec-5 .sec-title{border-left:4px solid #f59e0b}
-
-/* Back to Top */
-.back-top{position:fixed;right:16px;bottom:24px;width:40px;height:40px;border-radius:50%;background:#059669;color:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(5,150,105,.35);display:none;align-items:center;justify-content:center;z-index:200;transition:transform .2s,opacity .2s}
-.back-top:hover{transform:scale(1.1)}
-.back-top.show{display:flex}
-
-/* Footer */
-.footer{text-align:center;padding:16px 14px;font-size:11px;color:#999;background:#f0fdf4;margin:12px 14px;border-radius:10px;border:1px solid #bbf7d0}
+.card-tag{font-size:9px;color:#888;background:#f3f4f6;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.footer{text-align:center;padding:16px 14px;font-size:11px;color:#999;background:#f0fdf4;margin:10px 14px;border-radius:8px;border:1px solid #bbf7d0}
 .footer a{color:#059669;text-decoration:none;font-weight:600}
-
-/* Responsive */
-@media(max-width:600px){
-  .header{padding:16px 12px}
-  .header h1{font-size:20px}
-  .stats-bar{gap:6px;padding:10px 6px;margin:10px 10px}
-  .stat-num{font-size:18px}
-  .stat-label{font-size:9px}
-  .overview,.sec,.footer{margin:10px 10px}
-  .nav-bar{margin:10px 10px}
-  .card{padding:10px 12px}
-  .card-title{font-size:13px}
-}
+.sec-1 .sec-title{border-left:3px solid #059669}
+.sec-2 .sec-title{border-left:3px solid #8b5cf6}
+.sec-3 .sec-title{border-left:3px solid #f59e0b}
+.sec-4 .sec-title{border-left:3px solid #ec4899}
+.sec-5 .sec-title{border-left:3px solid #ef4444}
 </style>
 </head>
 <body>
 
-<!-- Hero Header -->
 <div class="header">
-  <div class="sub">AUTONOMOUS DRIVING &middot; DAILY BRIEF</div>
-  <h1>自动驾驶晨报</h1>
-  <div class="meta">2026年7月5日 &middot; 星期六 &middot; 本期精选 <strong>30</strong> 条动态</div>
+  <div class="sub">AUTONOMOUS DRIVING · DAILY BRIEF</div>
+  <h1>🚗 自动驾驶晨报</h1>
+  <div class="meta">2026年7月5日 · 星期日 · 精选 <strong style="color:#a7f3d0">20</strong> 条动态</div>
 </div>
 
-<!-- Stats Bar -->
-<div class="stats-bar">
-  <div class="stat-item">
-    <div class="stat-num">10</div>
-    <div class="stat-label">行业动态</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">5</div>
-    <div class="stat-label">产品发布</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">3</div>
-    <div class="stat-label">模型发布</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">7</div>
-    <div class="stat-label">前沿论文</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">5</div>
-    <div class="stat-label">其他消息</div>
-  </div>
-</div>
-
-<!-- Today Overview -->
+<!-- 今日概览 -->
 <div class="overview">
   <div class="overview-title">📋 今日概览</div>
-  <div class="table-wrap">
   <table>
     <thead>
-      <tr><th style="width:36px">#</th><th>标题</th><th style="width:70px">板块</th><th style="width:56px">来源</th></tr>
+      <tr><th style="width:30px">#</th><th>标题</th><th style="width:60px">板块</th><th style="width:50px">来源</th></tr>
     </thead>
     <tbody>
-      <tr><td><span class="num">1</span></td><td>特斯拉Robotaxi服务扩展至迈阿密，车内无安全员</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>IT之家</td></tr>
-      <tr><td><span class="num">2</span></td><td>萝卜快跑与瑞士PostBus合作，欧洲路试启动</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>新浪财经</td></tr>
-      <tr><td><span class="num">3</span></td><td>小马智行一季度Robotaxi收入同比增长395%</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>国信证券</td></tr>
-      <tr><td><span class="num">4</span></td><td>文远知行年内交付2000台NVIDIA DRIVE Thor车型</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>新浪财经</td></tr>
-      <tr><td><span class="num">5</span></td><td>深圳修订自动驾驶条例7月施行，授权全域Robotaxi测试</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>每日经济新闻</td></tr>
-      <tr><td><span class="num">6</span></td><td>联合国自动驾驶系统全球技术法规正式获批发布</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>人民网</td></tr>
-      <tr><td><span class="num">7</span></td><td>我国首部L3/L4自动驾驶强制国标公示</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>汽车之家</td></tr>
-      <tr><td><span class="num">8</span></td><td>L2级智驾辅助系统强制国标正式发布</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>凤凰网</td></tr>
-      <tr><td><span class="num">9</span></td><td>华为乾昆智驾搭载车辆超190万辆，累计行驶120亿公里</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>凤凰网</td></tr>
-      <tr><td><span class="num">10</span></td><td>Waymo周服务量冲击100万次，年内扩展至10城+伦敦</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>日本科技媒体</td></tr>
-      <tr><td><span class="num">11</span></td><td>卓驭科技携全栈移动物理AI智驾方案亮相GSA 2026</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>太平洋汽车</td></tr>
-      <tr><td><span class="num">12</span></td><td>小鹏XNGP VLA2.0无图智驾效率提升37%</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>新浪</td></tr>
-      <tr><td><span class="num">13</span></td><td>地平线HSD V2.0最大规模OTA：世界模型×强化学习</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>地平线官网</td></tr>
-      <tr><td><span class="num">14</span></td><td>小米正式开源Xiaomi OneVL自动驾驶模型</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>网易/新浪</td></tr>
-      <tr><td><span class="num">15</span></td><td>首批L3自动驾驶准入企业名单公布</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>今日头条</td></tr>
-      <tr><td><span class="num">16</span></td><td>2026智驾测评：华为乾昆ADS 4.1得分4.46居首</td><td><span class="sec-badge sec-badge-3">模型发布</span></td><td>今日头条</td></tr>
-      <tr><td><span class="num">17</span></td><td>地平线征程7最高性能版J7P目标算力超英伟达Thor-X</td><td><span class="sec-badge sec-badge-3">模型发布</span></td><td>腾讯新闻</td></tr>
-      <tr><td><span class="num">18</span></td><td>元戎启行CEO周光：2026是多模态智驾元年</td><td><span class="sec-badge sec-badge-3">模型发布</span></td><td>中国经济网</td></tr>
-      <tr><td><span class="num">19</span></td><td>VLA-World: 统一预测想象与反思推理的VLA世界模型</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>CVPR 2026</td></tr>
-      <tr><td><span class="num">20</span></td><td>IDOL: 逆动力学引导的未来预测端到端驾驶</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">21</span></td><td>VECTOR-Drive: 视觉语言与轨迹专家路由紧耦合</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">22</span></td><td>小米自动驾驶世界模型：统一重建与生成的联合框架</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">23</span></td><td>ReSim: 可靠驾驶世界模拟框架</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">24</span></td><td>Latent World Models for Automated Driving</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">25</span></td><td>多模态动作扩散鲁棒端到端驾驶</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>arXiv</td></tr>
-      <tr><td><span class="num">26</span></td><td>问界M7二季度智驾事故集中投诉，官方回应OTA优化</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>什么值得买</td></tr>
-      <tr><td><span class="num">27</span></td><td>Waymo召回近4000辆自动驾驶汽车</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>汽车召回网</td></tr>
-      <tr><td><span class="num">28</span></td><td>优必选发布人形机器人U1系列，订单破万台</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>钛媒体</td></tr>
-      <tr><td><span class="num">29</span></td><td>具身机器人市场年化增长率达50%</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>今日头条</td></tr>
-      <tr><td><span class="num">30</span></td><td>黄仁勋定调物理AI为下一波增长浪潮</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>新浪</td></tr>
+      <tr><td><span class="num">1</span></td><td>全球Robotaxi座次重排：萝卜快跑登顶，中国六企入围</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>21财经</td></tr>
+      <tr><td><span class="num">2</span></td><td>特斯拉Robotaxi扩展至迈阿密，车内无安全员</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>腾讯新闻</td></tr>
+      <tr><td><span class="num">3</span></td><td>萝卜快跑携手瑞士PostBus启动欧洲路试</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>IT之家</td></tr>
+      <tr><td><span class="num">4</span></td><td>小马智行Q1 Robotaxi收入同比增长395%</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>澎湃新闻</td></tr>
+      <tr><td><span class="num">5</span></td><td>华为乾崑智驾搭载车辆超190万辆</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>虎嗅</td></tr>
+      <tr><td><span class="num">6</span></td><td>Momenta港股IPO即将挂牌，7月8日上市</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>同花顺</td></tr>
+      <tr><td><span class="num">7</span></td><td>联合国自动驾驶ADS GTR全球法规正式获批</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>新浪</td></tr>
+      <tr><td><span class="num">8</span></td><td>何小鹏：L4/L5自动驾驶将在3-5年内落地</td><td><span class="sec-badge sec-badge-1">行业动态</span></td><td>快科技</td></tr>
+      <tr><td><span class="num">9</span></td><td>特斯拉Cybercab量产版启动公开道路测试</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>车质网</td></tr>
+      <tr><td><span class="num">10</span></td><td>小鹏VLA 2.0全量推送，全国无图智驾</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>什么值得买</td></tr>
+      <tr><td><span class="num">11</span></td><td>文远知行Robotaxi GXR首搭DRIVE Thor X</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>C114</td></tr>
+      <tr><td><span class="num">12</span></td><td>小米开源Xiaomi OneVL自动驾驶模型</td><td><span class="sec-badge sec-badge-2">产品发布</span></td><td>IT之家</td></tr>
+      <tr><td><span class="num">13</span></td><td>小米5篇自动驾驶论文入选ECCV 2026</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>车东西</td></tr>
+      <tr><td><span class="num">14</span></td><td>理想汽车12篇论文入选CVPR 2026</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>腾讯新闻</td></tr>
+      <tr><td><span class="num">15</span></td><td>端到端自动驾驶首次写入国家部委文件</td><td><span class="sec-badge sec-badge-4">前沿论文</span></td><td>车东西</td></tr>
+      <tr><td><span class="num">16</span></td><td>Waymo召回近4000辆自动驾驶汽车</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>汽车之家</td></tr>
+      <tr><td><span class="num">17</span></td><td>华为/比亚迪为智驾事故提供兜底赔付</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>腾讯新闻</td></tr>
+      <tr><td><span class="num">20</span></td><td>智驾平权：L2强制国标正式发布</td><td><span class="sec-badge sec-badge-5">其他消息</span></td><td>IT之家</td></tr>
     </tbody>
   </table>
-  </div>
 </div>
 
-<!-- Navigation -->
-<nav class="nav-bar" id="nav">
+<nav class="nav-bar">
   <a href="#sec-1" class="nav-link">📊 行业动态</a>
   <a href="#sec-2" class="nav-link">🚀 产品发布</a>
-  <a href="#sec-3" class="nav-link">🧠 模型发布</a>
   <a href="#sec-4" class="nav-link">📄 前沿论文</a>
   <a href="#sec-5" class="nav-link">💡 其他消息</a>
 </nav>
 
-<!-- ========== 行业动态 ========== -->
-<section class="sec sec-1" id="sec-1">
-  <div class="sec-title">📊 行业动态<span class="badge">10</span></div>
+<div class="sec sec-1" id="sec-1">
+<div class="sec-title">📊 行业动态<span class="badge">8</span></div>
 
-  <a class="card" href="https://tech.ifeng.com/c/8uVKBStURIm" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">1</span>
-      <span class="card-source">IT之家/凤凰网</span>
-      <span class="card-date">2026-07-05</span>
-    </div>
-    <div class="card-title">特斯拉Robotaxi服务扩展至迈阿密，车内无安全员</div>
-    <div class="card-summary">特斯拉Robotaxi自动驾驶网约车服务扩展至迈阿密西部区域，不配备车内安全员，覆盖第三个州。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
+<a class="card" href="https://m.21jingji.com/article/20260625/herald/90a698438b9037b0c1cce48396c9d8d6.html" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">1</span><span class="card-source">21财经</span><span class="card-date">2026-06-25</span></div>
+<div class="card-title">全球Robotaxi座次重排：中国企业登顶，六家入围前十</div>
+<div class="card-summary">Autnmy AI发布全球Robotaxi竞争力测评，百度萝卜快跑以81.7分超越Waymo登顶，小马智行、文远知行、滴滴自动驾驶、曹操出行、小鹏汽车六家中国企业入围全球榜单。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">Robotaxi</span><span class="card-tag">🔥 热度高</span></div>
+</a>
 
-  <a class="card" href="https://finance.sina.com.cn/roll/2026-06-16/doc-inicrivh9321616.shtml.md" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">2</span>
-      <span class="card-source">新浪财经</span>
-      <span class="card-date">2026-06-16</span>
-    </div>
-    <div class="card-title">萝卜快跑与瑞士PostBus合作，欧洲路试启动</div>
-    <div class="card-summary">萝卜快跑与瑞士邮政旗下PostBus合作，以AmiGo品牌在瑞士开展自动驾驶出租车路试，2027年启动商业运营。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
+<a class="card" href="https://news.qq.com/rain/a/20260705A02CVG00" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">2</span><span class="card-source">腾讯新闻</span><span class="card-date">2026-07-05</span></div>
+<div class="card-title">特斯拉Robotaxi服务扩展至美国迈阿密，车内无安全员</div>
+<div class="card-summary">特斯拉官方宣布Robotaxi自动驾驶网约车服务扩展至迈阿密西部区域，车内不配备安全员。此前已在达拉斯地区运营，预计将扩大至更大区域。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">Robotaxi</span></div>
+</a>
 
-  <a class="card" href="https://www.fxbaogao.com/detail/5458026" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">3</span>
-      <span class="card-source">国信证券</span>
-      <span class="card-date">2026-Q1</span>
-    </div>
-    <div class="card-title">小马智行一季度Robotaxi收入同比增长395%</div>
-    <div class="card-summary">小马智行2026年Q1表现强劲，Robotaxi收入同比增395%，4月推出全无人驾驶轻型卡车。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
+<a class="card" href="https://www.ithome.com/0/965/096.htm" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">3</span><span class="card-source">IT之家</span><span class="card-date">2026-06-16</span></div>
+<div class="card-title">萝卜快跑获瑞士L4级许可，携手PostBus启动欧洲路试</div>
+<div class="card-summary">百度萝卜快跑获瑞士L4级自动驾驶出租车运营许可，与瑞士邮政旗下PostBus合作推出AmiGo品牌，路试已于6月1日启动，计划2027年实现常态化运营。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">出海</span></div>
+</a>
 
-  <a class="card" href="https://cj.sina.cn/articles/view/7857141524/1d452771401902wf3q" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">4</span>
-      <span class="card-source">新浪财经</span>
-      <span class="card-date">2026</span>
-    </div>
-    <div class="card-title">文远知行年内交付2000台NVIDIA DRIVE Thor车型，全球部署2600辆</div>
-    <div class="card-summary">文远知行与吉利远程深化合作，年内交付2000台搭载DRIVE Thor芯片的GXR，成本再降15%。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
+<a class="card" href="https://m.thepaper.cn/newsDetail_forward_33237884" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">4</span><span class="card-source">澎湃新闻</span><span class="card-date">2026-05-26</span></div>
+<div class="card-title">小马智行Q1 Robotaxi收入同比增长395%，车队目标上调</div>
+<div class="card-summary">小马智行一季度总营收2.36亿元，同比增长145%。Robotaxi收入5912万元，同比增长395.4%，创历史新高。车队规模达1700辆以上，全年目标上调至3500辆。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">商业化</span></div>
+</a>
 
-  <a class="card" href="http://m.toutiao.com/group/7658131706066551336/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">5</span>
-      <span class="card-source">每日经济新闻</span>
-      <span class="card-date">2026-07-01</span>
-    </div>
-    <div class="card-title">深圳修订自动驾驶条例7月施行，授权全域Robotaxi测试</div>
-    <div class="card-summary">修订后的深圳经济特区智能网联汽车管理条例7月1日正式施行，授权全市有序探索自动驾驶出租车全域测试与商业化运营。</div>
-    <div class="card-tags"><span class="card-tag">📜 政策法规</span></div>
-  </a>
+<a class="card" href="https://www.huxiu.com/ainews/13695.html" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">5</span><span class="card-source">虎嗅</span><span class="card-date">2026-07-05</span></div>
+<div class="card-title">华为乾崑智驾搭载车辆超190万辆，累计行驶超114亿公里</div>
+<div class="card-summary">截至7月5日，华为搭载乾崑智驾的车辆已超190万辆，截至5月底累计辅助驾驶里程达114.7亿公里，覆盖25个品牌、50余款车型。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">华为</span></div>
+</a>
 
-  <a class="card" href="http://finance.people.com.cn/n1/2026/0703/c1004-40752892.html" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">6</span>
-      <span class="card-source">人民网</span>
-      <span class="card-date">2026-07-03</span>
-    </div>
-    <div class="card-title">联合国自动驾驶系统全球技术法规正式获批发布</div>
-    <div class="card-summary">中国、欧盟、美英加日共同牵头制定的全球首个自动驾驶技术法规（ADS GTR）在日内瓦获全体缔约方投票通过。</div>
-    <div class="card-tags"><span class="card-tag">📜 政策法规</span></div>
-  </a>
+<a class="card" href="https://stock.10jqka.com.cn/20260630/c677826292.shtml" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">6</span><span class="card-source">同花顺</span><span class="card-date">2026-06-30</span></div>
+<div class="card-title">Momenta港股IPO招股启动，预计7月8日挂牌上市</div>
+<div class="card-summary">Momenta(6880.HK) 6月29日正式招股，发行价295.6港元/股，募资约58.9亿港元，中金公司、德银联席保荐，梅赛德斯-奔驰、比亚迪等为基石投资者。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">IPO</span></div>
+</a>
 
-  <a class="card" href="https://m.autohome.com.cn/news/202606/1315176.html" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">7</span>
-      <span class="card-source">汽车之家</span>
-      <span class="card-date">2026-06-19</span>
-    </div>
-    <div class="card-title">我国首部L3/L4自动驾驶强制国标公示，2027年7月实施</div>
-    <div class="card-summary">工信部公示《智能网联汽车自动驾驶系统安全要求》强制性国标报批稿，覆盖L3-L5，禁止自创分级术语。</div>
-    <div class="card-tags"><span class="card-tag">📜 政策法规</span></div>
-  </a>
+<a class="card" href="https://finance.sina.com.cn/wm/2026-06-25/doc-inierihw2459555.shtml" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">7</span><span class="card-source">新浪</span><span class="card-date">2026-06-25</span></div>
+<div class="card-title">联合国自动驾驶系统全球技术法规（ADS GTR）正式获批发布</div>
+<div class="card-summary">中国、欧盟、英国等共同牵头制定的联合国自动驾驶系统全球技术法规（ADS GTR）经WP.29全体会议投票表决正式获批。中国核心参与法规制定，明确ADS产品核心技术指标。</div>
+<div class="card-tags"><span class="card-tag">📜 政策法规</span><span class="card-tag">🔥 热度高</span></div>
+</a>
 
-  <a class="card" href="https://auto.ifeng.com/c/8uSDjAfhBny" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">8</span>
-      <span class="card-source">凤凰网</span>
-      <span class="card-date">2026-07-02</span>
-    </div>
-    <div class="card-title">L2级智驾辅助系统强制国标正式发布，2027年1月实施</div>
-    <div class="card-summary">工信部《组合驾驶辅助系统安全要求》强制国标正式批准发布，所有新车必须装DMS驾驶员监测。</div>
-    <div class="card-tags"><span class="card-tag">📜 政策法规</span></div>
-  </a>
-
-  <a class="card" href="https://tech.ifeng.com/c/8uVdPpU311H" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">9</span>
-      <span class="card-source">凤凰网</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">华为乾昆智驾搭载车辆超190万辆，累计行驶120亿公里</div>
-    <div class="card-summary">2026年国内搭载组合驾驶辅助功能新车渗透率达70%，华为乾昆智驾累计行驶超120亿公里。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
-
-  <a class="card" href="https://ai-saas-hikaku.com/insight/waymo-1m-rides-2026-tesla-robotaxi-delay-expansion-gap/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#059669">10</span>
-      <span class="card-source">日本科技媒体</span>
-      <span class="card-date">2026-05</span>
-    </div>
-    <div class="card-title">Waymo周服务量冲击100万次，年内扩展至10城+伦敦</div>
-    <div class="card-summary">Waymo 2026年目标周100万次乘坐，年内扩展至美国10城以上并进军伦敦，与特斯拉Robotaxi拉开差距。</div>
-    <div class="card-tags"><span class="card-tag">🏢 企业动向</span></div>
-  </a>
-</section>
-
-<!-- ========== 产品发布 ========== -->
-<section class="sec sec-2" id="sec-2">
-  <div class="sec-title">🚀 产品发布<span class="badge">5</span></div>
-
-  <a class="card" href="http://m.toutiao.com/group/7657957607059014179/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#8b5cf6">11</span>
-      <span class="card-source">太平洋汽车</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">卓驭科技携全栈移动物理AI智驾方案亮相GSA 2026</div>
-    <div class="card-summary">卓驭科技在上海低碳智慧出行展展示全栈移动物理AI智驾方案，提出规模、通用、温度三大核心优势。</div>
-    <div class="card-tags"><span class="card-tag">🚀 新技术</span></div>
-  </a>
-
-  <a class="card" href="https://k.sina.cn/article_7879923882_1d5ae18aa068019l9k.html" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#8b5cf6">12</span>
-      <span class="card-source">新浪</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">小鹏XNGP VLA2.0无图智驾效率提升37%，场景覆盖再创新高</div>
-    <div class="card-summary">小鹏XNGP升级VLA2.0，97.9%场景识别准确率，二季度OTA实现无导航内部道路自动驾驶，效率提升37%。</div>
-    <div class="card-tags"><span class="card-tag">🚀 新功能</span></div>
-  </a>
-
-  <a class="card" href="https://www.horizon.auto/news/product/459" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#8b5cf6">13</span>
-      <span class="card-source">地平线官网</span>
-      <span class="card-date">2026-06-29</span>
-    </div>
-    <div class="card-title">地平线HSD V2.0最大规模OTA：世界模型×强化学习重构端到端</div>
-    <div class="card-summary">地平线发布HSD V2.0，6大维度进化、18项新增功能及25项优化，世界模型与强化学习驱动端到端范式升级。</div>
-    <div class="card-tags"><span class="card-tag">🚀 新功能</span></div>
-  </a>
-
-  <a class="card" href="https://k.sina.cn/article_7880068201_1d5b04c69068023dk4.html" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#8b5cf6">14</span>
-      <span class="card-source">网易/新浪</span>
-      <span class="card-date">2026-05</span>
-    </div>
-    <div class="card-title">小米正式开源Xiaomi OneVL自动驾驶模型，统一VLA与世界模型</div>
-    <div class="card-summary">小米5月发布并全面开源Xiaomi OneVL，通过潜空间推理统一VLA与世界模型框架，雷军称未来五年解锁无人驾驶。</div>
-    <div class="card-tags"><span class="card-tag">🚀 新技术</span></div>
-  </a>
-
-  <a class="card" href="http://m.toutiao.com/group/7657653305920717321/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#8b5cf6">15</span>
-      <span class="card-source">今日头条</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">首批L3自动驾驶准入企业名单公布，华为蔚来在列</div>
-    <div class="card-summary">工信部公布首批通过准入审查企业名单，华为乾昆ADS 3.0和蔚来NT3.0平台均通过极端测试验证。</div>
-    <div class="card-tags"><span class="card-tag">🚀 新功能</span></div>
-  </a>
-</section>
-
-<!-- ========== 模型发布 ========== -->
-<section class="sec sec-3" id="sec-3">
-  <div class="sec-title">🧠 模型发布<span class="badge">3</span></div>
-
-  <a class="card" href="http://m.toutiao.com/group/7657792882874548745/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#6366f1">16</span>
-      <span class="card-source">今日头条</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">2026智驾测评：华为乾昆ADS 4.1得分4.46居首，小鹏XNGP VLA2.0紧随</div>
-    <div class="card-summary">权威P3智驾测评出炉，华为乾昆ADS 4.1得分4.46稳居第一，小鹏XNGP VLA2.0得分4.33差距极小。</div>
-    <div class="card-tags"><span class="card-tag">🧠 Benchmark</span></div>
-  </a>
-
-  <a class="card" href="http://news.qq.com/rain/a/20260319A080Y600" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#6366f1">17</span>
-      <span class="card-source">腾讯新闻</span>
-      <span class="card-date">2026-03</span>
-    </div>
-    <div class="card-title">地平线征程7最高性能版J7P目标算力超英伟达Thor-X，2027量产</div>
-    <div class="card-summary">地平线CEO透露征程7最高性能版J7P目标算力将大幅超越英伟达Thor-X的1000TOPS，2027年量产。</div>
-    <div class="card-tags"><span class="card-tag">🧠 新模型</span></div>
-  </a>
-
-  <a class="card" href="http://m.ce.cn/qc/gd/202604/t20260415_2906839.shtml" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#6366f1">18</span>
-      <span class="card-source">中国经济网</span>
-      <span class="card-date">2026-04</span>
-    </div>
-    <div class="card-title">元戎启行CEO周光：2026是多模态智驾元年，基座模型推动认知进化</div>
-    <div class="card-summary">元戎启行CEO周光表示传统小模型智驾已遇瓶颈，基座大模型是核心路径，2026年成多模态智驾元年。</div>
-    <div class="card-tags"><span class="card-tag">🧠 技术路线</span></div>
-  </a>
-</section>
-
-<!-- ========== 前沿论文 ========== -->
-<section class="sec sec-4" id="sec-4">
-  <div class="sec-title">📄 前沿论文<span class="badge">7</span></div>
-
-  <a class="card" href="https://openaccess.thecvf.com/content/CVPR2026F/papers/Wang_Learning_Vision-Language-Action_World_Models_for_Autonomous_Driving_CVPRF_2026_paper.pdf" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">19</span>
-      <span class="card-source">CVPR 2026</span>
-      <span class="card-date">2026</span>
-    </div>
-    <div class="card-title">VLA-World: 统一预测想象与反思推理的VLA世界模型</div>
-    <div class="card-summary">CVPR 2026论文，提出VLA-World统一VLA的预测想象与世界模型的反思推理，增强驾驶预见性与安全性。</div>
-    <div class="card-tags"><span class="card-tag">🔬 VLA+世界模型</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/html/2605.31476v1" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">20</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-05</span>
-    </div>
-    <div class="card-title">IDOL: 逆动力学引导的未来预测端到端驾驶</div>
-    <div class="card-summary">提出IDOL框架，通过逆动力学模型引导潜在BEV世界模型精炼，提升端到端驾驶的闭环鲁棒性。</div>
-    <div class="card-tags"><span class="card-tag">🔬 端到端</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/html/2605.08830v1" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">21</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-05</span>
-    </div>
-    <div class="card-title">VECTOR-Drive: 视觉语言与轨迹专家路由紧耦合的端到端驾驶</div>
-    <div class="card-summary">提出语义感知专家路由机制和流匹配动作规划器，实现VLA与连续规划的紧耦合，三阶段训练策略。</div>
-    <div class="card-tags"><span class="card-tag">🔬 VLA</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/pdf/2605.18137v5" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">22</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-05</span>
-    </div>
-    <div class="card-title">小米自动驾驶世界模型：统一重建与生成的联合框架</div>
-    <div class="card-summary">小米发布Xiaomi Auto World Model，提出WorldRec前馈重建架构和可控世界生成，统一世界表征与生成能力。</div>
-    <div class="card-tags"><span class="card-tag">🔬 世界模型</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/html/2506.09981v2" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">23</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-06</span>
-    </div>
-    <div class="card-title">ReSim: 可靠驾驶世界模拟框架</div>
-    <div class="card-summary">提出ReSim可靠世界模拟框架，含异构数据编译、可控世界模型和视频奖励估计，提升仿真保真度。</div>
-    <div class="card-tags"><span class="card-tag">🔬 世界模型</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/pdf/2603.09086" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">24</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-03</span>
-    </div>
-    <div class="card-title">Latent World Models for Automated Driving: 统一分类与开放挑战</div>
-    <div class="card-summary">系统性综述自动驾驶中的隐空间世界模型，提出统一分类体系、评估框架和开放问题。</div>
-    <div class="card-tags"><span class="card-tag">🔬 综述</span></div>
-  </a>
-
-  <a class="card" href="https://arxiv.org/pdf/2606.02105" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#ec4899">25</span>
-      <span class="card-source">arXiv</span>
-      <span class="card-date">2026-06</span>
-    </div>
-    <div class="card-title">多模态动作扩散鲁棒端到端驾驶</div>
-    <div class="card-summary">提出多模态动作扩散框架用于鲁棒端到端驾驶，通过扩散模型处理动作空间的多样性和不确定性。</div>
-    <div class="card-tags"><span class="card-tag">🔬 端到端</span></div>
-  </a>
-</section>
-
-<!-- ========== 其他消息 ========== -->
-<section class="sec sec-5" id="sec-5">
-  <div class="sec-title">💡 其他消息<span class="badge">5</span></div>
-
-  <a class="card" href="https://post.m.smzdm.com/p/al37pkqp/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#f59e0b">26</span>
-      <span class="card-source">什么值得买</span>
-      <span class="card-date">2026-07-04</span>
-    </div>
-    <div class="card-title">问界M7二季度智驾事故集中投诉，官方回应OTA优化不召回</div>
-    <div class="card-summary">2026年Q2问界M7多起智驾事故投诉集中出现，涵盖高速NCA未识别障碍物、自动变道剐蹭、APA泊车失控等。</div>
-    <div class="card-tags"><span class="card-tag">⚠️ 事故舆情</span></div>
-  </a>
-
-  <a class="card" href="http://www.qiche365.org.cn/index.php/index/article/detail/id/42245.html" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#f59e0b">27</span>
-      <span class="card-source">汽车召回网</span>
-      <span class="card-date">2026-06-17</span>
-    </div>
-    <div class="card-title">Waymo召回近4000辆自动驾驶汽车</div>
-    <div class="card-summary">Waymo向NHTSA提交召回报告，召回3871辆Jaguar I-PACE，系统未能正确识别高速公路施工区域。</div>
-    <div class="card-tags"><span class="card-tag">⚠️ 召回</span></div>
-  </a>
-
-  <a class="card" href="http://m.toutiao.com/group/7658849164142395913" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#f59e0b">28</span>
-      <span class="card-source">钛媒体</span>
-      <span class="card-date">2026-06-30</span>
-    </div>
-    <div class="card-title">优必选发布人形机器人U1系列，订单破万台</div>
-    <div class="card-summary">优必选在深圳年度发布会推出消费级品牌优世界U1系列人形机器人，全渠道订单突破13361台。</div>
-    <div class="card-tags"><span class="card-tag">🤖 具身智能</span></div>
-  </a>
-
-  <a class="card" href="http://m.toutiao.com/group/7658193023800541738" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#f59e0b">29</span>
-      <span class="card-source">今日头条</span>
-      <span class="card-date">2026-07-03</span>
-    </div>
-    <div class="card-title">具身机器人市场年化增长率达50%，芯原研讨会揭示产业前景</div>
-    <div class="card-summary">Yole Group首席分析师在芯原研讨会上披露，未来十年具身机器人市场年化增长率将达50%。</div>
-    <div class="card-tags"><span class="card-tag">🤖 具身智能</span></div>
-  </a>
-
-  <a class="card" href="http://m.toutiao.com/group/7658256205420282422/" target="_blank" rel="noopener noreferrer">
-    <div class="card-top">
-      <span class="card-num" style="background:#f59e0b">30</span>
-      <span class="card-source">新浪</span>
-      <span class="card-date">2026-07</span>
-    </div>
-    <div class="card-title">黄仁勋定调物理AI为下一波增长浪潮，自动驾驶为三大载体之一</div>
-    <div class="card-summary">英伟达CEO黄仁勋在股东会发言，将智能人形机器人、高阶自动驾驶汽车和全自动化智慧工厂定位为物理AI三大载体。</div>
-    <div class="card-tags"><span class="card-tag">💡 观点评论</span></div>
-  </a>
-</section>
-
-<!-- Footer -->
-<div class="footer">
-  📮 由 AI 自动生成 &middot; 数据来源公开搜索<br>
-  仅供学习参考，不构成投资建议<br>
-  <a href="https://github.com/JacobZhu404/ad-newsletter" target="_blank" rel="noopener noreferrer">项目主页 →</a>
+<a class="card" href="https://news.qq.com/rain/a/20260703A02Y2500" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#059669">8</span><span class="card-source">腾讯新闻</span><span class="card-date">2026-07-03</span></div>
+<div class="card-title">何小鹏：中国智驾领先全球，L4/L5将在3-5年内落地</div>
+<div class="card-summary">小鹏汽车董事长何小鹏在MONA L03发布会后表示，联合国已发布覆盖L2至L5的自动驾驶ADS GTR法规，中国核心参与制定。中国智驾企业在效果和法规制定上均走在全球前面。</div>
+<div class="card-tags"><span class="card-tag">💬 观点</span></div>
+</a>
 </div>
 
-<!-- Back to Top Button -->
-<button class="back-top" id="backTop" title="回到顶部" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+<div class="sec sec-2" id="sec-2">
+<div class="sec-title">🚀 产品发布<span class="badge">4</span></div>
+
+<a class="card" href="https://www.12365auto.com/news/20260630/571066.shtml" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#8b5cf6">9</span><span class="card-source">车质网</span><span class="card-date">2026-06-30</span></div>
+<div class="card-title">特斯拉Cybercab量产版启动公开道路测试，取消方向盘与踏板</div>
+<div class="card-summary">马斯克正式宣布特斯拉Cybercab量产版在得州奥斯汀城区启动公开道路工程测试，车辆彻底移除方向盘与踏板，不存在任何人工驾驶接口。</div>
+<div class="card-tags"><span class="card-tag">🚗 Robotaxi</span><span class="card-tag">特斯拉</span></div>
+</a>
+
+<a class="card" href="https://post.smzdm.com/p/a6zqq02o/" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#8b5cf6">10</span><span class="card-source">什么值得买</span><span class="card-date">2026-06-16</span></div>
+<div class="card-title">小鹏VLA 2.0全量推送：端到端无图智驾时代到来</div>
+<div class="card-summary">小鹏VLA 2.0全量推送给车主，采用端到端视觉-动作直连架构，支持无导航NGP漫游等核心功能，实现真正全场景无图智驾，感知到决策延迟仅80毫秒。</div>
+<div class="card-tags"><span class="card-tag">🚗 智驾升级</span><span class="card-tag">小鹏</span></div>
+</a>
+
+<a class="card" href="https://www.c114.net.cn/industry/49895.html" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#8b5cf6">11</span><span class="card-source">C114</span><span class="card-date">2026-01-06</span></div>
+<div class="card-title">文远知行Robotaxi GXR全球首搭NVIDIA DRIVE Thor X芯片</div>
+<div class="card-summary">文远知行宣布旗下Robotaxi GXR成全球首款搭载NVIDIA DRIVE Thor X芯片的车型，该芯片算力较上一代大幅提升，为L4级自动驾驶提供充足算力基础。</div>
+<div class="card-tags"><span class="card-tag">🚗 Robotaxi</span><span class="card-tag">芯片</span></div>
+</a>
+
+<a class="card" href="https://www.ithome.com/0/971/529.htm" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#8b5cf6">12</span><span class="card-source">IT之家</span><span class="card-date">2026-07-02</span></div>
+<div class="card-title">小米开源 Xaomi OneVL 自动驾驶模型，统一VLA与世界模型</div>
+<div class="card-summary">小米正式开源Xiaomi OneVL自动驾驶模型，首次实现VLA（视觉-语言-动作）与世界模型的统一框架，为社区端到端自动驾驶研究提供基础。</div>
+<div class="card-tags"><span class="card-tag">🚗 开源模型</span><span class="card-tag">小米</span></div>
+</a>
+</div>
+
+<div class="sec sec-4" id="sec-4">
+<div class="sec-title">📄 前沿论文<span class="badge">3</span></div>
+
+<a class="card" href="https://chedongxi.com/p/371582.html" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ec4899">13</span><span class="card-source">车东西</span><span class="card-date">2026-07-03</span></div>
+<div class="card-title">小米5篇自动驾驶论文入选ECCV 2026顶会</div>
+<div class="card-summary">小米AI与自动驾驶团队共12篇论文入选ECCV 2026，其中5篇与自动驾驶直接相关：CausalDrive、MindDrive、DriveDreamer等，覆盖世界模型、VLA决策、安全规划等方向。</div>
+<div class="card-tags"><span class="card-tag">🔬 前沿研究</span><span class="card-tag">ECCV 2026</span></div>
+</a>
+
+<a class="card" href="https://news.qq.com/rain/a/20260608A07FS000" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ec4899">14</span><span class="card-source">腾讯新闻</span><span class="card-date">2026-06-08</span></div>
+<div class="card-title">理想汽车12篇论文入选CVPR 2026，世界模型与交通规则认知</div>
+<div class="card-summary">理想汽车共有12篇论文入选CVPR 2026，覆盖自动驾驶决策规划、跨模态对齐、交通规则推理与安全风险预判等方向，从工程落地走向学术前沿。</div>
+<div class="card-tags"><span class="card-tag">🔬 前沿研究</span><span class="card-tag">CVPR 2026</span></div>
+</a>
+
+<a class="card" href="https://finance.sina.com.cn/tech/digi/2026-06-25/doc-inieqwsv7791798.shtml" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ec4899">15</span><span class="card-source">新浪</span><span class="card-date">2026-06-25</span></div>
+<div class="card-title">端到端自动驾驶首登国家文件，交通运输部等五部门印发方案</div>
+<div class="card-summary">交通运输部等五部门联合印发《"人工智能+交通运输"典型应用场景创新行动方案》，明确提出开展智能驾驶端到端大模型研发与测试，聚焦干线物流无人驾驶。</div>
+<div class="card-tags"><span class="card-tag">📜 政策</span><span class="card-tag">端到端</span></div>
+</a>
+</div>
+
+<div class="sec sec-5" id="sec-5">
+<div class="sec-title">💡 其他消息<span class="badge">3</span></div>
+
+<a class="card" href="https://www.sohu.com/a/1038582552_114760" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ef4444">16</span><span class="card-source">搜狐/IT之家</span><span class="card-date">2026-06-18</span></div>
+<div class="card-title">Waymo召回近4000辆自动驾驶汽车，软件缺陷所致</div>
+<div class="card-summary">Waymo因软件故障召回近4000辆自动驾驶汽车，涉及部分Jaguar I-PACE车型，系统在特定工况下对障碍物识别存在异常，已启动OTA修复。</div>
+<div class="card-tags"><span class="card-tag">⚠️ 召回</span><span class="card-tag">Waymo</span></div>
+</a>
+
+<a class="card" href="https://news.qq.com/rain/a/20260624A04ENL00" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ef4444">17</span><span class="card-source">腾讯新闻</span><span class="card-date">2026-06-24</span></div>
+<div class="card-title">智驾开启兜底局：华为跟进比亚迪为智驾事故提供保障权益</div>
+<div class="card-summary">比亚迪率先承诺城市领航智驾事故全额赔付后，华为正式推出"ADS辅助驾驶无忧权益"。ADS Max高阶功能包7月1日起恢复标准价3.6万元。</div>
+<div class="card-tags"><span class="card-tag">🏢 企业动向</span><span class="card-tag">兜底</span></div>
+</a>
+
+<a class="card" href="https://www.msn.cn/zh-cn/news/other/%E5%8D%8E%E4%B8%BA-%E6%88%AA%E8%87%B3%E7%9B%AE%E5%89%8D-%E6%90%AD%E8%BD%BD%E4%B9%BE%E5%B4%91%E6%99%BA%E9%A9%BE%E7%9A%84%E8%BD%A6%E8%BE%86%E5%B7%B2%E8%B6%85%E8%BF%87-190-%E4%B8%87%E8%BE%86/ar-AA27dQ8U" target="_blank" rel="noopener noreferrer">
+<div class="card-top"><span class="card-num" style="background:#ef4444">18</span><span class="card-source">IT之家/MSN</span><span class="card-date">2026-07-02</span></div>
+<div class="card-title">L2级智驾辅助系统强制国标（GB 47955-2026）正式发布</div>
+<div class="card-summary">工信部正式发布《智能网联汽车 组合驾驶辅助系统安全要求》强制性国家标准，拟于2027年1月1日起实施。华为回应称安全是智驾第一准则。</div>
+<div class="card-tags"><span class="card-tag">📜 政策法规</span></div>
+</a>
+</div>
+
+<div class="footer">
+  📮 由 AI 自动生成 · 所有链接经搜索验证<br>
+  <a href="https://github.com" target="_blank">项目主页</a>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // IntersectionObserver for nav highlighting
   const sections = document.querySelectorAll('.sec');
   const navLinks = document.querySelectorAll('.nav-link');
   const observer = new IntersectionObserver(entries => {
@@ -561,35 +253,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeLink) activeLink.classList.add('active');
       }
     });
-  }, { threshold: 0.15 });
+  }, { threshold: 0.2 });
   sections.forEach(s => observer.observe(s));
-
-  // Back to top button visibility
-  const backTop = document.getElementById('backTop');
-  const scrollObserver = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) {
-        backTop.classList.add('show');
-      } else {
-        backTop.classList.remove('show');
-      }
-    });
-  }, { threshold: 0 });
-  scrollObserver.observe(document.querySelector('.header'));
-
-  // Smooth scroll for nav links
-  navLinks.forEach(link => {
-    link.addEventListener('click', e => {
-      e.preventDefault();
-      const targetId = link.getAttribute('href').substring(1);
-      const target = document.getElementById(targetId);
-      if (target) {
-        const navHeight = document.getElementById('nav').offsetHeight;
-        const top = target.getBoundingClientRect().top + window.pageYOffset - navHeight - 8;
-        window.scrollTo({ top, behavior: 'smooth' });
-      }
-    });
-  });
 });
 </script>
 </body>
