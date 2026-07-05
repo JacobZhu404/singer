@@ -62,6 +62,14 @@ agent_created: true
 搜索结果按以下5个维度标记(对应5个版块):
 - 行业动态(企业动向/融资/政策法规/商业化/峰会/AI基础设施) / 产品发布(新车型/新功能/新技术) / 模型发布(新模型/模型更新/benchmark) / 前沿论文(arxiv/CVPR等) / 其他消息(事故/人事/观点/吐槽/具身智能)
 
+### ⚠️ 不凑数原则（核心质量要求）
+**严禁为凑数而强行填充任何版块。** 每个门类的入选标准是：
+- 新闻本身具有行业关注度或实际影响
+- 日期在当天或近3天内（旧闻直接排除）
+- 不是过于冷门或边缘话题
+
+如果某个版块当天确实没有符合标准的新闻，**直接留空（count=0）**，不要在标题里硬凑。宁可少而精，不要多而杂。总条数可以是 15 条、20 条、25 条，没有必须凑到 30 条的硬性要求。
+
 ### ⚠️ 论文链接规则
 - 前沿论文条目的 URL 必须是原始论文链接(arxiv.org/openaccess.thecvf.com/openreview.net)
 - papernotes.org 等聚合器链接会被 `check_url_quality.py` 标记为 reject
@@ -78,18 +86,21 @@ agent_created: true
   "generated_at": "YYYY-MM-DD",
   "date_display": "YYYY年M月D日 星期X",
   "title": "自动驾驶晨报 M月D日",
-  "digest": "一句话摘要",
-  "total": 30,
+  "digest": "一句话摘要（含实际条数和版块分布）",
+  "total": 0,
   "sections": [
     {
-      "id": "sec-1", "name": "行业动态", "icon": "📊", "count": 10,
+      "id": "sec-1", "name": "行业动态", "icon": "📊", "count": 0,
       "items": [{"num": 1, "title": "...", "source": "...", "url": "...", "date": "...", "dimension": "🏢 企业动向", "summary": "≤60字"}]
     },
-    {"id": "sec-2", "name": "产品发布", "icon": "🚀", "count": 5, "items": [...]},
-    {"id": "sec-3", "name": "模型发布", "icon": "🧠", "count": 3, "items": [...]},
-    {"id": "sec-4", "name": "前沿论文", "icon": "📄", "count": 7, "items": [...]},
-    {"id": "sec-5", "name": "其他消息", "icon": "💡", "count": 5, "items": [...]}
+    {"id": "sec-2", "name": "产品发布", "icon": "🚀", "count": 0, "items": [...]},
+    {"id": "sec-3", "name": "模型发布", "icon": "🧠", "count": 0, "items": [...]},
+    {"id": "sec-4", "name": "前沿论文", "icon": "📄", "count": 0, "items": [...]},
+    {"id": "sec-5", "name": "其他消息", "icon": "💡", "count": 0, "items": [...]}
   ],
+```
+
+**注意：** `total` 和 `count` 均为实际值，不强制凑数。某版块无新闻时 `count=0`，`items=[]`。`total` = 所有非空版块 items 数量之和。
   "metadata": {
     "all_urls": ["url1", "url2", ...],
     "all_titles": ["title1", "title2", ...]
