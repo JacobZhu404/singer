@@ -524,7 +524,7 @@ def main():
     if not content_source_url:
         print(f"  💡 链接汇总页已生成: {links_path}")
         print(f"  💡 请部署后设置 WX_LINKS_URL 环境变量")
-        content_source_url = str(links_path)
+        content_source_url = ""
 
     print("\n🔑 获取 access_token ...")
     token = get_access_token()
