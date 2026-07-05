@@ -227,7 +227,13 @@ def parse_html(html_text: str) -> dict:
         date_display = f"{datetime.now().year}年{datetime.now().month}月{datetime.now().day}日"
 
     # 正文:逐板块抽卡片
-    sections = re.findall(r'<section id="(sec-\d+)" class="section">(.*?)</section>', html_text, re.S)
+    # 兼容两种 HTML 结构:
+    #   新版: <section class="sec sec-N" id="sec-N"> + <div class="sec-title"> + <a class="card">
+    #   旧版: <section id="sec-N" class="section"> + <span class="section-icon"> + <a class="card">
+    sections = re.findall(r'<section[^>]*id="(sec-\d+)"[^>]*>(.*?)</section>', html_text, re.S)
+    if not sections:
+        # 备用: 用 div.sec 包裹的结构
+        sections = re.findall(r'<div[^>]*id="(sec-\d+)"[^>]*>(.*?)</div>', html_text, re.S)
     body_parts = []
 
     # 概览表格行 + 详情卡片
@@ -236,21 +242,30 @@ def parse_html(html_text: str) -> dict:
     for sec_id, sec_content in sections:
         sec_short = SECTION_NAMES.get(sec_id, sec_id)
         sec_full = ""
+        # 新版: <div class="sec-title">📊 行业动态<span class="badge">10</span></div>
         m_sec_title = re.search(
-            r'<span class="section-icon">([^<]+)</span>([^<]+?)<span class="section-badge">(\d+)</span>',
+            r'<div class="sec-title">(\S+?)\s+([^<]+?)<span class="badge">(\d+)</span></div>',
             sec_content
         )
+        # 旧版: <span class="section-icon">📊</span>行业动态<span class="section-badge">10</span>
+        if not m_sec_title:
+            m_sec_title = re.search(
+                r'<span class="section-icon">([^<]+)</span>([^<]+?)<span class="section-badge">(\d+)</span>',
+                sec_content
+            )
         if m_sec_title:
             sec_icon, sec_name, sec_count = m_sec_title.groups()
-            sec_full = f'<p style="margin:24px 0 12px;padding-left:8px;border-left:4px solid #059669;font-size:18px;font-weight:bold;color:#047857;">{html.escape(sec_icon)}{html.escape(sec_name)} ({sec_count}条)</p>'
-        cards = re.findall(r'<a href="([^"]+)"[^>]*class="card">(.*?)</a>', sec_content, re.S)
+            sec_full = f'<p style="margin:24px 0 12px;padding-left:8px;border-left:4px solid #059669;font-size:18px;font-weight:bold;color:#047857;">{html.escape(sec_icon.strip())}{html.escape(sec_name.strip())} ({sec_count}条)</p>'
+        cards = re.findall(r'<a[^>]*class="card"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', sec_content, re.S)
+        if not cards:
+            cards = re.findall(r'<a[^>]*href="([^"]+)"[^>]*class="card"[^>]*>(.*?)</a>', sec_content, re.S)
         for url, card in cards:
-            m_num = re.search(r'<span class="card-num">(\d+)</span>', card)
+            m_num = re.search(r'<span class="card-num"[^>]*>(\d+)</span>', card)
             m_src = re.search(r'<span class="card-source">([^<]+)</span>', card)
             m_card_title = re.search(r'<div class="card-title">([^<]+)</div>', card)
-            m_time = re.search(r'<span class="card-time">([^<]+)</span>', card)
+            m_time = re.search(r'<span class="card-date">([^<]+)</span>', card) or re.search(r'<span class="card-time">([^<]+)</span>', card)
             m_summary = re.search(r'<div class="card-summary">([^<]+)</div>', card)
-            m_dim = re.search(r'<div class="card-dimension ([a-z-]+)">([^<]+)</div>', card)
+            m_dim = re.search(r'<span class="card-tag">([^<]+)</span>', card) or re.search(r'<div class="card-dimension ([a-z-]+)">([^<]+)</div>', card)
             if not m_card_title:
                 continue
             num = m_num.group(1) if m_num else ""
@@ -260,7 +275,8 @@ def parse_html(html_text: str) -> dict:
             summary = m_summary.group(1).strip() if m_summary else ""
             dim_text = ""
             if m_dim:
-                dim_text = m_dim.group(2)
+                # 新版 card-tag 只有1个捕获组，旧版 card-dimension 有2个
+                dim_text = m_dim.group(2) if len(m_dim.groups()) >= 2 else m_dim.group(1)
 
             # 概览行
             num_esc = html.escape(num)
