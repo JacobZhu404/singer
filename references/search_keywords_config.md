@@ -147,10 +147,35 @@ Skild AI embodied
 具身智能 人才 离职 加入
 SimReal sim-to-real 具身 智能驾驶
 
+## 第零组:聚合热榜数据源(优先级降序,fetch首页提取智驾相关标题)
+# 用法: 使用 WebFetch 获取首页内容,提取与智驾/自动驾驶/robotaxi 相关的标题和链接
+# 再对每个标题做二次搜索,溯源到原始来源(如36氪/界面/晚点/量子位等)
+
+### P1 - 日热榜 tophub.today (最高优先级)
+# URL: https://tophub.today
+# 覆盖源: 微博热搜/知乎热榜/微信24h热文/百度实时/36氪/IT之家/虎嗅/机器之心/量子位/Readhub/掘金AI/少数派
+# 提取关键词: 智能驾驶/自动驾驶/robotaxi/Waymo/Tesla/萝卜快跑/小马智行/文远知行/华为智驾/地平线/小鹏XNGP/蔚来/理想/小米智驾/端到端/世界模型/具身智能
+# 操作: fetch首页 → 遍历所有板块 → 标题含上述关键词即收录 → 二次搜索标题获取原始URL
+
+### P2 - Buzzing buzzing.cc (中优先级,海外信息差)
+# URL: https://buzzing.cc (主页聚合) 或子站:
+#   https://hn.buzzing.cc - Hacker News热门
+#   https://tech.buzzing.cc - 科技板块
+#   https://news.buzzing.cc - 国外新闻头条
+# 提取关键词: autonomous driving/robotaxi/Waymo/Tesla FSD/Cruise/self-driving/AV
+# 操作: fetch子站 → 提取中文标题和英文标题 → 含关键词即收录 → 点击跳转原文获取URL
+
+### P3 - NewsNow newsnow.busiyi.world (低优先级,综合新闻补充)
+# URL: https://newsnow.busiyi.world
+# 覆盖源: 百度热搜/知乎/微博/B站/V2EX等社区
+# 提取关键词: 智能驾驶/自动驾驶/robotaxi/智驾/端到端/世界模型
+# 注意: 该站综合新闻占比高,科技类较少,需严格过滤非智驾内容
+# 操作: fetch首页 → 提取含关键词标题 → 二次搜索获取原始来源
+
 ## 第九组:聚合门户站点搜索(批量扫站,提取热点,过滤广告/购物导向)
 # 用法: 遍历这些站点首页/科技频道,提取与智驾相关的标题,再溯源到原始来源
 # 重点看: 这些站点引用的来源（如36氪/界面/晚点等）,作为补充线索
-site:tophub.today 智能驾驶
+# 注: tophub.today 已移至第零组(P1),此处保留其他站点
 site:maomu.com 智能驾驶
 site:guancha.cn 智能驾驶
 site:huxiu.com 智能驾驶
