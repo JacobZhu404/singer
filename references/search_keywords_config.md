@@ -1,5 +1,10 @@
 # 自动驾驶晨报 - Web 搜索关键词配置
 
+> ⚠️ **已迁移到 `search_matrix.yaml`**：此文件保留作为参考，但后续维护请在 `references/search_matrix.yaml` 中操作。
+> 
+> YAML 结构更清晰：12组搜索 + 3个热榜 + 时效性规则 + 不凑数原则，Agent 可直接解析。
+> 搜索执行逻辑：热榜 → 逐组 WebSearch → 汇集到 candidates.json
+
 生成每日晨报时，按以下关键词分组搜索，每轮取前5-10条结果。
 
 ---

@@ -34,7 +34,16 @@ class NewsItem(BaseModel):
     title: str = Field(min_length=1, max_length=200, description="新闻标题")
     source: str = Field(min_length=1, max_length=50, description="来源媒体")
     url: str = Field(min_length=5, description="原文链接")
-    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="文章发表日期 YYYY-MM-DD")
+    date: str = Field(min_length=4, max_length=10, description="文章发表日期，支持 YYYY / YYYY-MM / YYYY-MM-DD，由 dedup 等下游做标准化")
+
+    @field_validator("date")
+    @classmethod
+    def date_should_be_plausible(cls, v: str) -> str:
+        """宽松校验：只检查年份在合理范围内。"""
+        year_part = v[:4]
+        if not year_part.isdigit() or not (2020 <= int(year_part) <= 2030):
+            raise ValueError(f"日期年份不合理: {v}")
+        return v
     dimension: str = Field(min_length=1, description="维度标签，如 🏢 企业动向")
     summary: str = Field(min_length=1, max_length=200, description="60字内摘要")
 
