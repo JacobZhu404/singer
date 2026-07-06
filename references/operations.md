@@ -26,7 +26,8 @@
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
 | `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | 质量检查时 |
 | `scripts/generate_links_page.py` | 从仪表盘HTML生成格式精美的链接汇总页 | HTML定稿后 |
-| `scripts/update_cover.py` | 更新封面图 | 推送后需要更换封面时 |
+| `scripts/generate_cover.py` | 一键封面管道（ImageGen→裁剪→字体叠加→900×500） | 推送前 |
+| `scripts/update_cover.py` | 更新已有草稿封面图 | 推送后需要更换封面时 |
 | `scripts/dchat_push.py` | 推送晨报摘要到D-Chat | 微信推送后 |
 | `scripts/push_to_wechat.py` | 微信推送(旧脚本，保留兼容) | 作为备用 |
 
