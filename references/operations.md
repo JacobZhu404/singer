@@ -22,8 +22,10 @@
 |------|------|---------|
 | `scripts/push_today.py` | 推送今日晨报到微信草稿箱 | 终稿确认后 |
 | `scripts/verify_links.py` | Curl所有URL，验证HTTP可达 | 生成HTML后，推送前 |
+| `scripts/verify_content.py` | 抓取网页<title>，检查与卡片标题匹配度 | verify_links之后 |
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
 | `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | 质量检查时 |
+| `scripts/generate_links_page.py` | 从仪表盘HTML生成格式精美的链接汇总页 | HTML定稿后 |
 | `scripts/update_cover.py` | 更新封面图 | 推送后需要更换封面时 |
 | `scripts/dchat_push.py` | 推送晨报摘要到D-Chat | 微信推送后 |
 | `scripts/push_to_wechat.py` | 微信推送(旧脚本，保留兼容) | 作为备用 |
@@ -39,7 +41,19 @@ python3 scripts/verify_links.py <html文件路径>
 - 所有URL必须返回200/301/302
 - 不可达 > 0 → 禁止推送，需修复或删除对应条目
 
-### 2. URL质量检查
+### 2. 内容真实性校验
+```bash
+python3 scripts/verify_content.py --html <html文件路径>
+```
+- 抓取每个URL的 `<title>`，与卡片标题做关键词重叠匹配
+- 相似度低于阈值（默认0.25）或HTTP非200 → 标记为可疑
+- **注意**：此脚本会产⽣⼀定假阳性（部分站点标题写法不同、反爬、JS加载标题），用于初筛，最终仍需人工复核
+- 典型可捕获问题：
+  - URL指向完全不相关文章（如游戏新闻）
+  - 404/403/登录墙
+  - 首页URL冒充文章URL
+
+### 3. URL质量检查
 ```bash
 python3 scripts/check_url_quality.py <html文件路径>
 ```
@@ -48,7 +62,7 @@ python3 scripts/check_url_quality.py <html文件路径>
   - 登录墙（weibo.com等）
   - 首页（无具体文章路径）
 
-### 3. 内容新鲜度检查
+### 4. 内容新鲜度检查
 ```bash
 python3 scripts/check_freshness.py <items.json> --max-age 30
 ```
@@ -143,6 +157,19 @@ python3 scripts/dchat_push.py
 
 ---
 
+## 链接汇总页生成
+
+```bash
+python3 scripts/generate_links_page.py --html data/自动驾驶晨报_YYYYMMDD.html
+```
+
+- 从仪表盘 HTML 中**精确提取**所有卡片（保证链接页与仪表盘内容完全一致）
+- 使用与仪表盘相同的视觉风格（header、section、card）
+- 输出到 `data/links_YYYYMMDD.html`
+- `push_today.py` 已复用此模块，未来推送生成的链接页自动采用新格式
+
+---
+
 ## 微信排版限制
 
 1. 正文内 `<a href="外部URL">` 会被微信编辑器过滤成纯文本 → 改用 `content_source_url` 指向链接汇总页
@@ -178,6 +205,10 @@ python3 scripts/dchat_push.py
 - 2026-07-06: 新增第11组「美国科技企业AI管理动向」、第12组「半导体/芯片理论突破」
 - 2026-07-06: 新增「重大事件例外」时效性规则（放宽到7-14天）
 - 2026-07-06: 第10组AI基础设施扩展为覆盖中国+美国大厂AI战略
+
+#### 链接与内容质量
+- 2026-07-06: 发现7月5日报表存在3条问题链接（小米OneVL错链、华为兜底404、L2国标错链）→ 修复并新增 `verify_content.py`
+- 2026-07-06: 新增 `generate_links_page.py`，链接页从仪表盘精确提取并复用仪表盘视觉风格
 
 #### SKILL.md结构优化
 - 2026-07-06: 三层重构 — 核心原则(~60行) + 搜索配置(references/) + 操作细节(references/)

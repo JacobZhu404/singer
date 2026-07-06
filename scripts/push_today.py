@@ -3,6 +3,10 @@
 import json, re, os, sys, html as html_mod
 from pathlib import Path
 from datetime import datetime
+
+# 复用独立的链接页生成模块，确保与命令行脚本输出一致
+sys.path.insert(0, str(Path(__file__).parent))
+from generate_links_page import extract_cards, build_links_html
 try:
     import requests
 except ImportError:
@@ -264,9 +268,29 @@ def upload_cover(token):
 
 
 def generate_links_page() -> Path:
-    """从HTML仪表盘提取所有卡片URL,生成本地链接汇总页"""
+    """从HTML仪表盘提取所有卡片URL,生成格式精美的本地链接汇总页。"""
     html_text = HTML_FILE.read_text("utf-8")
-    
+
+    # 从HTML标题中提取日期
+    m = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', html_text)
+    date_display = f"{m.group(1)}年{m.group(2)}月{m.group(3)}日" if m else datetime.now().strftime("%Y年%m月%d日")
+
+    sections, total = extract_cards(html_text)
+    if not sections:
+        print("  ⚠️ 未解析到任何卡片，使用旧版兼容生成")
+        # fallback to old minimal version
+        return _generate_links_page_legacy()
+
+    links_html = build_links_html(sections, total, date_display)
+    links_path = BASE / f"data/links_{_DATE_STR}.html"
+    links_path.write_text(links_html, encoding="utf-8")
+    print(f"  ✅ 链接汇总页已生成: {links_path}")
+    return links_path
+
+
+def _generate_links_page_legacy() -> Path:
+    """旧版最小化链接页（兼容备用）"""
+    html_text = HTML_FILE.read_text("utf-8")
     card_pat = re.compile(
         r'<a class="card".*?href="([^"]+)".*?'
         r'<span class="card-num"[^>]*>(\d+)</span>.*?'
@@ -275,11 +299,9 @@ def generate_links_page() -> Path:
         r'<div class="card-title">([^<]+)</div>',
         re.S
     )
-    
     sec_blocks = list(re.finditer(r'<div class="sec sec-\d+" id="(sec-\d+)"', html_text))
     sec_names = {"sec-1": "📊 行业动态", "sec-2": "🚀 产品发布", "sec-4": "📄 前沿论文", "sec-5": "💡 其他消息"}
     grouped = {name: [] for name in sec_names.values()}
-    
     for i, sm in enumerate(sec_blocks):
         sec_id = sm.group(1)
         sec_name = sec_names.get(sec_id)
@@ -288,40 +310,23 @@ def generate_links_page() -> Path:
         end = sec_blocks[i + 1].start() if i + 1 < len(sec_blocks) else len(html_text)
         for url, num, source, date, title in card_pat.findall(html_text[sm.start():end]):
             grouped[sec_name].append((num, title.strip(), url))
-    
     links_body = ""
     for sec_name, items in grouped.items():
         if not items:
             continue
-        links_body += f'<h2 style="margin:20px 0 10px;font-size:16px;color:#059669;">{html_mod.escape(sec_name)}</h2>\n'
+        links_body += f'<h2>{html_mod.escape(sec_name)}</h2>\n'
         for num, title, url in items:
-            links_body += (
-                f'<div style="margin:8px 0;padding:10px 12px;background:#f9fafb;border-radius:6px;">'
-                f'<div style="font-size:13px;color:#6b7280;">#{html_mod.escape(num)}</div>'
-                f'<div style="font-size:14px;font-weight:600;margin:4px 0;">'
-                f'<a href="{html_mod.escape(url)}" target="_blank" rel="noopener noreferrer" style="color:#059669;text-decoration:none;">'
-                f'{html_mod.escape(title)} →</a></div>'
-                f'</div>\n'
-            )
-    
+            links_body += f'<p><a href="{html_mod.escape(url)}">#{html_mod.escape(num)} {html_mod.escape(title)}</a></p>\n'
     date_display = datetime.now().strftime("%Y年%m月%d日")
     all_items = sum(grouped.values(), [])
     links_html = (
         f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
-        f'<meta name="viewport" content="width=device-width,initial-scale=1.0">'
-        f'<title>自动驾驶晨报 原文链接汇总</title>'
-        f'<style>body{{font-family:-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:20px;background:#f4f6f9;color:#1a1a2e;}}h1{{font-size:18px;color:#047857;}}</style>'
-        f'</head><body>'
-        f'<h1>🚗 自动驾驶晨报 · 原文链接汇总</h1>'
-        f'<p style="color:#6b7280;font-size:13px;">{date_display} · 共 {len(all_items)} 篇</p>'
-        f'{links_body}'
-        f'<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:30px;">由 WorkBuddy 生成</p>'
-        f'</body></html>'
+        f'<title>自动驾驶晨报 原文链接汇总</title></head><body>'
+        f'<h1>原文链接汇总</h1><p>{date_display} · 共 {len(all_items)} 篇</p>'
+        f'{links_body}</body></html>'
     )
-    
     links_path = BASE / f"data/links_{_DATE_STR}.html"
     links_path.write_text(links_html, encoding="utf-8")
-    print(f"  ✅ 链接汇总页已生成: {links_path}")
     return links_path
 
 
