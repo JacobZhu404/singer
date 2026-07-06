@@ -11,8 +11,8 @@
     "api_url": "http://10.88.128.40:8000/dichat/snitch_openapi_online_lb/v1/message.create"
   },
   "paths": {
-    "base_dir": "/workspace/ad-newsletter/ad-newsletter",
-    "output_dir": "/workspace/ad-newsletter/ad-newsletter/data"
+    "base_dir": "/Users/jacob/personal/ad-newsletter",
+    "output_dir": "/Users/jacob/personal/ad-newsletter/data"
   },
   "newsletter": {
     "title_template": "自动驾驶晨报 {date}",

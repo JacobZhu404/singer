@@ -6,522 +6,68 @@ agent_created: true
 
 # 自动驾驶晨报公众号自动化
 
-**项目目录**: `/workspace/ad-newsletter/ad-newsletter/`
+**项目目录**: `/Users/jacob/personal/ad-newsletter/`（所有脚本/配置/数据在此目录下）
 
-所有脚本、配置、参考文件都在此目录下，不受 WorkBuddy 临时工作区清理影响。
-
-在 WorkBuddy 中用作独立主理人(solo mode)，不创建团队即可直接开始。
+---
 
 ## 版本体系
 
-当前项目有两个运行版本：
-
-### V1 — 全自动生成（稳定版）
-**核心理念**：一键式自动化，质量门禁兜底。适用于日常稳定产出，无需人工介入。
-- 流程：搜索采集 → 质量门禁 → HTML生成 → 封面 → 链接汇总 → 微信推送
-- 触发词：`生成晨报` / `今日推送`
-- 状态：**已稳定**，可日常使用
-
-### V2 — 交互式精编版（迭代中）
-**核心理念**：人机协作，每次编辑都是一次技能升级。在 V1 基础上增加确认环节：
-- 流程：V1 生成初稿 → **人工确认**（剔除/增补） → 融合终稿 → 推送 → **复盘**
-- 核心差异：
-  - 初稿生成后经过人工审核，不直接推送
-  - 用户可以剔除不合适的条目、补充遗漏的新闻
-  - 每次编辑决策记录到 `references/review_cases/`，周期性复盘优化 SKILL.md
-- 触发词：`精编晨报` / `V2晨报`
-
-> **V2 的目标**：每次人工编辑都是一次「教学」，让 SKILL.md 越来越「懂」你要什么。
-
-## 配置管理
-
-核心配置集中在 `config.json`：
-
-```json
-{
-  "wechat": { "app_id": "...", "app_secret": "..." },
-  "dchat": { "username": "...", "app_id": "...", "api_url": "..." },
-  "paths": { "base_dir": "/workspace/ad-newsletter/ad-newsletter", "output_dir": "..." },
-  "newsletter": { "sections": [...], "max_title_bytes": 60, "max_digest_bytes": 54 }
-}
-```
-
-- **凭据**: config.json 中的值作为默认，环境变量可覆盖
-- **路径**: 所有脚本从 config.json 读取路径，或从自身位置推断 `_BASE_DIR`
-- **板块配置**: sections 数组定义板块名称、ID、图标
-
-### Git 仓库
-- 仓库地址: `https://github.com/JacobZhu404/ad-newsletter` (私有)
-- 本地路径: `/workspace/ad-newsletter/ad-newsletter/`
-- push 方式: 沙箱内可直接 `cd /workspace/ad-newsletter/ad-newsletter && git push`
-- 修改后记得 commit + push 保持同步
-
-## 阶段1：数据采集
-
-读取 `references/search_keywords_config.md` 获取完整关键词配置，按以下11组并行采集：
-
-### 第零组：聚合热榜数据源（优先级最高，使用 WebFetch）
-按优先级降序 fetch 以下站点首页，提取与智驾相关的标题，再二次搜索溯源原始来源：
-- **P1 日热榜** `https://tophub.today` → 覆盖微博/知乎/微信/36氪/IT之家/机器之心/量子位等
-- **P2 Buzzing** `https://buzzing.cc` 及子站 → 海外信息差（HN/Reddit/彭博/经济学人）
-- **P3 NewsNow** `https://newsnow.busiyi.world` → 综合新闻补充（百度/知乎/微博/B站）
-
-### 第一至十组（使用 WebSearch）
-1. **头部企业动向** → 标记为「行业动态」或「产品发布」或「模型发布」(按内容区分)
-2. **政策法规** → 标记为「行业动态」
-3. **行业动态与融资** → 标记为「行业动态」
-4. **前沿论文** → 标记为「前沿论文」(⚠️ 必须搜索原始论文链接如 arxiv.org/openaccess.thecvf.com，不要使用聚合器如 papernotes.org)
-5. **事故舆情与人事** → 标记为「其他消息」
-6. **行业峰会** → 标记为「行业动态」
-7. **重点媒体定向搜索** → 按内容归入对应版块
-8. **具身智能** → 标记为「其他消息」
-9. **聚合门户站点搜索** → 批量扫站提取热点
-10. **AI基础设施** → 标记为「行业动态」(AI大模型/算力对智驾产业的影响)
-  - **纳入范围**：大厂的大模型动向（如美团LongCat、阿里禁用Claude、DeepSeek发布等），即使不直接讲智驾，也能反映技术演进路径和商业思考，属于行业风向标。重大 AI 基础设施新闻可收录到「行业动态」。
-
-搜索工具：`WebSearch`（第1-10组）/`WebFetch`（第零组），每组取前10条结果，去重后汇总。英文关键词用英文搜，中文关键词用中文搜。
-
-搜索结果按以下5个维度标记(对应5个版块):
-- 行业动态(企业动向/融资/政策法规/商业化/峰会/AI基础设施) / 产品发布(新车型/新功能/新技术) / 模型发布(新模型/模型更新/benchmark) / 前沿论文(arxiv/CVPR等) / 其他消息(事故/人事/观点/吐槽/具身智能)
-
-### ⚠️ 不凑数原则（核心质量要求）
-**严禁为凑数而强行填充任何版块。** 每个门类的入选标准是：
-- 新闻本身具有行业关注度或实际影响
-- 日期在当天或近3天内（旧闻直接排除）
-- 不是过于冷门或边缘话题
-
-如果某个版块当天确实没有符合标准的新闻，**直接留空（count=0）**，不要在标题里硬凑。宁可少而精，不要多而杂。总条数可以是 15 条、20 条、25 条，没有必须凑到 30 条的硬性要求。
-
-### ⚠️ URL与日期真实性规则（军规）
-1. **所有 URL 必须来自真实搜索**：严禁编造/猜测 URL，每条链接必须从 WebSearch 结果中提取，不可用搜索无关的链接
-2. **日期必须匹配文章实际发表时间**：2026-07-05 曾踩坑：何小鹏文章 URL 指向了英伟达 Cosmos3（完全无关），理想CVPR 文章 URL 指向了 Waymo 世界模型文章。必须用 WebFetch 验证每篇文章的实际发表日期
-3. **verify_links.py 必须 100% 通过**：不可达 > 0 条则禁止推送。宁少勿假，删除不可达条目
-4. **无法获取有效链接/正确日期的条目直接删除**：不充数、不保留占位
-
-### ⚠️ 每日去重要求（与历史内容不重复）
-- **每期晨报生成前必须去重**。读取 `data/` 目录下所有 `outline_YYYYMMDD.json` 或 `自动驾驶晨报_YYYYMMDD.html` 文件，提取历史标题和 URL 列表
-- 当天采集到的新闻如果标题/URL 与历史记录匹配（近似匹配即可），**直接排除**
-- 去重范围：建议至少前 7 天（含全部历史 outline 文件）
-- 去重时机：阶段1.5 生成大纲时完成，不要在 HTML 生成阶段才发现重复
-
-### ⚠️ 论文链接规则
-- 前沿论文条目的 URL 必须是原始论文链接(arxiv.org/openaccess.thecvf.com/openreview.net)
-- papernotes.org 等聚合器链接会被 `check_url_quality.py` 标记为 reject
-- 如果搜索结果只有聚合器链接，需要二次搜索原始论文标题+site:arxiv.org
-
-## 阶段1.5a：多源对比与合并（质量提升关键步骤）
-
-### 为什么需要多源对比
-单一搜索源容易遗漏关键新闻。用户可能同时使用其他大模型/工具生成晨报，**必须对比合并**，取各源之长。
-
-### 合并流程
-1. **读取用户提供的对比版本**：如果用户提供了其他模型生成的晨报内容（文字/链接/outline），先解析其条目列表
-2. **去重比对**：将对比版本的标题与我方采集结果做近似匹配（标题相似度>70%或URL相同视为重复）
-3. **互补增补**：对比版本中有、我方没有的条目 → 补充进我方 outline（需验证URL有效性和日期真实性）
-4. **择优替换**：同一新闻双方都有 → 选择摘要更精准、来源更权威、日期更近的版本
-5. **标注来源**：在 outline 的 `metadata` 中记录 `merged_from: ["user_v1", "auto_search"]`
-
-### 国内大厂AI动态专项规则（5B组）
-- **收录范围**：美团/阿里/字节/腾讯/百度/华为/京东/小米的AI战略、内部工具政策、大模型应用
-- **典型事件**：
-  - 美团全面使用龙猫(LongCat)模型，禁用外部AI工具
-  - 阿里禁用Claude Code，推广内部IDE和通义灵码
-  - 字节豆包大模型内部战略调整
-  - 各厂AI编程助手/智能体的内部推广政策
-- **标记规则**：归入「其他消息」版块，每日精选1-3条头部热点即可
-- **搜索策略**：优先搜索 `36氪 + 大厂名 + AI` / `虎嗅 + 大厂名 + 内部` / `晚点 + 大厂名 + 大模型`
-
-## 阶段1.5：生成核心大纲 (outline)
-
-采集完成后，先生成结构化大纲文件，作为后续所有产出的唯一数据源。路径: `data/outline_YYYYMMDD.json`
-
-### 大纲结构
-```json
-{
-  "version": "2.0",
-  "generated_at": "YYYY-MM-DD",
-  "date_display": "YYYY年M月D日 星期X",
-  "title": "自动驾驶晨报 M月D日",
-  "digest": "一句话摘要（含实际条数和版块分布）",
-  "total": 0,
-  "sections": [
-    {
-      "id": "sec-1", "name": "行业动态", "icon": "📊", "count": 0,
-      "items": [{"num": 1, "title": "...", "source": "...", "url": "...", "date": "...", "dimension": "🏢 企业动向", "summary": "≤60字"}]
-    },
-    {"id": "sec-2", "name": "产品发布", "icon": "🚀", "count": 0, "items": [...]},
-    {"id": "sec-3", "name": "模型发布", "icon": "🧠", "count": 0, "items": [...]},
-    {"id": "sec-4", "name": "前沿论文", "icon": "📄", "count": 0, "items": [...]},
-    {"id": "sec-5", "name": "其他消息", "icon": "💡", "count": 0, "items": [...]}
-  ],
-  "metadata": {
-    "all_urls": ["url1", "url2", ...],
-    "all_titles": ["title1", "title2", ...],
-    "merged_from": ["auto_search", "user_v1"],
-    "quality_notes": "合并说明: 补充了美团龙猫、阿里Claude Code等5B组内容"
-  }
-}
-```
-
-**注意：**
-- `total` 和 `count` 均为实际值，不强制凑数。某版块无新闻时 `count=0`，`items=[]`。
-- `metadata.merged_from` 记录内容来源，便于追溯和质量分析
-- `metadata.quality_notes` 记录合并过程中的关键决策
-
-### 大纲用途
-- **去重依据**: `metadata.all_urls` 和 `metadata.all_titles` 用于未来日期搜索时排除已收录内容
-- **双版同源**: HTML 仪表盘和公众号推文都基于同一份 outline 生成，确保内容一致
-- **历史回溯**: 所有 outline 文件随 Git 同步，便于长期分析和数据挖掘
-
-## 阶段2：质量门禁
-
-在生成 HTML 和推送前，运行质量检查脚本：
-
-```bash
-# 链接可达性验证
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/verify_links.py <dashboard.html>
-
-# URL质量检查(登录墙/聚合器/首页)
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/check_url_quality.py <dashboard.html>
-
-# 内容新鲜度检查(可选)
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/check_freshness.py <items.json> --max-age 30
-```
-
-### 门禁标准
-- **链接验证**: 所有URL必须可达(200/301/302)；不可达>0条 → 阻止推送
-- **URL质量**: 聚合器/登录墙/首页 → 标记但不阻止(需人工确认)
-- **新鲜度**: 超过30天的条目 → 标记为 stale(不阻止)
-
-如果门禁未通过，`push_to_wechat.py` 会拒绝推送。可用 `--skip-qa` 强制推送。
-
-## 阶段3：HTML 仪表盘生成
-
-读取阶段1.5生成的 `data/outline_YYYYMMDD.json`，基于此生成 `data/自动驾驶晨报_YYYYMMDD.html`（输出到项目 data/ 目录）。HTML 内容必须与 outline 完全一致，禁止在 HTML 生成阶段修改任何标题/摘要/URL。
-
-### 推文结构(固化)
-
-```
-Hero 头部(渐变背景 + 日期 + 总条数)
-  → 📋 今日概览(4列table: 编号 | 标题 | 所属板块 | 来源)
-  → 5大板块详情:
-    1. 行业动态(企业动向/融资并购/政策法规/商业化/行业峰会)
-       ⚠️ 政策法规类包括: 新规发布/征求意见/标准制定/立法进展/责任认定规则
-    2. 产品发布(新车型/新功能/新技术/OTA更新/新芯片传感器)
-    3. 模型发布(新模型/模型更新/benchmark)
-    4. 前沿论文(arxiv/CVPR/NeurIPS)
-    5. 其他消息(具体事故案例/召回/投诉/人事变动/具身智能/观点评论)
-       ⚠️ 仅限"具体事故/召回事件",不包括"事故相关新规/法规/标准"
-```
-
-### HTML 排版规则
-- 纯单文件 HTML/CSS/JS，零外部资源
-- 响应式布局，移动端适配
-- 每条卡片含：序号(全局连续)、标题、来源chip、≤60字中文摘要
-- 卡片可点击跳转原文(target="_blank" rel="noopener noreferrer")
-- 导航栏 sticky 定位 + IntersectionObserver 自动高亮
-- 回到顶部按钮
-- 品牌色：深绿 #064e3b → 翠绿 #059669 → 亮绿 #10b981
-
-## 阶段4：封面图生成
-
-封面图直接影响文章打开率，**不能用 PIL 简单占位图**。按以下流程生成：
-
-1. 使用 `ImageGen` 工具生成高质量封面(科技感、自动驾驶主题、品牌绿色渐变)
-2. 提示词应包含：自动驾驶视觉元素、绿色渐变、日期、中文标题
-3. 生成后通过 PIL 裁剪/缩放为 **900x500** 像素
-4. 保存到 `data/cover_YYYYMMDD_fixed.png` 或保留 ImageGen 原始文件名
-5. `scripts/push_today.py` 会优先使用这些预生成封面，找不到时才降级为占位图
-
-### 封面设计要求
-- 尺寸：900x500 (公众号封面图比例)
-- 视觉：科技感、未来感，深色背景+品牌绿渐变
-- 文字：自动驾驶晨报、当天日期 YYYY.MM.DD
-- 5个版块名称标注(行业动态/产品发布/模型发布/前沿论文/其他消息)
-- 文件名：`cover_YYYYMMDD_fixed.png` 或 `data/A_futuristic_*_YYYY-MM-DD.png`
-
-### 封面图持久化方案（避免每日重新生成）
-封面图风格统一后，**不需要每天重新生成**。采用以下策略：
-
-1. **模板复用**：生成一张高质量封面模板（如 `assets/cover_template.png`），仅替换日期文字
-2. **日期叠加**：用 PIL 在模板上叠加当天日期，保存为 `data/cover_YYYYMMDD.png`
-3. **PIL 文字叠加代码示例**：
-   ```python
-   from PIL import Image, ImageDraw, ImageFont
-   template = Image.open("assets/cover_template.png")
-   draw = ImageDraw.Draw(template)
-   draw.text((center_x, date_y), "2026.07.05", fill=(167,243,208), font=font, anchor="mm")
-   template.save(f"data/cover_YYYYMMDD.png")
-   ```
-4. **触发条件**：
-   - 默认：使用模板+PIL叠加日期（秒级生成，零API调用）
-   - 例外：每周一或重大节日时，用 ImageGen 生成新主题封面
-
-### 问题记录
-- 2026-07-04曾因图省事用PIL占位图导致封面回退，已修复：push_today.py优先使用ImageGen预生成封面。
-- 2026-07-05新增持久化方案：模板复用+PIL日期叠加，避免每日ImageGen调用。
-- 先 spawn image-creator / ImageGen，封面生成后立刻进入阶段5。
-
-## 阶段5：链接汇总页
-
-从 HTML 中提取所有卡片URL，生成独立链接汇总页 `data/links_YYYYMMDD.html`，部署到 CloudStudio。
-
-```python
-# 提取逻辑：抓取 <a href="https://..." class="card"> 中的所有URL和标题
-# 部署：workbuddy_cloudstudio_deploy(directory, entry="links_YYYYMMDD.html")
-```
-
-部署后，将 CloudStudio URL 设置为环境变量 `WX_LINKS_URL`，供后续推送使用。
-
-## 阶段6：推送到微信草稿箱
-
-运行 `scripts/push_to_wechat.py` 或 `scripts/push_today.py`
-
-### 关键编码要求
-- JSON 序列化：**必须**使用 `ensure_ascii=False`
-- 请求体：`json.dumps(..., ensure_ascii=False).encode("utf-8")`
-- Content-Type：`application/json; charset=utf-8`
-- 正文 HTML 保持原始中文，**不要**转成 HTML 数字实体（会导致编辑器显示 `&#xxxxx;`）
-- 标题/摘要保持原始中文，**不要**用 `\uXXXX` 转义（会被微信原样显示）
-
-### 常见错误
-- `ensure_ascii=True` → 标题/摘要显示为 `\u81ea\u52a8...` 字面量
-- HTML 数字实体 → 正文显示为 `&#128203;` 字面量
-- PIL 占位图 → 封面回退
-
-### 公众号脚本行为
-1. 从 config.json 加载配置(环境变量可覆盖)
-2. 质量门禁检查(verify_links + check_url_quality)
-3. 读取 HTML → 解析标题/摘要/正文
-4. 生成链接汇总页到 data/ 目录(如果未部署)
-5. 上传封面图到微信素材库
-6. 按5个版块生成公众号兼容的HTML正文(不用 `<a>` 标签)
-7. 概览区用4列 `<table>`(编号|标题|板块|来源)，板块枚举值: 行业动态/产品发布/模型发布/前沿论文/其他消息
-8. 设置 `content_source_url` 为 CloudStudio 链接汇总页
-9. 调用 draft/add API 创建草稿
-
-### 运行命令
-```bash
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py
-# 跳过质量门禁:
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py --skip-qa
-# 覆盖配置:
-export WX_APP_SECRET="<新密钥>"
-export WX_LINKS_URL="<CloudStudio部署URL>"
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/push_to_wechat.py
-```
-
-## 阶段7：D-Chat 推送
-
-将晨报摘要推送到 D-Chat 群聊，通知相关人员。
-
-运行 `scripts/dchat_push.py`
-
-### 前置条件
-- 配置: `config.json` 中已填入 dchat 配置
-- 环境变量(可选覆盖): `DCHAT_USERNAME`, `DCHAT_APP_ID`, `WX_LINKS_URL`
-
-### 推送内容
-- 交互式卡片: 日期+总数+前5条标题+链接入口
-- 参考 `references/dchat_push_format.md` 了解 API 格式
-
-### 运行命令
-```bash
-python3 /workspace/ad-newsletter/ad-newsletter/scripts/dchat_push.py
-```
-
-### ⚠️ D-Chat 注意事项
-1. 必须用 `curl --noproxy '*'` 发送(Python urllib 会走系统代理超时)
-2. `text` 和 `form` 必须在消息体顶层,不要包裹在 `interactive` 字段
-3. 文本消息 ≤300 字,超长用交互式卡片
-4. BotUser 模式不支持 markdown msg_type
-
-## 阶段8：清理与发布
-
-- 通知用户去公众号后台→草稿箱检查和发布
-- 必要时重新推送(删除旧草稿，创建新草稿)
-- 更新封面图: `python3 scripts/update_cover.py`(需要 `WX_DRAFT_MEDIA_ID` 环境变量)
+| 版本 | 模式 | 说明 |
+|------|------|------|
+| **V1** | 全自动 | 一键式自动化，质量门禁兜底，日常稳定产出 |
+| **V2** | 交互精编 | 初稿→人工确认（剔除/增补）→终稿→推送→复盘 |
 
 ---
 
-# V2 交互式精编版流程
+## 核心原则（不可违反）
 
-V2 是在 V1 基础上增加人工确认环节。每次完整 V2 流程包含以下步骤：
-
-## V2-1：生成初稿（复用 V1 阶段1-3）
-
-运行 V1 的搜索采集 → 多源合并 → 质量门禁 → 生成 HTML 仪表盘。产出 `data/自动驾驶晨报_YYYYMMDD.html`。
-
-## V2-2：呈现初稿给用户确认
-
-1. 使用 `present_files` 展示生成的 HTML 仪表盘
-2. 用以下结构向用户报告：
-
-```
-📋 今日初稿概览（共 N 条）
-━━━━━━━━━━━━━━━━━━
-📊 行业动态 X 条
-  #1 标题...
-  #2 标题...
-🚀 产品发布 X 条
-  #N 标题...
-📄 前沿论文 X 条
-...
-━━━━━━━━━━━━━━━━━━
-🔴 请确认以下操作：
-1. 【剔除】哪些条目不合适？→ 回复序号
-2. 【增补】缺少什么新闻？→ 提供标题/链接
-3. 【调整】哪些标题/摘要需要修改？
-```
-
-## V2-3：人工反馈处理
-
-根据用户反馈执行操作：
-
-### 剔除条目
-- 用户回复「剔除 #3 #7」→ 从 outline 中移除对应条目
-- 自动移除后重新生成 HTML
-
-### 增补条目（引导用户提供）
-- 用户回复「增补：xxx新闻 https://...」
-- 用 WebFetch 验证 URL 有效性和标题准确性
-- 验证通过后补充进对应版块的 outline
-- 如果用户只提标题没给链接 → 用 WebSearch 搜索获取真实链接
-- 统一执行 verify_links 验证
-
-### 修改摘要/标题
-- 用户回复「修改 #5 摘要为：xxx」
-- 在 outline 中直接替换
-
-## V2-4：生成终稿
-
-1. 所有调整合并到 outline 后，重新生成 HTML 仪表盘
-2. 运行 `verify_links.py` 全量验证
-3. 运行质量门禁
-4. 将最终版 `data/自动驾驶晨报_YYYYMMDD.html` 呈现给用户确认
-
-## V2-5：推送（复用 V1 阶段4-8）
-
-用户确认终稿后，执行标准推送流程：
-- 封面图生成 → 链接汇总页部署 → 微信草稿推送 → D-Chat推送
-
-## V2-6：复盘与技能迭代
-
-这是 V2 的核心价值环节。每次推送完成后，整理本次编辑中的决策：
-
-### 编辑记录
-- 将本次编辑记录追加到 `references/review_cases/YYYY_MM_DD.md`
-- 格式示例：
-```markdown
-# 2026-07-06 编辑复盘
-
-## 初稿
-- 行业动态: 8条 / 产品发布: 4条 / 模型发布: 2条 / 前沿论文: 3条 / 其他消息: 5条
-- 共 N 条
-
-## 用户操作
-- **剔除**: #3（原因：过期新闻）、#12（原因：来源不可靠）
-- **增补**: 美团LongCat大模型内部推广（来源：36氪）
-- **调整**: #5 摘要改为更聚焦商业数据
-
-## 结论
-- 终稿共 N 条
-- 本次剔除的过期新闻→说明搜索关键词需要优化
-- 增补的大厂AI新闻→说明第10组AI基础设施搜索不够深
-
-## 对SKILL的影响
-- [ ] 需要调整搜索关键词：xxx
-- [ ] 需要修改新闻筛选规则：xxx
-- [ ] 需要优化摘要生成：xxx
-```
-
-### 周期性复盘
-- 每周末（或每5期）进行一次批量复盘
-- 阅读近期的所有 `references/review_cases/*.md`
-- 找出高频剔除原因和增补模式
-- 更新 SKILL.md 对应章节（搜索关键词、筛选规则、摘要规范等）
-- 更新 `references/search_keywords_config.md`（补充缺失关键词、删除无用关键词）
-- 在 SKILL.md 中记录每次技能迭代（附日期和原因）
-
-### 技能迭代记录
-- 在 SKILL.md 中按时间顺序记录每次迭代
-```
-#### 搜索规则迭代记录
-- 2026-07-06: 用户连续3次增补"大厂内部AI工具政策"类新闻→新增5B组搜索方向
-- 2026-07-08: 用户连续2次剔除"旧闻复用"→优化去重逻辑，扩大去重范围
-- 2026-07-10: 用户反馈"端到端论文太少"→扩展第4组论文搜索关键词
-```
+| # | 原则 | 说明 |
+|---|------|------|
+| P1 | **不凑数** | 每个版块可留空，宁少勿滥，不为了凑条数收录边缘新闻 |
+| P2 | **URL 必须真实** | 所有 URL 从 WebSearch 结果中提取，严禁编造或推测 |
+| P3 | **日期必须匹配原文** | 用 WebFetch 验证每篇文章的实际发布日期，不凭标题猜日期 |
+| P4 | **每日去重** | 读取 data/ 下所有 outline_*.json，排除历史已收录标题/URL |
+| P5 | **生态圈视角** | 不限于纯自动驾驶新闻。覆盖半导体突破、AI基础设施、全球政策、大厂AI战略等智驾生态圈相关领域 |
+| P6 | **时效性** | 默认收录近3天内新闻。**重大事件例外**：全球首创/里程碑法规/百亿级以上融资→时限放宽到7-14天 |
 
 ---
 
-## 重要教训(踩坑记录)
+## 搜索导航（12组 → 5个版块）
 
-### 微信排版限制
-1. 正文内 `<a href="外部URL">` 会被微信编辑器过滤成纯文本——改用 `content_source_url` 指向链接汇总页
-2. CSS Grid/flex 会被公众号编辑器过滤——概览用 `<table>` + inline style
-3. 微信原生支持 `<p> <section> <table> <span>` 等标签
-4. 不支持 `<script> <style>` 和外链CSS
-5. `table-layout:fixed` 和 `<colgroup>` 在微信端不一定生效
-6. HTML实体渲染：`&lt;` 会被正确渲染为 `<`，不要用 unicode
+| 搜索组 | 覆盖内容 | 标记版块 |
+|--------|---------|---------|
+| 0️⃣ **聚合热榜** | tophub.today / buzzing.cc / newsnow | 按内容归入对应版块 |
+| 1️⃣ **头部企业动向** | 国内外智驾企业动态(产品/商业化/合作) | 行业动态/产品发布/模型发布 |
+| 2️⃣ **政策法规** | 全球/国家/地方智驾法规标准 | 行业动态 |
+| 3️⃣ **行业融资与商业** | 融资/量产/商业化/联盟 | 行业动态 |
+| 4️⃣ **前沿论文** | arxiv/CVPR/NeurIPS 原始论文 | 前沿论文 |
+| 5️⃣ **事故舆情+大厂AI(5A/5B)** | 事故/人事 + 国内大厂AI内部政策 | 其他消息 |
+| 6️⃣ **行业峰会** | 车展/论坛/百人会等 | 行业动态 |
+| 7️⃣ **重点媒体定向** | 36氪/虎嗅/晚点/量子位等媒体搜索 | 按内容归入对应版块 |
+| 8️⃣ **具身智能** | 人形机器人/具身AI/交叉领域 | 其他消息 |
+| 9️⃣ **聚合门户扫站** | guancha.cn/huxiu.com 等 | 按内容归入对应版块 |
+| 🔟 **AI基础设施** | 大模型+智驾/算力芯片/大厂AI战略(含美国大厂) | 行业动态 |
+| 1️⃣1️⃣ **美国大厂AI管理** | Tesla/Google/Amazon/Meta/Oracle AI内部政策、成本管控 | 其他消息 |
+| 1️⃣2️⃣ **半导体突破** | 芯片架构/新范式/EDA/先进制程理论突破 | 行业动态 |
 
-### Python 陷阱
-1. `OrderedDict.setdefault()` 在 Python 3.7 不存在 → 用 dict + index 列表代替
-2. Python for 循环变量会泄露到外层作用域 → 循环变量名避免与已有变量冲突
-3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 微信 draft/add 接口**必须**用 `json.dumps(..., ensure_ascii=False).encode("utf-8")` + 显式 `Content-Type: application/json; charset=utf-8`
-4. 不要用 HTML 数字实体替代中文（如 `&#128203;`），微信编辑器会原样显示字面量
-5. 不要用 `ensure_ascii=True` 发送标题/摘要，微信会原样显示 `\uXXXX` 字面量
-6. `re.S` 标记让 `.` 匹配换行符，跨行匹配时小心非贪婪 `.*?` 的边界
+> 详细关键词配罝见 `references/search_keywords_config.md`
 
-### 论文链接
-- papernotes.org 等聚合器不是原始论文 → 搜索时加 `site:arxiv.org` / `site:openaccess.thecvf.com`
-- `check_url_quality.py` 会将聚合器域名标记为 reject
+---
 
-### D-Chat
-- 必须用 curl `--noproxy '*'` → Python urllib 继承系统代理超时
-- `interactive` 字段不要包裹在额外的 `"interactive": {...}` 层 → 400 错误
+## V2 交互式精编流程
 
-### 封面设计
-- image-creator 生成的封面可能带「图片由AI生成」水印
-- 封面图必须上传到微信素材库拿到 media_id 才能使用
+```
+V2-1: 生成初稿（V1搜索→采集→质量门禁→HTML）
+    ↓
+V2-2: 呈现HTML给用户确认（剔除/增补/修改）
+    ↓
+V2-3: 处理反馈→合并到outline→重生成HTML
+    ↓
+V2-4: 质量门禁验证→终稿呈现
+    ↓
+V2-5: 推送（封面→链接页→微信草稿→D-Chat）
+    ↓
+V2-6: 复盘→记录到 references/review_cases/→优化SKILL
+```
 
-### 链接与日期真实性
-1. 2026-07-05 踩坑：何小鹏文章 URL 指向了英伟达 Cosmos3 文章（完全无关），理想CVPR 文章 URL 指向了 Waymo 世界模型文章——根源是凭主题猜 URL，没有验证
-2. **教训**：所有 URL 必须直接从 WebSearch 结果中提取，每条都需用 WebFetch 验证文章标题和日期是否匹配
-3. 新闻日期不能凭主题猜测，必须从文章实际页面提取
-4. 宁少勿假：无法获取有效链接的条目直接删除，不充数
-
-### 链接汇总页
-- CloudStudio 沙箱是临时环境，链接会失效
-- 后续如果配置了永久存储(OSS/COS/GitHub Pages)，替换 `content_source_url`
-
-## 路径规范(⚠️ 无硬编码)
-
-所有路径从 config.json 或脚本位置推断，不硬编码:
-- **项目根目录**: `/workspace/ad-newsletter/ad-newsletter/` (config.json `paths.base_dir`)
-- **输出目录**: `data/` — HTML/封面/链接页全部在此
-- **脚本目录**: `scripts/` (所有 Python 脚本)
-- **参考目录**: `references/` (关键词/排版/教训/D-Chat格式)
-- **资产目录**: `assets/` (模板)
-- **配置**: `config.json` (微信/D-Chat凭据、板块、路径)
-- 环境变量可覆盖 config.json 中的任何值
-- 默认 HTML 和封面图均从 `data/` 目录读写，不扫描其他目录
-
-## 参考文件
-- `config.json` — 核心配置(微信凭据、D-Chat、板块、路径)
-- `references/search_keywords_config.md` — 完整搜索关键词配置(含论文原始链接规则)
-- `references/formatting.md` — 排版规范
-- `references/lessons.md` — 踩坑记录
-- `references/dchat_push_format.md` — D-Chat 推送格式参考
-- `scripts/push_to_wechat.py` — 微信推送脚本(含质量门禁)
-- `scripts/verify_links.py` — 链接可达性验证
-- `scripts/check_url_quality.py` — URL质量检查(聚合器/登录墙/首页)
-- `scripts/check_freshness.py` — 内容新鲜度检查
-- `scripts/update_cover.py` — 封面图更新脚本
-- `scripts/dchat_push.py` — D-Chat 推送脚本
-- `assets/template_links.html` — 链接汇总页模板
-
-## 覆盖企业列表
-Waymo, Tesla, 百度Apollo, 小马智行(Pony.ai), 文远知行(WeRide), 滴滴自动驾驶, 元戎启行, 华为, 大疆(卓驭), 小鹏, 理想, 蔚来, 小米, Momenta, 地平线, 英伟达(NVIDIA), Uber, Stellantis, Wayve
-
-## 重点关注的公众号
-智东西, 高工智能汽车, 懂车帝, 小马智行公众号, APPSO, 智驾最前沿, 量子位, 机器之心, 雷锋网, 晚点新闻, RoboX, 芝能汽车, 智驾具身数据挖掘, 车东西, 新智驾, 深蓝AI, 智车科技, 自动驾驶之心, 晚点Auto
+详细操作见 `references/operations.md`
