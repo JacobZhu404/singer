@@ -59,18 +59,22 @@ python3 scripts/check_freshness.py <items.json> --max-age 30
 
 ## 封面图生成
 
-### 流程
-1. 使用 `ImageGen` 生成高质量封面（科技感、自动驾驶主题、品牌绿色渐变）
-2. **禁止使用 PIL 占位图**（2026-07-04踩坑）
-3. 生成后通过 PIL 裁剪/缩放为 **900x500** 像素
-4. 保存到 `data/cover_YYYYMMDD_fixed.png` 或保留 ImageGen 原始文件名
-5. `scripts/push_today.py` 会优先使用这些预生成封面
+### 正确流程（避免文字拉伸）
+1. 使用 `ImageGen` 生成**无文字**的高质量背景图（科技感、自动驾驶主题、深绿渐变）
+2. **禁止**让 ImageGen 在图上直接生成文字 → 缩放时会被拉宽/拉扁
+3. 用 PIL 按 **900:500 比例**对背景图进行**居中裁剪**（不是非等比拉伸）
+4. 缩放为 **900x500** 像素
+5. 用 PIL 在 900x500 成品上叠加文字（「自动驾驶晨报」居中上方，日期居中下方）
+6. 保存为 `data/cover_YYYYMMDD_fixed.png`
+7. `scripts/push_today.py` 会优先使用此封面
+
+### 文字拉伸问题根因
+2026-07-06 踩坑：将 1024x1024 生成的带文字图直接 `.resize((900, 500))`，非等比缩放导致字体被压扁。修复：先生成无文字底图，等比裁剪到 900:500 比例，再叠加文字。
 
 ### 封面设计要求
 - 尺寸：900x500
 - 视觉：科技感、未来感，深色背景+品牌绿渐变
-- 文字：自动驾驶晨报、当天日期 YYYY.MM.DD
-- 文件名：`cover_YYYYMMDD_fixed.png` 或 `data/A_futuristic_*_YYYY-MM-DD.png`
+- 文件名：`cover_YYYYMMDD_fixed.png`
 
 ### 模板复用方案（替代每日ImageGen）
 ```python
