@@ -25,6 +25,8 @@
 | `scripts/verify_content.py` | 抓取网页<title>，检查与卡片标题匹配度 | verify_links之后 |
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
 | `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | 质量检查时 |
+| `scripts/dedup.py` | 历史去重（URL精确+标题模糊匹配），输出排除报告 | 候选收集后 |
+| `scripts/collect_news.py` | 热榜兜底爬虫（tophub/buzzing），补充 LLM 可能遗漏的条目 | LLM搜索后，合并候选 |
 | `scripts/generate_html.py` | outline.json → Jinja2模板 → HTML（逐字节可复现） | outline定稿后 |
 | `scripts/generate_links_page.py` | 从仪表盘HTML生成格式精美的链接汇总页 | HTML定稿后 |
 | `scripts/outline_schema.py` | pydantic验证outline.json，可自检data/目录 | 生成outline后 |
