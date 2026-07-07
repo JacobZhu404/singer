@@ -12,6 +12,7 @@ LLM 搜索前 init 生成计划，搜完一组 update 写回结果，最后 veri
 """
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -75,7 +76,7 @@ def cmd_init(args):
         gid += 1
 
     for sg in matrix.get("search_groups", []):
-        kws = sg.get("keywords", [])
+        kws = list(sg.get("keywords", []))
         if "subgroups" in sg:
             for sub in sg["subgroups"]:
                 kws.extend(sub.get("keywords", []))
@@ -163,6 +164,51 @@ def cmd_update(args):
     return 0
 
 
+# ─────────────────────────── 覆盖缺口检测 ───────────────────────────
+
+def _company_aliases(entry):
+    """把一个企业条目展开成匹配别名集合。
+
+    大疆(卓驭) → {大疆, 卓驭}；百度Apollo → {百度Apollo, 百度, Apollo}
+    """
+    entry = entry.strip()
+    aliases = set()
+    m = re.match(r"^(.*?)[\(（](.*?)[\)）]\s*$", entry)
+    if m:
+        base, alt = m.group(1).strip(), m.group(2).strip()
+        aliases.update(a for a in (base, alt) if a)
+        core = base
+    else:
+        core = entry
+    if core:
+        aliases.add(core)
+    parts = re.findall(r"[A-Za-z0-9.]+|[一-鿿]+", core)
+    if len(parts) > 1:
+        aliases.update(parts)
+    return {a for a in aliases if a}
+
+
+def _parse_companies(matrix):
+    companies = []
+    for line in matrix.get("companies", []):
+        for c in str(line).split(","):
+            c = c.strip()
+            if c:
+                companies.append(c)
+    return companies
+
+
+def _results_corpus(completed):
+    chunks = []
+    for g in completed:
+        for r in g["results"]:
+            if isinstance(r, dict):
+                chunks.append(f"{r.get('title','')} {r.get('snippet','')} {r.get('source','')}")
+            else:
+                chunks.append(str(r))
+    return " ".join(chunks)
+
+
 # ─────────────────────────── verify ───────────────────────────
 
 def cmd_verify(args):
@@ -196,6 +242,28 @@ def cmd_verify(args):
         for sec, cnt in sorted(section_counts.items(), key=lambda x: -x[1]):
             bar = "█" * min(cnt, 30)
             print(f"  {sec:<20} {cnt:3d} {bar}")
+        print()
+
+    # 0 命中组: 已完成但一条结果都没有 → 覆盖率%掩盖不了的真实缺口
+    zero_hit = [g for g in completed if len(g["results"]) == 0]
+    if zero_hit:
+        print("⚠️  0 命中的组 (已搜索但无结果,可能是关键词失效或该主题今日无新闻):")
+        for g in zero_hit:
+            kw_preview = ", ".join(g["keywords"][:3])
+            print(f"  [{g['id']:2d}] {g['name']:<25} 关键词: {kw_preview}")
+        print()
+
+    # companies 覆盖: 矩阵点名要覆盖的企业里,今日候选一条都没提到的
+    matrix = load_matrix()
+    companies = _parse_companies(matrix)
+    if companies:
+        corpus = _results_corpus(completed).lower()
+        missing = [c for c in companies
+                   if not any(a.lower() in corpus for a in _company_aliases(c))]
+        covered = len(companies) - len(missing)
+        print(f"企业覆盖: {covered}/{len(companies)} 家在今日候选中出现")
+        if missing:
+            print("  未覆盖: " + "、".join(missing))
         print()
 
     if not pending:
