@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
 except ImportError:
     print("❌ 需要 PIL 库，请运行:")
     print("   pip install Pillow")
@@ -75,6 +75,51 @@ def find_latest_background() -> Path:
     return max(candidates, key=lambda x: x.stat().st_mtime)
 
 
+def draw_glow_text(
+    canvas,
+    xy,
+    text,
+    font,
+    core_fill,
+    glow_fill,
+    anchor=None,
+    glow_radius: int = 10,
+    glow_passes: int = 4,
+    tracking: int = 0,
+):
+    """在 RGBA canvas 上绘制霓虹发光文字：模糊的彩色光晕 + 锐利的亮色字芯。
+
+    tracking>0 时按字距逐字绘制（英文副标题用），使其更有科技感。
+    """
+    glow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    if tracking > 0:
+        _draw_tracked(gd, xy, text, font, glow_fill + (255,), anchor, tracking)
+    else:
+        gd.text(xy, text, font=font, fill=glow_fill + (255,), anchor=anchor)
+    glow = glow.filter(ImageFilter.GaussianBlur(glow_radius))
+    for _ in range(glow_passes):
+        canvas.alpha_composite(glow)
+
+    d = ImageDraw.Draw(canvas)
+    if tracking > 0:
+        _draw_tracked(d, xy, text, font, core_fill + (255,), anchor, tracking)
+    else:
+        d.text(xy, text, font=font, fill=core_fill + (255,), anchor=anchor)
+
+
+def _draw_tracked(draw, xy, text, font, fill, anchor, tracking):
+    """按固定字距逐字符绘制（PIL 无原生 letter-spacing）。仅支持水平居中/左对齐。"""
+    widths = [draw.textlength(ch, font=font) for ch in text]
+    total = sum(widths) + tracking * (len(text) - 1)
+    x, y = xy
+    if anchor and anchor[0] == "m":
+        x -= total / 2
+    for ch, w in zip(text, widths):
+        draw.text((x, y), ch, font=font, fill=fill, anchor="l" + (anchor[1] if anchor else "a"))
+        x += w + tracking
+
+
 def process_cover(
     bg_path: Path,
     date_str: str,
@@ -101,34 +146,44 @@ def process_cover(
     # 缩放到 900x500
     img = img.resize((TARGET_W, TARGET_H), Image.LANCZOS)
 
-    # 叠加文字
-    draw = ImageDraw.Draw(img)
+    # 叠加文字（在 RGBA 图层上做霓虹发光）
+    canvas = img.convert("RGBA")
     try:
-        title_font = find_font(70)
+        title_font = find_font(60)
+        subtitle_font = find_font(18)
         date_font = find_font(30)
     except RuntimeError as e:
         print(f"  ❌ {e}")
         raise
 
-    # 标题居中，位于上半部分
-    bbox = draw.textbbox((0, 0), title, font=title_font)
-    title_w = bbox[2] - bbox[0]
-    draw.text(
-        ((TARGET_W - title_w) // 2, 100),
-        title,
-        fill=(255, 255, 255),
-        font=title_font,
+    # 颜色：亮薄荷字芯 + 青绿光晕，营造科技霓虹感
+    CORE = (214, 255, 240)   # 近白薄荷字芯
+    GLOW = (16, 220, 180)    # 青绿光晕
+    MINT = (167, 243, 208)   # 薄荷（副标题/日期字芯）
+
+    # 标题：顶部居中，霓虹发光
+    draw_glow_text(
+        canvas, (TARGET_W // 2, 62), title, title_font,
+        core_fill=CORE, glow_fill=GLOW, anchor="ma",
+        glow_radius=12, glow_passes=5,
     )
 
-    # 日期格式: 2026.07.06
-    date_display = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:8]}"
-    draw.text(
-        (TARGET_W // 2, 420),
-        date_display,
-        fill=(167, 243, 208),
-        font=date_font,
-        anchor="mm",
+    # 副标题：英文小字、字距拉开，增强科技感
+    draw_glow_text(
+        canvas, (TARGET_W // 2, 138), "AUTONOMOUS DRIVING · DAILY BRIEF", subtitle_font,
+        core_fill=MINT, glow_fill=GLOW, anchor="ma",
+        glow_radius=5, glow_passes=2, tracking=6,
     )
+
+    # 日期：移到右下角，带光晕保证可读性（格式 2026.07.07）
+    date_display = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:8]}"
+    draw_glow_text(
+        canvas, (TARGET_W - 40, TARGET_H - 42), date_display, date_font,
+        core_fill=MINT, glow_fill=GLOW, anchor="rm",
+        glow_radius=8, glow_passes=3,
+    )
+
+    img = canvas.convert("RGB")
 
     # 保存
     out_path = DATA_DIR / f"cover_{date_str}_fixed.png"

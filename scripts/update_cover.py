@@ -37,10 +37,11 @@ WX_DRAFT_MEDIA_ID = os.environ.get("WX_DRAFT_MEDIA_ID", "")
 
 OUTPUT_DIR = Path(os.environ.get("WX_OUTPUT_DIR", PATH_CONFIG.get("output_dir", str(_BASE_DIR / "data"))))
 
-# 封面图路径
+# 封面图路径（默认用 generate_cover.py 产出的高清成品 cover_YYYYMMDD_fixed.png）
 COVER_PATH = os.environ.get("WX_COVER_FILE", "")
 if not COVER_PATH:
-    COVER_PATH = str(OUTPUT_DIR / f"cover_{_DATE_STR}.png")
+    fixed = OUTPUT_DIR / f"cover_{_DATE_STR}_fixed.png"
+    COVER_PATH = str(fixed if fixed.exists() else OUTPUT_DIR / f"cover_{_DATE_STR}.png")
 
 
 def upload_image(token, img_path):
@@ -54,19 +55,30 @@ def upload_image(token, img_path):
     return data["media_id"]
 
 
+# draft/get 返回的只读字段，draft/update 不接受，回传会报错
+_WRITABLE_FIELDS = [
+    "title", "author", "digest", "content", "content_source_url",
+    "need_open_comment", "only_fans_can_comment",
+]
+
+
 def update_draft(token, media_id, thumb_id):
-    """更新草稿封面"""
+    """更新草稿封面：拉取原文 → 换封面 → 仅回传可写字段。"""
     url = "https://api.weixin.qq.com/cgi-bin/draft/update"
     get_url = "https://api.weixin.qq.com/cgi-bin/draft/get"
     r = requests.post(get_url, params={"access_token": token},
-                      json={"media_id": media_id}, timeout=15)
+                      data=json.dumps({"media_id": media_id}, ensure_ascii=False).encode("utf-8"),
+                      headers={"Content-Type": "application/json; charset=utf-8"}, timeout=15)
     existing = r.json()
-    article = (existing.get("news_item") or [{}])[0]
+    src = (existing.get("news_item") or [{}])[0]
+    # 只保留可写字段，剔除 url/thumb_url/article_type 等只读字段
+    article = {k: src[k] for k in _WRITABLE_FIELDS if k in src}
     article["thumb_media_id"] = thumb_id
+    # 注意：draft/update 的键是 "articles"（对象），不是 "article"
     body = json.dumps({
         "media_id": media_id,
-        "article": article,
         "index": 0,
+        "articles": article,
     }, ensure_ascii=False)
     r = requests.post(url, params={"access_token": token},
                       data=body.encode("utf-8"),
