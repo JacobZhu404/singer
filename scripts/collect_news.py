@@ -52,13 +52,15 @@ HEADERS = {
 
 # ─────────────── 关键词配置 ───────────────
 
-TIER1_KEYWORDS = [
+# 硬编码默认值；若 search_matrix.yaml 的 media_crawl.keywords_tier{1,2} 存在则以其为准，
+# 避免配置与代码两处维护导致漂移。
+_TIER1_DEFAULT = [
     "智驾", "自动驾驶", "智能驾驶", "无人驾驶", "robotaxi",
     "waymo", "tesla fsd", "端到端", "激光雷达", "具身智能",
     "萝卜快跑", "华为智驾", "乾崑",
 ]
 
-TIER2_KEYWORDS = [
+_TIER2_DEFAULT = [
     "汽车", "车企", "新能源", "电动", "出行",
     "机器人", "芯片", "半导体", "大模型", "ai",
     "人工智能", "llm", "gpt", "车规", "域控",
@@ -77,6 +79,9 @@ def _load_config() -> dict:
 CONFIG = _load_config()
 HOTLIST = CONFIG.get("hotlist", [])
 MEDIA_CRAWL = CONFIG.get("media_crawl", {})
+
+TIER1_KEYWORDS = MEDIA_CRAWL.get("keywords_tier1") or _TIER1_DEFAULT
+TIER2_KEYWORDS = MEDIA_CRAWL.get("keywords_tier2") or _TIER2_DEFAULT
 
 
 def _match_keywords(title: str) -> str:
@@ -444,6 +449,10 @@ def main():
         all_items.extend(api)
 
     all_items = dedup_candidates(all_items)
+    # 稳定排序：高置信优先，同置信内保持来源优先级/插入顺序。
+    # 使 per-source 截断优先保留 high，全局截断也偏向高置信。
+    _rank = {"high": 0, "low": 1}
+    all_items.sort(key=lambda c: _rank.get(c.confidence, 2))
     all_items = cap_per_source(all_items, args.per_source)[:args.max_items]
 
     high = sum(1 for i in all_items if i.confidence == "high")

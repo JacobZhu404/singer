@@ -39,8 +39,8 @@ hotlist:
 # 与 LLM WebSearch 互补：脚本保证覆盖面，LLM 保证判断力
 
 media_crawl:
-  # tier-1: 高置信精确词（直接匹配即收录）
-  keywords_tier1: &tier1
+  # tier-1: 高置信精确词（直接匹配即收录）— collect_news.py 直接消费
+  keywords_tier1:
     - "智驾"
     - "自动驾驶"
     - "智能驾驶"
@@ -55,8 +55,8 @@ media_crawl:
     - "华为智驾"
     - "乾崑"
 
-  # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）
-  keywords_tier2: &tier2
+  # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）— collect_news.py 直接消费
+  keywords_tier2:
     - "汽车"
     - "车企"
     - "新能源"
