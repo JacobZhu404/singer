@@ -36,7 +36,6 @@
 | `scripts/utils/candidate_schema.py` | pydantic验证candidates.json | 阶段一产出后 |
 | `scripts/generate_cover.py` | 一键封面管道（ImageGen→裁剪→字体叠加→900×500） | 推送前 |
 | `scripts/update_cover.py` | 更新已有草稿封面图 | 推送后需要更换封面时 |
-| `scripts/utils/push_to_wechat.py` | 微信推送(旧脚本，保留备用) | 备用 |
 
 ---
 
