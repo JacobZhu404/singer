@@ -19,6 +19,7 @@ data/test/
 # Temporary / generated data
 data/search_plan_*
 data/backup_candidates_*
+data/script_candidates_*
 data/dedup_report.md
 data/deduped.json
 
