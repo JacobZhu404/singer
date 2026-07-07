@@ -57,7 +57,7 @@ media_crawl:
     - "乾崑"
     # ── 纯智驾公司别名组（中文 / 英文品牌）──
     - ["waymo"]
-    - ["tesla fsd"]
+    - ["fsd", "tesla fsd", "full self-driving"]
     - ["小马智行", "pony.ai"]
     - ["文远知行", "weride"]
     - ["元戎启行", "deeproute"]
@@ -65,6 +65,17 @@ media_crawl:
     - ["wayve"]
     - ["zoox"]
     - ["nuro"]
+    # ── 多业务公司的智驾子品牌/产品（品牌≈必是智驾语境，故仍归 high）──
+    #    注：公司裸名（小米/理想/蔚来/华为/百度）不入 tier1，避免手机/整车
+    #    销量新闻误判；且子串匹配下「公司 智驾」这类复合词对中文标题几乎不生效，
+    #    真正会出现在标题里的是下列子品牌 token。
+    - ["xngp", "xpeng ngp", "小鹏智驾"]
+    - ["cybercab"]
+    - ["autopilot"]
+    - ["卓驭", "大疆车载"]
+    - ["apollo go", "百度apollo"]
+    - ["drive thor", "drive orin", "drive agx"]
+    - ["noa", "城市noa", "高速noa", "领航辅助"]
 
   # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）— collect_news.py 直接消费
   keywords_tier2:
