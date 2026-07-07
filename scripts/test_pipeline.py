@@ -200,8 +200,8 @@ def test_cover():
 # ─────────────── collect ───────────────
 
 def test_collect():
-    print("\n=== 热榜爬虫 (dry run, max 3) ===")
-    from collect_news import fetch_tophub, fetch_buzzing, merge_dedup
+    print("\n=== 阶段一·脚本采集 (dry run) ===")
+    from collect_news import fetch_tophub, fetch_buzzing, dedup_candidates
 
     try:
         p1 = fetch_tophub()
@@ -217,10 +217,46 @@ def test_collect():
         _report("fetch_buzzing", False, str(e))
         p2 = []
 
-    merged = merge_dedup(p1 + p2)[:3]
+    merged = dedup_candidates(p1 + p2)[:5]
+    _report("dedup_candidates", True, f"{len(merged)} 条")
+
+    from utils.candidate_schema import CandidateList, save_candidates
+    cl = CandidateList(date=TODAY, source_type="script_crawl",
+                       total=len(merged), candidates=merged)
     out = TEST_DIR / f"test_collect_{TODAY}.json"
-    out.write_text(json.dumps(merged, ensure_ascii=False, indent=2), "utf-8")
-    _report("merge_dedup", True, f"{len(merged)} 条 → {out.name}")
+    save_candidates(cl, out)
+    _report("candidates schema", True, f"→ {out.name}")
+
+
+# ─────────────── merge ───────────────
+
+def test_merge():
+    print("\n=== 阶段二·融合 ===")
+    from utils.candidate_schema import Candidate, CandidateList, save_candidates
+    from merge_candidates import internal_dedup, history_dedup
+
+    c1 = Candidate(title="测试新闻A：智驾芯片突破", url="https://example.com/a",
+                   source_name="测试", origin="llm_search", confidence="high")
+    c2 = Candidate(title="测试新闻A：智驾芯片突破！", url="https://example.com/a2",
+                   source_name="测试", origin="script_crawl", confidence="high")
+    c3 = Candidate(title="完全不同的新闻B", url="https://example.com/b",
+                   source_name="测试", origin="script_crawl", confidence="low")
+    c4 = Candidate(title="重复URL新闻", url="https://example.com/a",
+                   source_name="测试", origin="script_crawl", confidence="high")
+
+    kept, excluded = internal_dedup([c1, c2, c3, c4])
+    _report("internal_dedup", len(kept) == 2,
+            f"4条→{len(kept)}条保留, {len(excluded)}条排除")
+
+    kept2, hist_excluded = history_dedup(kept, DATA)
+    _report("history_dedup", len(kept2) <= len(kept),
+            f"{len(kept)}条→{len(kept2)}条保留")
+
+    cl = CandidateList(date=TODAY, source_type="merged",
+                       total=len(kept2), candidates=kept2)
+    out = TEST_DIR / f"test_merged_{TODAY}.json"
+    save_candidates(cl, out)
+    _report("save merged", out.exists(), f"→ {out.name}")
 
 
 # ─────────────── checklist ───────────────
@@ -288,6 +324,7 @@ ALL_TESTS = {
     "dedup": test_dedup,
     "cover": test_cover,
     "collect": test_collect,
+    "merge": test_merge,
     "checklist": test_checklist,
     "wechat": test_wechat,
 }

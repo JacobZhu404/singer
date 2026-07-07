@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-兜底爬虫：LLM 搜索为主，脚本为辅。
-抓取热榜 + 媒体站点中与智驾相关的标题，补充 LLM 可能遗漏的内容。
+阶段一·脚本渠道 — 广撒网采集，不做价值判断。
 
-双轨采集：
-  LLM 做 10 组 WebSearch（需要判断力）—— 主力
-  脚本抓热榜 + 媒体（机械动作）—— 兜底
+抓取热榜 + 媒体站点，用双层关键词过滤：
+  tier-1（高置信）：智驾/robotaxi 等精确词
+  tier-2（低置信）：汽车/芯片/AI 等泛化词，宁多勿漏
+
+产出 candidates 格式 JSON，供阶段二 merge_candidates.py 融合。
 
 用法：
     python3 scripts/collect_news.py
-    python3 scripts/collect_news.py --output data/backup_candidates.json
-    python3 scripts/collect_news.py --max-items 30
+    python3 scripts/collect_news.py --output data/script_candidates_20260707.json
+    python3 scripts/collect_news.py --hotlist-only
+    python3 scripts/collect_news.py --media-only
 """
 import argparse
 import json
@@ -19,7 +21,7 @@ import sys
 import urllib.parse
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List
+from typing import List
 
 try:
     import requests
@@ -28,6 +30,9 @@ except ImportError:
     print("❌ 需要 requests + beautifulsoup4:")
     print("   pip install requests beautifulsoup4")
     sys.exit(1)
+
+sys.path.insert(0, str(Path(__file__).parent))
+from utils.candidate_schema import Candidate, CandidateList, save_candidates
 
 BASE = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE / "data"
@@ -42,6 +47,21 @@ HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
 }
 
+# ─────────────── 关键词配置 ───────────────
+
+TIER1_KEYWORDS = [
+    "智驾", "自动驾驶", "智能驾驶", "无人驾驶", "robotaxi",
+    "waymo", "tesla fsd", "端到端", "激光雷达", "具身智能",
+    "萝卜快跑", "华为智驾", "乾崑",
+]
+
+TIER2_KEYWORDS = [
+    "汽车", "车企", "新能源", "电动", "出行",
+    "机器人", "芯片", "半导体", "大模型", "ai",
+    "人工智能", "llm", "gpt", "车规", "域控",
+    "adas", "lidar", "智能网联",
+]
+
 
 def _load_config() -> dict:
     try:
@@ -54,20 +74,21 @@ def _load_config() -> dict:
 CONFIG = _load_config()
 HOTLIST = CONFIG.get("hotlist", [])
 MEDIA_CRAWL = CONFIG.get("media_crawl", {})
-AD_KEYWORDS = MEDIA_CRAWL.get("keywords", [
-    "智驾", "自动驾驶", "智能驾驶", "无人驾驶", "robotaxi",
-    "waymo", "tesla", "端到端", "激光雷达", "具身智能",
-    "FSD", "萝卜快跑", "华为智驾",
-])
 
 
-def _is_ad_related(title: str, keywords: list = None) -> bool:
-    kws = keywords or AD_KEYWORDS
+def _match_keywords(title: str) -> str:
+    """返回置信度: 'high' (tier-1命中), 'low' (tier-2命中), '' (无命中)"""
     tl = title.lower()
-    return any(kw.lower() in tl for kw in kws)
+    for kw in TIER1_KEYWORDS:
+        if kw.lower() in tl:
+            return "high"
+    for kw in TIER2_KEYWORDS:
+        if kw.lower() in tl:
+            return "low"
+    return ""
 
 
-def _extract_links(html: str) -> List[Dict[str, str]]:
+def _extract_links(html: str) -> List[dict]:
     soup = BeautifulSoup(html, "html.parser")
     results = []
     for a in soup.find_all("a"):
@@ -80,27 +101,32 @@ def _extract_links(html: str) -> List[Dict[str, str]]:
 
 # ─────────────── 热榜爬虫 ───────────────
 
-def fetch_tophub() -> list:
+def fetch_tophub() -> List[Candidate]:
     items = []
-    kws = HOTLIST[0]["keywords"] if HOTLIST else AD_KEYWORDS
+    kws = HOTLIST[0]["keywords"] if HOTLIST else TIER1_KEYWORDS
     try:
         r = requests.get("https://tophub.today", headers=HEADERS, timeout=15)
         if r.status_code != 200:
             return items
         for link in _extract_links(r.text):
-            if _is_ad_related(link["title"], kws):
-                href = link["href"]
-                items.append({
-                    "title": link["title"],
-                    "url": href if href.startswith("http") else "",
-                    "source": "tophub.today",
-                })
+            tl = link["title"].lower()
+            for kw in kws:
+                if kw.lower() in tl:
+                    href = link["href"]
+                    items.append(Candidate(
+                        title=link["title"],
+                        url=href if href.startswith("http") else "",
+                        source_name="tophub.today",
+                        origin="script_crawl",
+                        confidence="high",
+                    ))
+                    break
     except Exception as e:
         print(f"  ⚠️ tophub 异常: {e}")
     return items
 
 
-def fetch_buzzing() -> list:
+def fetch_buzzing() -> List[Candidate]:
     items = []
     kws = HOTLIST[1]["keywords"] if len(HOTLIST) > 1 else ["autonomous driving", "robotaxi"]
     urls = ["https://buzzing.cc", "https://tech.buzzing.cc", "https://hn.buzzing.cc"]
@@ -110,15 +136,20 @@ def fetch_buzzing() -> list:
             if r.status_code != 200:
                 continue
             for link in _extract_links(r.text):
-                if _is_ad_related(link["title"], kws):
-                    href = link["href"]
-                    if href.startswith("/"):
-                        href = "https://buzzing.cc" + href
-                    items.append({
-                        "title": link["title"],
-                        "url": href if href.startswith("http") else "",
-                        "source": url.replace("https://", ""),
-                    })
+                tl = link["title"].lower()
+                for kw in kws:
+                    if kw.lower() in tl:
+                        href = link["href"]
+                        if href.startswith("/"):
+                            href = "https://buzzing.cc" + href
+                        items.append(Candidate(
+                            title=link["title"],
+                            url=href if href.startswith("http") else "",
+                            source_name=url.replace("https://", ""),
+                            origin="script_crawl",
+                            confidence="high",
+                        ))
+                        break
         except Exception as e:
             print(f"  ⚠️ {url} 异常: {e}")
     return items
@@ -126,13 +157,13 @@ def fetch_buzzing() -> list:
 
 # ─────────────── 媒体站点爬虫 ───────────────
 
-def fetch_media_site(name: str, url: str) -> list:
+def fetch_media_site(name: str, url: str) -> List[Candidate]:
     items = []
     try:
         if "sina" in url:
-            encoded_url = url.rsplit("/", 1)
-            if len(encoded_url) == 2 and not encoded_url[1].startswith("http"):
-                encoded_url = encoded_url[0] + "/" + urllib.parse.quote(encoded_url[1])
+            parts = url.rsplit("/", 1)
+            if len(parts) == 2 and not parts[1].startswith("http"):
+                encoded_url = parts[0] + "/" + urllib.parse.quote(parts[1])
             else:
                 encoded_url = url
         else:
@@ -143,23 +174,27 @@ def fetch_media_site(name: str, url: str) -> list:
             return items
 
         for link in _extract_links(r.text):
-            if _is_ad_related(link["title"]):
-                href = link["href"]
-                if href.startswith("/"):
-                    from urllib.parse import urlparse
-                    parsed = urlparse(url)
-                    href = f"{parsed.scheme}://{parsed.netloc}{href}"
-                items.append({
-                    "title": link["title"],
-                    "url": href if href.startswith("http") else "",
-                    "source": name,
-                })
+            conf = _match_keywords(link["title"])
+            if not conf:
+                continue
+            href = link["href"]
+            if href.startswith("/"):
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                href = f"{parsed.scheme}://{parsed.netloc}{href}"
+            items.append(Candidate(
+                title=link["title"],
+                url=href if href.startswith("http") else "",
+                source_name=name,
+                origin="script_crawl",
+                confidence=conf,
+            ))
     except Exception as e:
         print(f"  ⚠️ {name} 异常: {e}")
     return items
 
 
-def fetch_all_media() -> list:
+def fetch_all_media() -> List[Candidate]:
     sites = MEDIA_CRAWL.get("sites", [])
     all_items = []
     for site in sorted(sites, key=lambda s: s.get("priority", 99)):
@@ -167,7 +202,9 @@ def fetch_all_media() -> list:
         url = site["url"]
         print(f"  [媒体] {name}...", end=" ", flush=True)
         items = fetch_media_site(name, url)
-        print(f"{len(items)} 条智驾相关")
+        high = sum(1 for i in items if i.confidence == "high")
+        low = sum(1 for i in items if i.confidence == "low")
+        print(f"{len(items)} 条 (高:{high} 低:{low})")
         all_items.extend(items)
     return all_items
 
@@ -180,20 +217,19 @@ def _normalize_title(title: str) -> str:
     return t
 
 
-def merge_dedup(items: list) -> list:
+def dedup_candidates(items: List[Candidate]) -> List[Candidate]:
     seen_titles = set()
     seen_urls = set()
     result = []
     for item in items:
-        norm = _normalize_title(item["title"])
-        url = item.get("url", "")
+        norm = _normalize_title(item.title)
         if norm in seen_titles:
             continue
-        if url and url in seen_urls:
+        if item.url and item.url in seen_urls:
             continue
         seen_titles.add(norm)
-        if url:
-            seen_urls.add(url)
+        if item.url:
+            seen_urls.add(item.url)
         result.append(item)
     return result
 
@@ -201,16 +237,16 @@ def merge_dedup(items: list) -> list:
 # ─────────────── main ───────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="兜底爬虫")
+    parser = argparse.ArgumentParser(description="阶段一·脚本采集")
     parser.add_argument("--output", default=None, help="输出路径")
-    parser.add_argument("--max-items", type=int, default=30, help="最大保留条数")
+    parser.add_argument("--max-items", type=int, default=50, help="最大保留条数")
     parser.add_argument("--hotlist-only", action="store_true", help="只爬热榜")
     parser.add_argument("--media-only", action="store_true", help="只爬媒体")
     args = parser.parse_args()
 
-    print(f"🔍 兜底爬虫 — {TODAY.strftime('%Y-%m-%d %H:%M')}\n")
+    print(f"🔍 阶段一·脚本采集 — {TODAY.strftime('%Y-%m-%d %H:%M')}\n")
 
-    all_items = []
+    all_items: List[Candidate] = []
 
     if not args.media_only:
         print("  [P1] tophub.today...", end=" ", flush=True)
@@ -228,22 +264,23 @@ def main():
         media = fetch_all_media()
         all_items.extend(media)
 
-    all_items = merge_dedup(all_items)[:args.max_items]
+    all_items = dedup_candidates(all_items)[:args.max_items]
 
-    if not all_items:
-        print("\n⚠️ 未找到智驾相关条目")
+    high = sum(1 for i in all_items if i.confidence == "high")
+    low = sum(1 for i in all_items if i.confidence == "low")
 
-    result = {
-        "date": TD_STR,
-        "generated_by": "collect_news.py",
-        "total": len(all_items),
-        "items": all_items,
-    }
+    cl = CandidateList(
+        date=TD_STR,
+        source_type="script_crawl",
+        total=len(all_items),
+        candidates=all_items,
+    )
 
-    out_path = Path(args.output) if args.output else DATA_DIR / f"backup_candidates_{TD_STR}.json"
-    out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
-    print(f"\n📄 兜底结果: {out_path}")
-    print(f"   共 {len(all_items)} 条候选（已去重）")
+    out_path = Path(args.output) if args.output else DATA_DIR / f"script_candidates_{TD_STR}.json"
+    save_candidates(cl, out_path)
+
+    print(f"\n📄 阶段一·脚本采集完成: {out_path}")
+    print(f"   共 {len(all_items)} 条候选（高置信:{high} 低置信:{low}）")
     return 0
 
 

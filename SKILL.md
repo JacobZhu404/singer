@@ -54,20 +54,29 @@ agent_created: true
 
 ---
 
-## V2 交互式精编流程
+## V2 交互式精编流程（两阶段）
 
 ```
-V2-1: 生成初稿（V1搜索→采集→质量门禁→HTML）
+阶段一·采集（广撒网，不做价值判断）
+V2-1: 并行采集
+    ├── LLM: 10组 WebSearch，低门槛收录 → llm_candidates_YYYYMMDD.json
+    │   （只记录 title/url/source/date/snippet，不写摘要、不分版块）
+    └── 脚本: python3 scripts/collect_news.py → script_candidates_YYYYMMDD.json
     ↓
-V2-2: 呈现HTML给用户确认（剔除/增补/修改）
+阶段二·融合（去重+质量+精编）
+V2-2: 机械化融合
+    └── python3 scripts/merge_candidates.py → merged_candidates_YYYYMMDD.json
     ↓
-V2-3: 处理反馈→合并到outline→重生成HTML
+V2-3: LLM 精编（基于 merged_candidates）
+    └── 选稿 → 分版块 → 写摘要 → outline_YYYYMMDD.json
     ↓
-V2-4: 质量门禁验证→终稿呈现
+V2-4: 呈现HTML给用户确认（剔除/增补/修改）
     ↓
-V2-5: 推送（封面→链接页→微信草稿）
+V2-5: 处理反馈→合并到outline→重生成HTML
     ↓
-V2-6: 复盘→记录到 references/review_cases/→优化SKILL
+V2-6: 推送（封面→链接页→微信草稿）
+    ↓
+V2-7: 复盘→记录到 references/review_cases/→优化SKILL
 ```
 
 详细操作见 `references/operations.md`

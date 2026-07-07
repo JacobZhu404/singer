@@ -39,20 +39,42 @@ hotlist:
 # 与 LLM WebSearch 互补：脚本保证覆盖面，LLM 保证判断力
 
 media_crawl:
-  keywords: &ad_keywords
+  # tier-1: 高置信精确词（直接匹配即收录）
+  keywords_tier1: &tier1
     - "智驾"
     - "自动驾驶"
     - "智能驾驶"
     - "无人驾驶"
     - "robotaxi"
     - "waymo"
-    - "tesla"
+    - "tesla fsd"
     - "端到端"
     - "激光雷达"
     - "具身智能"
-    - "FSD"
     - "萝卜快跑"
     - "华为智驾"
+    - "乾崑"
+
+  # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）
+  keywords_tier2: &tier2
+    - "汽车"
+    - "车企"
+    - "新能源"
+    - "电动"
+    - "出行"
+    - "机器人"
+    - "芯片"
+    - "半导体"
+    - "大模型"
+    - "ai"
+    - "人工智能"
+    - "llm"
+    - "gpt"
+    - "车规"
+    - "域控"
+    - "adas"
+    - "lidar"
+    - "智能网联"
 
   sites:
     - name: "新浪(无人驾驶)"
