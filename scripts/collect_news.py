@@ -76,12 +76,28 @@ def _load_config() -> dict:
         return {}
 
 
+def _flatten_keywords(raw) -> List[str]:
+    """展平关键词列表：条目可以是单词，也可以是「别名组」子列表。
+
+    YAML 里 `- [小马智行, pony.ai]` 会解析成一个子列表，展平后每个别名
+    都是独立关键词——命中任一即视为该 tier 命中。分组仅为可读性/维护，
+    不改变匹配语义。
+    """
+    out: List[str] = []
+    for kw in raw or []:
+        if isinstance(kw, (list, tuple)):
+            out.extend(str(x) for x in kw)
+        else:
+            out.append(str(kw))
+    return out
+
+
 CONFIG = _load_config()
 HOTLIST = CONFIG.get("hotlist", [])
 MEDIA_CRAWL = CONFIG.get("media_crawl", {})
 
-TIER1_KEYWORDS = MEDIA_CRAWL.get("keywords_tier1") or _TIER1_DEFAULT
-TIER2_KEYWORDS = MEDIA_CRAWL.get("keywords_tier2") or _TIER2_DEFAULT
+TIER1_KEYWORDS = _flatten_keywords(MEDIA_CRAWL.get("keywords_tier1") or _TIER1_DEFAULT)
+TIER2_KEYWORDS = _flatten_keywords(MEDIA_CRAWL.get("keywords_tier2") or _TIER2_DEFAULT)
 
 
 def _match_keywords(title: str) -> str:

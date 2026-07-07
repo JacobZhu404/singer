@@ -40,20 +40,31 @@ hotlist:
 
 media_crawl:
   # tier-1: 高置信精确词（直接匹配即收录）— collect_news.py 直接消费
+  # 条目可为单词，或「别名组」子列表 [中文, 英文/品牌]，命中任一即算 high。
+  # ⚠️ 只放「纯智驾」词/公司：名字≈必然是智驾语境。多业务公司（小米/理想/
+  #    华为/百度/Tesla 等）放 tier2 或用复合词，否则手机/整车销量新闻会误判 high。
   keywords_tier1:
     - "智驾"
     - "自动驾驶"
     - "智能驾驶"
     - "无人驾驶"
     - "robotaxi"
-    - "waymo"
-    - "tesla fsd"
     - "端到端"
     - "激光雷达"
     - "具身智能"
     - "萝卜快跑"
     - "华为智驾"
     - "乾崑"
+    # ── 纯智驾公司别名组（中文 / 英文品牌）──
+    - ["waymo"]
+    - ["tesla fsd"]
+    - ["小马智行", "pony.ai"]
+    - ["文远知行", "weride"]
+    - ["元戎启行", "deeproute"]
+    - ["momenta", "魔门塔"]
+    - ["wayve"]
+    - ["zoox"]
+    - ["nuro"]
 
   # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）— collect_news.py 直接消费
   keywords_tier2:
