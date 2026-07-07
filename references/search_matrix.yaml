@@ -50,6 +50,9 @@ media_crawl:
     - "无人驾驶"
     - "robotaxi"
     - "端到端"
+    - ["vla", "vision language action"]
+    - ["世界模型", "world model"]
+    - ["纯视觉", "vision-only"]
     - "激光雷达"
     - "具身智能"
     - "萝卜快跑"
