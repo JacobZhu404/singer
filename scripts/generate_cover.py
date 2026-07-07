@@ -7,7 +7,6 @@
     python3 scripts/generate_cover.py --date 20260706 --prompt "自动驾驶概念图"
 """
 import argparse
-import re
 import sys
 from pathlib import Path
 from datetime import datetime

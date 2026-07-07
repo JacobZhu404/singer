@@ -17,6 +17,7 @@ Jinja2 模板渲染，与仪表盘生成走同一套 schema，格式逐字节可
 import argparse
 import html as html_mod
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -90,7 +91,6 @@ def render_wechat(outline):
     content = tmpl.render(**data)
 
     date_parts = outline.date_display.split("·")[0].strip() if "·" in outline.date_display else outline.date_display
-    import re
     m = re.search(r"(\d+)月(\d+)日", date_parts)
     date_short = f"{m.group(1)}月{m.group(2)}日" if m else date_parts
 

@@ -41,6 +41,11 @@ HOMEPAGE_PATTERNS = [
 MIN_PATH_DEPTH = 2
 
 
+def _domain_matches(domain: str, target: str) -> bool:
+    """域名后缀匹配,避免 fake-weibo.com 被误判为 weibo.com。"""
+    return domain == target or domain.endswith("." + target)
+
+
 def check_url(url: str) -> dict:
     result = {"url": url, "issues": [], "verdict": "ok"}
     parsed = urlparse(url)
@@ -48,14 +53,14 @@ def check_url(url: str) -> dict:
 
     # Check login walls
     for ld in LOGIN_WALL_DOMAINS:
-        if ld in domain:
+        if _domain_matches(domain, ld):
             result["issues"].append(f"login_wall:{ld}")
             result["verdict"] = "reject"
             break
 
     # Check aggregator
     for ad in AGGREGATOR_DOMAINS:
-        if ad in domain:
+        if _domain_matches(domain, ad):
             result["issues"].append(f"aggregator:{ad}")
             result["verdict"] = "reject"
             break

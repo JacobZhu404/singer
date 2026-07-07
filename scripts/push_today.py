@@ -10,6 +10,7 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent))
 from utils.outline_schema import load_outline
+from utils.parse_cards import SEC_META
 from generate_wechat import render_wechat
 from generate_links_page import build_links_html
 
@@ -100,20 +101,19 @@ def generate_links_page(outline) -> Path:
     for sec in outline.sections:
         if sec.count == 0:
             continue
-        cards = []
+        items = []
         for item in sec.items:
-            cards.append({
+            items.append({
                 "num": str(item.num),
                 "url": item.url,
                 "title": item.title,
                 "source": item.source,
                 "date": item.date,
-                "summary": item.summary,
-                "sec_id": sec.id,
             })
         sections.append({
             "name": f"{sec.icon} {sec.name}",
-            "cards": cards,
+            "color": SEC_META.get(sec.id, ("", "#059669"))[1],
+            "items": items,
         })
 
     total = outline.total

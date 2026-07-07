@@ -185,7 +185,7 @@ def test_cover():
 
     bg = bgs[0]
     try:
-        result_path = process_cover(bg, "2026.07.06", "测试晨报")
+        result_path = process_cover(bg, "20260706", "测试晨报")
         if result_path.exists():
             import shutil
             dest = TEST_DIR / f"test_cover_{TODAY}.png"

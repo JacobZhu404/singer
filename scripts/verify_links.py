@@ -75,9 +75,6 @@ def classify_result(result: dict) -> str:
 
     status = result["status"]
     if status in (200, 301, 302):
-        domain = urlparse(result["url"]).netloc
-        if domain in BLOCKED_DOMAINS and status in (403, 501):
-            return "warn"
         return "ok"
 
     if status in (403, 501):

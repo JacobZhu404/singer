@@ -179,8 +179,7 @@ def fetch_media_site(name: str, url: str) -> List[Candidate]:
                 continue
             href = link["href"]
             if href.startswith("/"):
-                from urllib.parse import urlparse
-                parsed = urlparse(url)
+                parsed = urllib.parse.urlparse(url)
                 href = f"{parsed.scheme}://{parsed.netloc}{href}"
             items.append(Candidate(
                 title=link["title"],

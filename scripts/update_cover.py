@@ -40,8 +40,7 @@ OUTPUT_DIR = Path(os.environ.get("WX_OUTPUT_DIR", PATH_CONFIG.get("output_dir", 
 # 封面图路径
 COVER_PATH = os.environ.get("WX_COVER_FILE", "")
 if not COVER_PATH:
-    default_cover = OUTPUT_DIR / f"cover_{_DATE_STR}.png"
-    COVER_PATH = str(default_cover) if default_cover.exists() else str(default_cover)
+    COVER_PATH = str(OUTPUT_DIR / f"cover_{_DATE_STR}.png")
 
 
 def upload_image(token, img_path):
@@ -62,7 +61,7 @@ def update_draft(token, media_id, thumb_id):
     r = requests.post(get_url, params={"access_token": token},
                       json={"media_id": media_id}, timeout=15)
     existing = r.json()
-    article = existing.get("news_item", [{}])[0] if "news_item" in existing else {}
+    article = (existing.get("news_item") or [{}])[0]
     article["thumb_media_id"] = thumb_id
     body = json.dumps({
         "media_id": media_id,

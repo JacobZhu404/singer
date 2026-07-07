@@ -9,7 +9,6 @@ Jinja2 模板渲染，逐字节可复现，彻底消除排版抖动。
 """
 import argparse
 import html as html_mod
-import json
 import sys
 from pathlib import Path
 
