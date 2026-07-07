@@ -7,9 +7,7 @@
     python3 scripts/generate_cover.py --date 20260706 --prompt "自动驾驶概念图"
 """
 import argparse
-import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -27,11 +25,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 ASSETS_DIR = BASE_DIR / "assets"
 
-# 中文字体候选路径（优先 macOS STHeiti，逐级 fallback）
 FONT_CANDIDATES = [
     "/System/Library/Fonts/STHeiti Medium.ttc",
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/System/Library/Fonts/Supplemental/Songti.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
 ]
 
 TARGET_W, TARGET_H = 900, 500

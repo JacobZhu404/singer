@@ -12,7 +12,6 @@ import html as html_mod
 import json
 import sys
 from pathlib import Path
-from datetime import datetime
 
 try:
     import jinja2
@@ -21,21 +20,19 @@ except ImportError:
     sys.exit(1)
 
 sys.path.insert(0, str(Path(__file__).parent))
-from outline_schema import Outline
+from utils.outline_schema import Outline
 
 
 BASE = Path(__file__).resolve().parent.parent
 TEMPLATE = BASE / "assets/dashboard_template.html.j2"
 DATA = BASE / "data"
-NOW = datetime.now()
 
-# 板块 → 颜色映射（与设计系统一致）
 SEC_COLORS = {
-    1: "059669",  # 行业动态 - 翠绿
-    2: "8b5cf6",  # 产品发布 - 紫色
-    3: "f59e0b",  # 模型发布 - 琥珀
-    4: "ec4899",  # 前沿论文 - 粉红
-    5: "ef4444",  # 其他消息 - 红色
+    1: "059669",
+    2: "8b5cf6",
+    3: "f59e0b",
+    4: "ec4899",
+    5: "ef4444",
 }
 
 SEC_BADGE_COLORS = {
@@ -44,11 +41,6 @@ SEC_BADGE_COLORS = {
     3: {"bg": "e0e7ff", "fg": "4338ca"},
     4: {"bg": "fce7f3", "fg": "be185d"},
     5: {"bg": "fef3c7", "fg": "b45309"},
-}
-
-SEC_NAMES = {
-    "sec-1": "行业动态", "sec-2": "产品发布",
-    "sec-3": "模型发布", "sec-4": "前沿论文", "sec-5": "其他消息",
 }
 
 
@@ -61,7 +53,7 @@ def build_render_data(outline: Outline) -> dict:
     for sec in outline.sections:
         sec_num = int(sec.id.split("-")[1])
         sec_color = SEC_COLORS.get(sec_num, "059669")
-        sec_name = SEC_NAMES.get(sec.id, sec.name)
+        sec_name = sec.name
 
         items_prepped = []
         for item in sec.items:
@@ -149,12 +141,14 @@ def main():
     out_path.write_text(html_str, encoding="utf-8")
     print(f"\n✅ HTML 已生成: {out_path}")
 
-    # 4) 简单验证
-    assert "🚗 自动驾驶晨报" in html_str, "缺少核心标题"
+    # 4) 结构验证
+    assert '<div class="header">' in html_str, "缺少 header 结构"
+    assert '<div class="overview">' in html_str, "缺少 overview 结构"
     assert str(outline.total) in html_str, f"缺少总条数 {outline.total}"
     for item in outline.flat_items():
-        assert item.title in html_str, f"缺少标题: {item.title[:20]}"
-    print(f"   自检通过: 标题/条数/全部卡片均在输出中")
+        escaped_title = html_mod.escape(item.title)
+        assert escaped_title in html_str, f"缺少标题: {item.title[:20]}"
+    print(f"   自检通过: 结构/条数/全部卡片均在输出中")
     return 0
 
 

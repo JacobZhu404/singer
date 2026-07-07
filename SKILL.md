@@ -1,6 +1,6 @@
 ---
 name: daily-ad-newsletter
-description: 生成「自驾车早」公众号每日自动驾驶晨报。包含搜索采集、质量门禁、HTML生成、封面设计、微信草稿推送、D-Chat推送全流程。触发词：自动驾驶晨报、生成晨报、今日推送、每日日报。
+description: 生成「自驾车早」公众号每日自动驾驶晨报。包含搜索采集、质量门禁、HTML生成、封面设计、微信草稿推送全流程。触发词：自动驾驶晨报、生成晨报、今日推送、每日日报。
 agent_created: true
 ---
 
@@ -50,7 +50,9 @@ agent_created: true
 | 1️⃣1️⃣ **美国大厂AI管理** | Tesla/Google/Amazon/Meta/Oracle AI内部政策、成本管控 | 其他消息 |
 | 1️⃣2️⃣ **半导体突破** | 芯片架构/新范式/EDA/先进制程理论突破 | 行业动态 |
 
-> 详细关键词配罝见 `references/search_keywords_config.md`
+> 详细关键词配置见 `references/search_matrix.yaml`
+>
+> **搜索前先运行** `python3 scripts/search_checklist.py init` **生成搜索计划，搜完逐组 update，最后 verify 检查覆盖率。**
 
 ---
 
@@ -65,7 +67,7 @@ V2-3: 处理反馈→合并到outline→重生成HTML
     ↓
 V2-4: 质量门禁验证→终稿呈现
     ↓
-V2-5: 推送（封面→链接页→微信草稿→D-Chat）
+V2-5: 推送（封面→链接页→微信草稿）
     ↓
 V2-6: 复盘→记录到 references/review_cases/→优化SKILL
 ```

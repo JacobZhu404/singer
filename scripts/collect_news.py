@@ -19,10 +19,8 @@ import argparse
 import json
 import re
 import sys
-import time
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse, quote
+from datetime import datetime
 
 try:
     import requests
@@ -34,33 +32,30 @@ except ImportError:
 
 BASE = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE / "data"
+MATRIX_PATH = BASE / "references" / "search_matrix.yaml"
 TODAY = datetime.now()
 TD_STR = TODAY.strftime("%Y%m%d")
 
-# 热榜配置（与 search_matrix.yaml 一致）
-HOTLIST_CONFIG = [
-    {
-        "rank": "P1",
-        "url": "https://tophub.today",
-        "keywords": [
-            "智能驾驶", "自动驾驶", "robotaxi", "Waymo", "Tesla",
-            "萝卜快跑", "小马智行", "文远知行", "华为智驾", "地平线",
-            "小鹏XNGP", "蔚来", "理想", "小米智驾", "端到端",
-            "世界模型", "具身智能", "Momenta", "英伟达",
-        ],
-    },
-    {
-        "rank": "P2",
-        "url": "https://buzzing.cc",
-        "keywords": [
-            "autonomous driving", "robotaxi", "Waymo", "Tesla FSD",
-            "self-driving", "AV",
-        ],
-    },
-]
+
+def _load_hotlist_config():
+    """从 search_matrix.yaml 读取热榜配置,消除硬编码。"""
+    try:
+        import yaml
+        matrix = yaml.safe_load(MATRIX_PATH.read_text("utf-8"))
+        return matrix.get("hotlist", [])
+    except Exception:
+        return [
+            {"rank": "P1", "url": "https://tophub.today",
+             "keywords": ["智能驾驶", "自动驾驶", "robotaxi", "Waymo", "Tesla"]},
+            {"rank": "P2", "url": "https://buzzing.cc",
+             "keywords": ["autonomous driving", "robotaxi", "Waymo", "Tesla FSD", "self-driving"]},
+        ]
 
 
-def fetch_tophub() -> list[dict]:
+HOTLIST_CONFIG = _load_hotlist_config()
+
+
+def fetch_tophub() -> list:
     """抓取 tophub.today 首页，提取与智驾相关的标题。"""
     items = []
     try:
@@ -97,7 +92,7 @@ def fetch_tophub() -> list[dict]:
     return items
 
 
-def fetch_buzzing() -> list[dict]:
+def fetch_buzzing() -> list:
     """抓取 buzzing.cc 首页/子站，提取自动驾驶相关标题。"""
     items = []
     urls = [
@@ -132,12 +127,12 @@ def fetch_buzzing() -> list[dict]:
                         })
                         break
         except Exception as e:
-            pass  # 单个源失败不影响整体
+            print(f"  ⚠️ {url} 抓取异常: {e}")
 
     return items
 
 
-def merge_dedup(items: list[dict]) -> list[dict]:
+def merge_dedup(items: list) -> list:
     """去除重复标题。"""
     seen = set()
     result = []

@@ -5,8 +5,32 @@ __pycache__/
 dist/
 build/
 
-# Daily output: cover images (large, auto-generated, excluded)
+# Daily output: cover images (large, auto-generated)
 data/cover_*.png
+data/cover_*.jpg
+
+# ImageGen raw images (large)
+data/A_*
+data/科技封面*
+
+# Test output (isolated)
+data/test/
+
+# Temporary / generated data
+data/search_plan_*
+data/backup_candidates_*
+data/dedup_report.md
+data/deduped.json
+
+# Legacy iteration artifacts
+data/wechat_clone*
+data/wechat_preview*
+data/wechat_pro*
+data/wechat_ready*
+data/wechat_article*
+data/dashboard_*
+data/index.html
+data/publish_guide.txt
 
 # Environment
 .env

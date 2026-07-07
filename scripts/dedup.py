@@ -18,9 +18,10 @@ import sys
 from pathlib import Path
 from difflib import SequenceMatcher
 from datetime import datetime
+from typing import List, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
-from outline_schema import Outline
+from utils.outline_schema import Outline
 
 BASE = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE / "data"
@@ -28,7 +29,7 @@ DATA_DIR = BASE / "data"
 
 # ─────────────────────────── 历史加载 ───────────────────────────
 
-def load_history_titles(history_dir: Path) -> list[dict]:
+def load_history_titles(history_dir: Path) -> List[dict]:
     """从 data/ 目录加载所有历史标题和URL，返回 [{title, url, date, source}]。"""
     records = []
 
@@ -87,13 +88,12 @@ def title_similarity(t1: str, t2: str) -> float:
     n1, n2 = normalize(t1), normalize(t2)
     if not n1 or not n2:
         return 0.0
-    # 包含关系
     if n1 in n2 or n2 in n1:
-        return max(len(n1), len(n2)) / min(len(n1), len(n2)) if min(len(n1), len(n2)) > 0 else 0
+        return min(len(n1), len(n2)) / max(len(n1), len(n2))
     return SequenceMatcher(None, n1, n2).ratio()
 
 
-def is_duplicate(candidate: dict, history: list[dict], threshold: float = 0.6) -> tuple[bool, str]:
+def is_duplicate(candidate: dict, history: List[dict], threshold: float = 0.6) -> Tuple[bool, str]:
     """
     判断 candidate 是否与历史重复。
     返回: (是否重复, 原因)
@@ -114,9 +114,8 @@ def is_duplicate(candidate: dict, history: list[dict], threshold: float = 0.6) -
                 sim = title_similarity(c_title, h["title"])
                 if sim >= threshold:
                     return True, f"域名相同+标题相似 {sim:.2f} → 历史#{h['title'][:30]}"
-        # 标题模糊匹配
         sim = title_similarity(c_title, h["title"])
-        if sim >= threshold and ("智能驾驶" in c_title or "自动驾驶" in c_title):
+        if sim >= threshold:
             return True, f"标题相似 {sim:.2f} → 历史#{h['title'][:30]}"
 
     return False, ""

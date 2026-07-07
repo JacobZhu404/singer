@@ -1,32 +1,17 @@
 {
   "date": "20260706",
   "generated_by": "collect_news.py",
-  "total": 5,
+  "total": 2,
   "items": [
     {
-      "title": "2征程赶超｜WAIC 2026世界模型激辩：答案不在VLA或世界模型，而在？",
-      "url": "https://www.qbitai.com/2026/07/443522.html",
-      "source": "tophub.today"
-    },
-    {
-      "title": "7刚刚，LeCun团队让世界模型学会持续学习！",
-      "url": "https://www.qbitai.com/2026/07/442964.html",
-      "source": "tophub.today"
-    },
-    {
-      "title": "10从LLM到JEPA，中国团队正在把“世界模型”搬进细胞内部",
-      "url": "https://www.qbitai.com/2026/07/442746.html",
-      "source": "tophub.today"
-    },
-    {
-      "title": "1SemiAnalysis再度盘前爆料：英伟达Kyber NVL144机架延迟超12个月，因“PCB中板制造困难”17.1万",
-      "url": "https://wallstreetcn.com/articles/3776238",
-      "source": "tophub.today"
-    },
-    {
-      "title": "88拆解具身智能系统（软件）糊研乱宇",
+      "title": "86拆解具身智能系统（软件）糊研乱宇",
       "url": "https://www.woshipm.com/?p=6422086",
       "source": "tophub.today"
+    },
+    {
+      "title": "7.Waymo表示，在7月4日旧金山的交通大拥堵期间，该公司部分无人驾驶出租车因电量耗尽，不得不被拖走",
+      "url": "https://www.businessinsider.com/waymo-stalled-cars-independence-day-traffic-san-francisco-2026-7",
+      "source": "buzzing.cc"
     }
   ]
 }

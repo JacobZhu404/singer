@@ -15,7 +15,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 try:
     import requests
@@ -23,33 +22,8 @@ except ImportError:
     print("缺少 requests 库，请先安装: pip install requests")
     sys.exit(1)
 
-
-def extract_cards(html_text: str):
-    """从仪表盘 HTML 中提取所有卡片。"""
-    sec_blocks = list(re.finditer(r'<div class="sec sec-\d+" id="(sec-\d+)">', html_text))
-    card_pat = re.compile(
-        r'<a class="card"[^>]*?href="([^"]+)"[^>]*?>'
-        r'.*?<span class="card-num"[^>]*>(\d+)</span>'
-        r'.*?<span class="card-source">([^<]+)</span>'
-        r'.*?<span class="card-date">([^<]+)</span>'
-        r'.*?<div class="card-title">([^<]+)</div>',
-        re.S
-    )
-    cards = []
-    for i, sm in enumerate(sec_blocks):
-        start = sm.start()
-        end = sec_blocks[i + 1].start() if i + 1 < len(sec_blocks) else len(html_text)
-        sec_html = html_text[start:end]
-        for url, num, source, date, title in card_pat.findall(sec_html):
-            cards.append({
-                "num": num.strip(),
-                "title": title.strip(),
-                "source": source.strip(),
-                "date": date.strip(),
-                "url": url.strip(),
-                "sec_id": sm.group(1),
-            })
-    return cards
+sys.path.insert(0, str(Path(__file__).parent))
+from utils.parse_cards import extract_cards
 
 
 def fetch_title(url: str, timeout: int = 15) -> tuple:

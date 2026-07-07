@@ -11,7 +11,7 @@
 - **脚本目录**：`scripts/`
 - **参考目录**：`references/`
 - **资产目录**：`assets/`
-- **配置**：`config.json`（微信/D-Chat凭据、板块、路径）
+- **配置**：`config.json`（微信凭据、板块、路径）
 - 环境变量可覆盖 config.json 中的任何值
 
 ---
@@ -20,7 +20,7 @@
 
 | 脚本 | 功能 | 何时运行 |
 |------|------|---------|
-| `scripts/push_today.py` | 推送今日晨报到微信草稿箱 | 终稿确认后 |
+| `scripts/push_today.py` | 读 outline.json → 微信正文(Jinja2) → 推送草稿箱 | 终稿确认后 |
 | `scripts/verify_links.py` | Curl所有URL，验证HTTP可达 | 生成HTML后，推送前 |
 | `scripts/verify_content.py` | 抓取网页<title>，检查与卡片标题匹配度 | verify_links之后 |
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
@@ -28,12 +28,13 @@
 | `scripts/dedup.py` | 历史去重（URL精确+标题模糊匹配），输出排除报告 | 候选收集后 |
 | `scripts/collect_news.py` | 热榜兜底爬虫（tophub/buzzing），补充 LLM 可能遗漏的条目 | LLM搜索后，合并候选 |
 | `scripts/generate_html.py` | outline.json → Jinja2模板 → HTML（逐字节可复现） | outline定稿后 |
-| `scripts/generate_links_page.py` | 从仪表盘HTML生成格式精美的链接汇总页 | HTML定稿后 |
-| `scripts/outline_schema.py` | pydantic验证outline.json，可自检data/目录 | 生成outline后 |
+| `scripts/generate_wechat.py` | outline.json → 微信公众号正文HTML(Jinja2) | push_today内部调用 |
+| `scripts/generate_links_page.py` | 从仪表盘HTML生成链接汇总页 | HTML定稿后 |
+| `scripts/test_pipeline.py` | 管线功能测试(8项28检查)，产出到data/test/ | 开发/调试时 |
+| `scripts/utils/outline_schema.py` | pydantic验证outline.json | 生成outline后 |
 | `scripts/generate_cover.py` | 一键封面管道（ImageGen→裁剪→字体叠加→900×500） | 推送前 |
 | `scripts/update_cover.py` | 更新已有草稿封面图 | 推送后需要更换封面时 |
-| `scripts/dchat_push.py` | 推送晨报摘要到D-Chat | 微信推送后 |
-| `scripts/push_to_wechat.py` | 微信推送(旧脚本，保留兼容) | 作为备用 |
+| `scripts/utils/push_to_wechat.py` | 微信推送(旧脚本，保留备用) | 备用 |
 
 ---
 
@@ -112,7 +113,7 @@ template.save(f"data/cover_YYYYMMDD.png")
 
 ### 运行
 ```bash
-python3 /Users/jacob/personal/ad-newsletter/scripts/push_today.py
+python3 scripts/push_today.py
 ```
 跳过质量门禁：
 ```bash
@@ -148,20 +149,6 @@ python3 scripts/push_today.py
 
 ---
 
-## D-Chat 推送
-
-```bash
-python3 scripts/dchat_push.py
-```
-
-### 关键注意事项
-1. 必须用 `curl --noproxy '*'` 发送（Python urllib 会走系统代理超时）
-2. `text` 和 `form` 必须在消息体顶层，不要包裹在 `interactive` 字段
-3. 文本消息 ≤300 字，超长用交互式卡片
-4. BotUser 模式不支持 markdown msg_type
-
----
-
 ## 链接汇总页生成
 
 ```bash
@@ -172,26 +159,6 @@ python3 scripts/generate_links_page.py --html data/自动驾驶晨报_YYYYMMDD.h
 - 使用与仪表盘相同的视觉风格（header、section、card）
 - 输出到 `data/links_YYYYMMDD.html`
 - `push_today.py` 已复用此模块，未来推送生成的链接页自动采用新格式
-
----
-
-## 微信排版限制
-
-1. 正文内 `<a href="外部URL">` 会被微信编辑器过滤成纯文本 → 改用 `content_source_url` 指向链接汇总页
-2. CSS Grid/flex 会被公众号编辑器过滤 → 概览用 `<table>` + inline style
-3. 微信原生支持 `<p> <section> <table> <span>` 等标签
-4. 不支持 `<script> <style>` 和外链CSS
-5. `table-layout:fixed` 和 `<colgroup>` 在微信端不一定生效
-
----
-
-## Python 陷阱
-
-1. `OrderedDict.setdefault()` 在 Python 3.7 不存在 → 用 dict + index 列表代替
-2. Python for 循环变量会泄露到外层作用域 → 循环变量名避免与已有变量冲突
-3. `requests.post(json=...)` 会对中文字符做 ASCII 转义 → 微信 draft/add 接口**必须**手动编码
-4. 不要用 HTML 数字实体替代中文，微信编辑器会原样显示
-5. `re.S` 标记让 `.` 匹配换行符，跨行匹配时小心非贪婪 `.*?` 的边界
 
 ---
 

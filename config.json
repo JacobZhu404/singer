@@ -4,12 +4,6 @@
     "app_secret": "8181bc6dac277487e0627ac14108b732",
     "account_name": "自驾车早"
   },
-  "dchat": {
-    "username": "zhuzhenxia",
-    "app_id": "519170",
-    "app_secret": "",
-    "api_url": "http://10.88.128.40:8000/dichat/snitch_openapi_online_lb/v1/message.create"
-  },
   "paths": {
     "base_dir": "/Users/jacob/personal/ad-newsletter",
     "output_dir": "/Users/jacob/personal/ad-newsletter/data"

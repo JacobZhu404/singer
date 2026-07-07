@@ -22,7 +22,6 @@ import re
 import sys
 import json
 import html
-import time
 import subprocess
 from pathlib import Path
 from datetime import datetime

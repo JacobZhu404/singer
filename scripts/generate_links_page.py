@@ -8,65 +8,12 @@
 import argparse
 import re
 import html as html_mod
+import sys
 from pathlib import Path
 from datetime import datetime
 
-
-def extract_cards(html_text: str):
-    """从仪表盘 HTML 中提取所有卡片，保留板块分组、编号、标题、来源、日期、URL。"""
-    # 板块标题映射: sec-1 -> ("📊 行业动态", 主色)
-    sec_map = {
-        "sec-1": ("📊 行业动态", "#059669"),
-        "sec-2": ("🚀 产品发布", "#8b5cf6"),
-        "sec-3": ("🧠 模型发布", "#f59e0b"),
-        "sec-4": ("📄 前沿论文", "#ec4899"),
-        "sec-5": ("💡 其他消息", "#ef4444"),
-    }
-
-    # 找到每个 sec 块
-    sec_blocks = list(re.finditer(r'<div class="sec sec-(\d+)" id="(sec-\d+)">', html_text))
-
-    # 卡片正则
-    card_pat = re.compile(
-        r'<a class="card"[^>]*?href="([^"]+)"[^>]*?>'
-        r'.*?<span class="card-num"[^>]*>(\d+)</span>'
-        r'.*?<span class="card-source">([^<]+)</span>'
-        r'.*?<span class="card-date">([^<]+)</span>'
-        r'.*?<div class="card-title">([^<]+)</div>',
-        re.S
-    )
-
-    sections = []
-    total = 0
-
-    for i, sm in enumerate(sec_blocks):
-        sec_num = sm.group(1)
-        sec_id = sm.group(2)
-        sec_name, sec_color = sec_map.get(sec_id, (f"板块 {sec_num}", "#059669"))
-
-        start = sm.start()
-        end = sec_blocks[i + 1].start() if i + 1 < len(sec_blocks) else len(html_text)
-        sec_html = html_text[start:end]
-
-        items = []
-        for url, num, source, date, title in card_pat.findall(sec_html):
-            items.append({
-                "num": num.strip(),
-                "title": title.strip(),
-                "source": source.strip(),
-                "date": date.strip(),
-                "url": url.strip(),
-            })
-
-        if items:
-            sections.append({
-                "name": sec_name,
-                "color": sec_color,
-                "items": items,
-            })
-            total += len(items)
-
-    return sections, total
+sys.path.insert(0, str(Path(__file__).parent))
+from utils.parse_cards import extract_cards, group_by_section
 
 
 def build_links_html(sections, total, date_display: str):
@@ -160,7 +107,9 @@ def main():
     m = re.search(r'(\d{4})年(\d{1,2})月(\d{1,2})日', html_text)
     date_display = f"{m.group(1)}年{m.group(2)}月{m.group(3)}日" if m else datetime.now().strftime("%Y年%m月%d日")
 
-    sections, total = extract_cards(html_text)
+    cards = extract_cards(html_text)
+    sections = group_by_section(cards)
+    total = len(cards)
     if not sections:
         print("⚠️ 未从 HTML 中解析到任何卡片")
         return 1

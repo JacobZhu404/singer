@@ -8,14 +8,14 @@ outline.json 的 pydantic schema — 这是 LLM 和代码层之间的唯一接�
     3. 让 dedup.py 等下游脚本依赖 schema 而非散装 dict
 
 用法:
-    from outline_schema import Outline, load_outline
+    from utils.outline_schema import Outline, load_outline
     outline = load_outline("data/outline_20260706.json")
     # outline.items 已按板块索引
     # outline.all_urls 是扁平去重列表
 """
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 from datetime import date, datetime
 
 try:
@@ -95,7 +95,7 @@ class Outline(BaseModel):
     metadata: Metadata = Field(default_factory=Metadata)
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "Outline":
+    def from_file(cls, path: Union[str, Path]) -> "Outline":
         """从 JSON 文件加载并验证"""
         p = Path(path)
         raw = json.loads(p.read_text(encoding="utf-8"))
@@ -119,7 +119,7 @@ class Outline(BaseModel):
         """所有新闻扁平列表"""
         return [item for s in self.sections for item in s.items]
 
-    def section_map(self) -> dict[str, Section]:
+    def section_map(self) -> Dict[str, Section]:
         """id → Section"""
         return {s.id: s for s in self.sections}
 
@@ -134,7 +134,7 @@ class Outline(BaseModel):
 
 # ─────────────────────────── 便捷函数 ───────────────────────────
 
-def load_outline(path: str | Path) -> Outline:
+def load_outline(path: Union[str, Path]) -> Outline:
     """加载并验证 outline.json，失败时抛出详细错误。"""
     try:
         return Outline.from_file(path)
@@ -143,7 +143,7 @@ def load_outline(path: str | Path) -> Outline:
         raise
 
 
-def save_outline(outline: Outline, path: str | Path):
+def save_outline(outline: Outline, path: Union[str, Path]):
     """序列化并写入 outline.json。"""
     p = Path(path)
     p.write_text(
