@@ -26,7 +26,7 @@
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
 | `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | 质量检查时 |
 | `scripts/dedup.py` | 历史去重（URL精确+标题模糊匹配），输出排除报告 | 候选收集后 |
-| `scripts/collect_news.py` | 热榜兜底爬虫（tophub/buzzing），补充 LLM 可能遗漏的条目 | LLM搜索后，合并候选 |
+| `scripts/collect_news.py` | 兜底爬虫（热榜+媒体站点），补充 LLM 可能遗漏的条目 | LLM搜索后，合并候选 |
 | `scripts/generate_html.py` | outline.json → Jinja2模板 → HTML（逐字节可复现） | outline定稿后 |
 | `scripts/generate_wechat.py` | outline.json → 微信公众号正文HTML(Jinja2) | push_today内部调用 |
 | `scripts/generate_links_page.py` | 从仪表盘HTML生成链接汇总页 | HTML定稿后 |

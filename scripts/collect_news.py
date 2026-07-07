@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
 """
-热榜兜底爬虫：LLM 搜索为主，脚本为辅。在 LLM 执行完 WebSearch 后运行此脚本，
-抓取热榜数据源中与智驾相关的标题，补充 LLM 可能遗漏的内容。
+兜底爬虫：LLM 搜索为主，脚本为辅。
+抓取热榜 + 媒体站点中与智驾相关的标题，补充 LLM 可能遗漏的内容。
 
-理念：
-  LLM 做 12 组 WebSearch（需要判断力、迭代能力）—— 主要产出
-  脚本抓热榜（机械动作）—— 兜底，防止 LLM 遗漏热门话题
+双轨采集：
+  LLM 做 10 组 WebSearch（需要判断力）—— 主力
+  脚本抓热榜 + 媒体（机械动作）—— 兜底
 
 用法：
     python3 scripts/collect_news.py
     python3 scripts/collect_news.py --output data/backup_candidates.json
-    python3 scripts/collect_news.py --max-items 20
-
-输出：
-    data/backup_candidates_YYYYMMDD.json — 兜底候选列表
+    python3 scripts/collect_news.py --max-items 30
 """
 import argparse
 import json
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, List
 
 try:
     import requests
     from bs4 import BeautifulSoup
 except ImportError:
-    print("❌ 需要 requests + beautifulsoup4，请运行:")
+    print("❌ 需要 requests + beautifulsoup4:")
     print("   pip install requests beautifulsoup4")
     sys.exit(1)
 
@@ -36,141 +35,204 @@ MATRIX_PATH = BASE / "references" / "search_matrix.yaml"
 TODAY = datetime.now()
 TD_STR = TODAY.strftime("%Y%m%d")
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0",
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
 
-def _load_hotlist_config():
-    """从 search_matrix.yaml 读取热榜配置,消除硬编码。"""
+
+def _load_config() -> dict:
     try:
         import yaml
-        matrix = yaml.safe_load(MATRIX_PATH.read_text("utf-8"))
-        return matrix.get("hotlist", [])
+        return yaml.safe_load(MATRIX_PATH.read_text("utf-8"))
     except Exception:
-        return [
-            {"rank": "P1", "url": "https://tophub.today",
-             "keywords": ["智能驾驶", "自动驾驶", "robotaxi", "Waymo", "Tesla"]},
-            {"rank": "P2", "url": "https://buzzing.cc",
-             "keywords": ["autonomous driving", "robotaxi", "Waymo", "Tesla FSD", "self-driving"]},
-        ]
+        return {}
 
 
-HOTLIST_CONFIG = _load_hotlist_config()
+CONFIG = _load_config()
+HOTLIST = CONFIG.get("hotlist", [])
+MEDIA_CRAWL = CONFIG.get("media_crawl", {})
+AD_KEYWORDS = MEDIA_CRAWL.get("keywords", [
+    "智驾", "自动驾驶", "智能驾驶", "无人驾驶", "robotaxi",
+    "waymo", "tesla", "端到端", "激光雷达", "具身智能",
+    "FSD", "萝卜快跑", "华为智驾",
+])
 
+
+def _is_ad_related(title: str, keywords: list = None) -> bool:
+    kws = keywords or AD_KEYWORDS
+    tl = title.lower()
+    return any(kw.lower() in tl for kw in kws)
+
+
+def _extract_links(html: str) -> List[Dict[str, str]]:
+    soup = BeautifulSoup(html, "html.parser")
+    results = []
+    for a in soup.find_all("a"):
+        title = a.get_text(strip=True)
+        href = a.get("href", "")
+        if title and 10 < len(title) < 100:
+            results.append({"title": title, "href": href})
+    return results
+
+
+# ─────────────── 热榜爬虫 ───────────────
 
 def fetch_tophub() -> list:
-    """抓取 tophub.today 首页，提取与智驾相关的标题。"""
     items = []
+    kws = HOTLIST[0]["keywords"] if HOTLIST else AD_KEYWORDS
     try:
-        r = requests.get(
-            "https://tophub.today",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-            },
-            timeout=15,
-        )
+        r = requests.get("https://tophub.today", headers=HEADERS, timeout=15)
         if r.status_code != 200:
-            print(f"  ⚠️ tophub 返回 {r.status_code}")
             return items
-
-        soup = BeautifulSoup(r.text, "html.parser")
-        # tophub 的条目通常在 <a> 标签内
-        for a in soup.find_all("a"):
-            title = a.get_text(strip=True)
-            href = a.get("href", "")
-            if not title:
-                continue
-            # 检查是否含智驾关键词
-            for kw in HOTLIST_CONFIG[0]["keywords"]:
-                if kw.lower() in title.lower():
-                    items.append({
-                        "title": title,
-                        "url": href if href.startswith("http") else "",
-                        "source": "tophub.today",
-                    })
-                    break
+        for link in _extract_links(r.text):
+            if _is_ad_related(link["title"], kws):
+                href = link["href"]
+                items.append({
+                    "title": link["title"],
+                    "url": href if href.startswith("http") else "",
+                    "source": "tophub.today",
+                })
     except Exception as e:
-        print(f"  ⚠️ tophub 抓取异常: {e}")
-
+        print(f"  ⚠️ tophub 异常: {e}")
     return items
 
 
 def fetch_buzzing() -> list:
-    """抓取 buzzing.cc 首页/子站，提取自动驾驶相关标题。"""
     items = []
-    urls = [
-        "https://buzzing.cc",
-        "https://tech.buzzing.cc",
-        "https://hn.buzzing.cc",
-    ]
+    kws = HOTLIST[1]["keywords"] if len(HOTLIST) > 1 else ["autonomous driving", "robotaxi"]
+    urls = ["https://buzzing.cc", "https://tech.buzzing.cc", "https://hn.buzzing.cc"]
     for url in urls:
         try:
-            r = requests.get(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
-                timeout=15,
-            )
+            r = requests.get(url, headers=HEADERS, timeout=15)
             if r.status_code != 200:
                 continue
-            soup = BeautifulSoup(r.text, "html.parser")
-            for a in soup.find_all("a"):
-                title = a.get_text(strip=True)
-                href = a.get("href", "")
-                if not title:
-                    continue
-                for kw in HOTLIST_CONFIG[1]["keywords"]:
-                    if kw.lower() in title.lower():
-                        # 处理相对链接
-                        if href.startswith("/"):
-                            href = "https://buzzing.cc" + href
-                        items.append({
-                            "title": title,
-                            "url": href if href.startswith("http") else "",
-                            "source": url.replace("https://", ""),
-                        })
-                        break
+            for link in _extract_links(r.text):
+                if _is_ad_related(link["title"], kws):
+                    href = link["href"]
+                    if href.startswith("/"):
+                        href = "https://buzzing.cc" + href
+                    items.append({
+                        "title": link["title"],
+                        "url": href if href.startswith("http") else "",
+                        "source": url.replace("https://", ""),
+                    })
         except Exception as e:
-            print(f"  ⚠️ {url} 抓取异常: {e}")
-
+            print(f"  ⚠️ {url} 异常: {e}")
     return items
 
 
+# ─────────────── 媒体站点爬虫 ───────────────
+
+def fetch_media_site(name: str, url: str) -> list:
+    items = []
+    try:
+        if "sina" in url:
+            encoded_url = url.rsplit("/", 1)
+            if len(encoded_url) == 2 and not encoded_url[1].startswith("http"):
+                encoded_url = encoded_url[0] + "/" + urllib.parse.quote(encoded_url[1])
+            else:
+                encoded_url = url
+        else:
+            encoded_url = url
+
+        r = requests.get(encoded_url, headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            return items
+
+        for link in _extract_links(r.text):
+            if _is_ad_related(link["title"]):
+                href = link["href"]
+                if href.startswith("/"):
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    href = f"{parsed.scheme}://{parsed.netloc}{href}"
+                items.append({
+                    "title": link["title"],
+                    "url": href if href.startswith("http") else "",
+                    "source": name,
+                })
+    except Exception as e:
+        print(f"  ⚠️ {name} 异常: {e}")
+    return items
+
+
+def fetch_all_media() -> list:
+    sites = MEDIA_CRAWL.get("sites", [])
+    all_items = []
+    for site in sorted(sites, key=lambda s: s.get("priority", 99)):
+        name = site["name"]
+        url = site["url"]
+        print(f"  [媒体] {name}...", end=" ", flush=True)
+        items = fetch_media_site(name, url)
+        print(f"{len(items)} 条智驾相关")
+        all_items.extend(items)
+    return all_items
+
+
+# ─────────────── 去重 ───────────────
+
+def _normalize_title(title: str) -> str:
+    t = re.sub(r"\s+", "", title).lower()
+    t = re.sub(r"[，。、：；！？""''（）\[\]【】｜|·—\-_,.:;!?\"'()​]", "", t)
+    return t
+
+
 def merge_dedup(items: list) -> list:
-    """去除重复标题。"""
-    seen = set()
+    seen_titles = set()
+    seen_urls = set()
     result = []
     for item in items:
-        norm = re.sub(r"\s+", "", item["title"]).lower()
-        if norm not in seen:
-            seen.add(norm)
-            result.append(item)
+        norm = _normalize_title(item["title"])
+        url = item.get("url", "")
+        if norm in seen_titles:
+            continue
+        if url and url in seen_urls:
+            continue
+        seen_titles.add(norm)
+        if url:
+            seen_urls.add(url)
+        result.append(item)
     return result
 
 
+# ─────────────── main ───────────────
+
 def main():
-    parser = argparse.ArgumentParser(description="热榜兜底爬虫")
+    parser = argparse.ArgumentParser(description="兜底爬虫")
     parser.add_argument("--output", default=None, help="输出路径")
     parser.add_argument("--max-items", type=int, default=30, help="最大保留条数")
+    parser.add_argument("--hotlist-only", action="store_true", help="只爬热榜")
+    parser.add_argument("--media-only", action="store_true", help="只爬媒体")
     args = parser.parse_args()
 
-    print("🔍 热榜兜底爬虫 — 抓取中...\n")
+    print(f"🔍 兜底爬虫 — {TODAY.strftime('%Y-%m-%d %H:%M')}\n")
 
-    # 1) tophub
-    print("  [P1] tophub.today...", end=" ", flush=True)
-    p1 = fetch_tophub()
-    print(f"{len(p1)} 条智驾相关")
+    all_items = []
 
-    # 2) buzzing
-    print("  [P2] buzzing.cc...", end=" ", flush=True)
-    p2 = fetch_buzzing()
-    print(f"{len(p2)} 条智驾相关")
+    if not args.media_only:
+        print("  [P1] tophub.today...", end=" ", flush=True)
+        p1 = fetch_tophub()
+        print(f"{len(p1)} 条")
+        all_items.extend(p1)
 
-    # 3) 合并去重
-    all_items = merge_dedup(p1 + p2)
-    all_items = all_items[:args.max_items]
+        print("  [P2] buzzing.cc...", end=" ", flush=True)
+        p2 = fetch_buzzing()
+        print(f"{len(p2)} 条")
+        all_items.extend(p2)
+
+    if not args.hotlist_only:
+        print()
+        media = fetch_all_media()
+        all_items.extend(media)
+
+    all_items = merge_dedup(all_items)[:args.max_items]
 
     if not all_items:
-        print("\n⚠️ 未找到任何智驾相关热榜条目（这很正常，不是所有热榜都含智驾）")
-        print("   兜底无产出，不影响 LLM 搜索结果。")
+        print("\n⚠️ 未找到智驾相关条目")
 
-    # 4) 输出
     result = {
         "date": TD_STR,
         "generated_by": "collect_news.py",
@@ -182,7 +244,6 @@ def main():
     out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
     print(f"\n📄 兜底结果: {out_path}")
     print(f"   共 {len(all_items)} 条候选（已去重）")
-    print(f"   供 LLM 合并参考，与 LLM 搜索结果一同进入 dedup 环节")
     return 0
 
 
