@@ -107,6 +107,52 @@ media_crawl:
       priority: 6
       note: "汽车行业专业媒体"
 
+    - name: "IT之家(汽车)"
+      url: "https://auto.ithome.com/"
+      priority: 7
+      note: "汽车/智驾垂直页，更新极早（/tech/ 已404，改用 auto 子站）"
+
+    - name: "快科技"
+      url: "https://www.mydrivers.com/"
+      priority: 8
+      note: "车企发布会、L3落地快讯（search.aspx 已404，改用首页+关键词过滤；站点为gbk编码）"
+
+    - name: "TechCrunch"
+      url: "https://techcrunch.com/category/transportation/"
+      priority: 9
+      note: "海外Robotaxi、初创融资动态"
+
+    - name: "电子发烧友(智能驾驶)"
+      url: "https://www.elecfans.com/"
+      priority: 10
+      note: "硬件视角：激光雷达/车载芯片/毫米波雷达/车路协同"
+
+  # ────────── RSS 订阅源（标准化XML，无反爬，稳定性高） ──────────
+  feeds:
+    - name: "IT之家RSS"
+      url: "https://www.ithome.com/rss/"
+      priority: 1
+      note: "国内科技快讯RSS"
+
+    - name: "TechmemeRSS"
+      url: "https://www.techmeme.com/feed.xml"
+      priority: 2
+      note: "全球科技聚合RSS，含自动驾驶"
+
+    - name: "36氪RSS"
+      url: "https://36kr.com/feed"
+      priority: 3
+      note: "产业深度+融资"
+
+  # ────────── API 数据源（官方开放接口，零反爬） ──────────
+  apis:
+    - name: "HackerNews"
+      search_endpoint: "https://hn.algolia.com/api/v1/search"
+      query: "autonomous driving"
+      max_items: 50
+      priority: 1
+      note: "官方Algolia搜索API，零反爬，单次请求按关键词返回技术向新闻（比Firebase topstories逐条取详情更快、不会挂起）"
+
   # 以下站点不可爬取（WAF/JS渲染/下线），仅通过 LLM WebSearch 覆盖
   not_scrapable:
     - "huxiu.com — WAF拦截，LLM用site:搜索覆盖"
