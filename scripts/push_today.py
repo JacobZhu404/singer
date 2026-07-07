@@ -72,8 +72,9 @@ def upload_cover(token):
         img = Image.new("RGB", (900, 500), (6, 78, 59))
         draw = ImageDraw.Draw(img)
         try:
-            ft = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 44)
-            fs = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 24)
+            from generate_cover import find_font
+            ft = find_font(44)
+            fs = find_font(24)
         except Exception:
             ft = fs = None
         draw.text((450, 190), "自动驾驶晨报", fill=(167, 243, 208), font=ft, anchor="mm")

@@ -9,6 +9,8 @@ Returns exit code 0 if all links pass, 1 if any fail.
 Outputs a JSON report of results to stdout.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import subprocess

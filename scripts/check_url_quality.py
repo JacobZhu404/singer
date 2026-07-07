@@ -6,6 +6,8 @@ Usage:
     python3 check_url_quality.py <urls.json>   # JSON array of URL strings
 """
 
+from __future__ import annotations
+
 import json
 import re
 import sys
