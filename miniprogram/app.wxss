@@ -1,0 +1,42 @@
+/* app.wxss — 全局样式与主题变量 */
+page {
+  --brand: #059669;
+  --brand-dark: #064e3b;
+  --brand-deep: #047857;
+  --brand-soft: #a7f3d0;
+  --bg: #f0fdf4;
+  --card-bg: #ffffff;
+  --text: #111827;
+  --text-sub: #6b7280;
+  --border: #e5e7eb;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+view, text {
+  box-sizing: border-box;
+}
+
+.page {
+  padding: 24rpx;
+  min-height: 100vh;
+}
+
+.loading,
+.empty {
+  text-align: center;
+  color: var(--text-sub);
+  padding: 120rpx 0;
+  font-size: 28rpx;
+}
+
+.footer {
+  margin: 40rpx 8rpx 20rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--text-sub);
+  line-height: 1.8;
+}
