@@ -12,6 +12,7 @@ data/cover_*.jpg
 # ImageGen raw images (large)
 data/A_*
 data/科技封面*
+data/cover_src/
 
 # Test output (isolated)
 data/test/
@@ -20,8 +21,12 @@ data/test/
 data/search_plan_*
 data/backup_candidates_*
 data/script_candidates_*
+data/llm_candidates_*
+data/merged_candidates_*
+data/merge_report_*
 data/dedup_report.md
 data/deduped.json
+data/wechat_*.html
 
 # Legacy iteration artifacts
 data/wechat_clone*
