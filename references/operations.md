@@ -85,7 +85,7 @@ python3 scripts/check_freshness.py <items.json> --max-age 30
 2. **禁止**让 ImageGen 在图上直接生成文字 → 缩放时会被拉宽/拉扁
 3. 用 PIL 按 **900:500 比例**对背景图进行**居中裁剪**（不是非等比拉伸）
 4. 缩放为 **900x500** 像素
-5. 用 PIL 在 900x500 成品上叠加文字（「自动驾驶晨报」居中上方，日期居中下方）
+5. 用 PIL 在 900x500 成品上叠加文字（「自动驾驶晨报」居中上方；日期放**右侧安全区**，右边缘对齐 x≈700、稍微上提，避免订阅号列表 1:1 裁剪切掉）
 6. 保存为 `data/cover_YYYYMMDD_fixed.png`
 7. `scripts/push_today.py` 会优先使用此封面
 
@@ -130,12 +130,14 @@ python3 scripts/push_today.py
 ### 关键编码要求（严格）
 - JSON序列化：**必须** `json.dumps(..., ensure_ascii=False).encode("utf-8")`
 - Content-Type：`application/json; charset=utf-8`
+- **HTTP客户端：必须用 `urllib.request`（标准库）发 JSON POST**。`requests` 在当前环境会让微信服务器把 UTF-8 中文按 Latin-1 解码，导致标题/正文乱码（已实测：curl/urllib 正常，requests 乱码）。
 - 正文HTML保持原始中文，**不要**转成HTML数字实体
 - 标题/摘要保持原始中文，**不要**用 `ensure_ascii=True`
 
 ### 常见编码错误
 - `ensure_ascii=True` → 标题/摘要显示为 `\u81ea\u52a8...` 字面量
 - HTML数字实体 → 正文显示为 `&#128203;` 字面量
+- 用 `requests` 发 JSON POST → 中文被 Latin-1 解码，显示为 `Ã¨Â¿Â...` 类乱码
 
 ### 公众号脚本行为
 1. 从 config.json 加载配置（环境变量可覆盖）

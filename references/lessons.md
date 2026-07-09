@@ -9,9 +9,11 @@
 - 根因：沙箱默认用 Python 3.7.5，OrderedDict 的 setdefault() 是 3.9 才加的
 - 修复：改用 dict + list index 实现分组
 
-## 3. requests.post(json=...) 导致中文被二次转义
-- 根因：requests 库自动做 `json.dumps(ensure_ascii=True)`，中文变 `\uXXXX`
-- 修复：`requests.post(data=json.dumps(obj, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json; charset=utf-8"})`
+## 3. requests 发送微信 JSON POST 导致中文乱码
+- 根因（阶段一）：`requests.post(json=...)` 会自动做 `json.dumps(ensure_ascii=True)`，中文变 `\uXXXX`
+- 根因（阶段二，2026-07-09 发现）：即便改为 `requests.post(data=json.dumps(obj, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json; charset=utf-8"})`，当前环境下 WeChat 服务器仍会把 UTF-8 中文按 Latin-1 解码，标题/正文变成 `Ã¨Â¿Â...` 类乱码；而 curl / `urllib.request` 发送完全相同的字节和 Content-Type 则正常。
+- 修复：JSON POST 统一改用 `urllib.request.Request` + `urllib.request.urlopen`，multipart 图片上传可保留 requests。
+- 结论：`ensure_ascii=False` + `utf-8` + `charset=utf-8` 只是必要条件，HTTP 客户端也必须用 `urllib`。
 
 ## 4. CSS Grid 在微信编辑器被过滤
 - 根因：微信编辑器只保留 inline style 的基本属性，`display:grid` 被删

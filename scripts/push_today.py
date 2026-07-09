@@ -5,6 +5,7 @@
 正文生成: Jinja2 模板（assets/wechat_article.html.j2）
 """
 import json, re, os, sys
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -127,8 +128,23 @@ def generate_links_page(outline) -> Path:
     return links_path
 
 
+def _post_json(url: str, body: bytes, timeout: int = 30) -> dict:
+    """用 urllib 发送 JSON POST。
+
+    注意：WeChat 服务器对 requests 库的 POST 会按 Latin-1 解码 UTF-8 中文，
+          导致标题/正文乱码；urllib（标准库）无此问题。
+    """
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def create_draft(token, article):
-    url = "https://api.weixin.qq.com/cgi-bin/draft/add"
+    url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
     body = json.dumps({"articles": [{
         "title": article["title"],
         "digest": article["digest"],
@@ -137,13 +153,9 @@ def create_draft(token, article):
         "thumb_media_id": article.get("thumb_media_id", ""),
         "need_open_comment": 1,
         "only_fans_can_comment": 0,
-    }]}, ensure_ascii=False)
+    }]}, ensure_ascii=False).encode("utf-8")
 
-    r = requests.post(url, params={"access_token": token},
-        data=body.encode("utf-8"),
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        timeout=30)
-    d = r.json()
+    d = _post_json(url, body, timeout=30)
     assert "media_id" in d, f"创建草稿失败: {d}"
     print(f"✅ 草稿创建成功! media_id={d['media_id']}")
     return d

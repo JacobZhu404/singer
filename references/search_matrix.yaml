@@ -3,8 +3,8 @@
 # 脚本按 media_crawl 配置爬取媒体站点，与 LLM 搜索互补
 
 meta:
-  version: "3.0"
-  updated: "2026-07-07"
+  version: "3.1"
+  updated: "2026-07-09"
   description: "双轨采集: LLM WebSearch(10组) + 脚本爬虫(热榜+媒体)。去重后合并。"
 
 # ────────────────────────── 时效性规则 ──────────────────────────
@@ -224,6 +224,7 @@ search_groups:
       - "L3 L4 准入 国标"
       - "联合国 WP29 法规"
       - "工信部 智能驾驶 标准"
+      - "工信部 NVDB AI编程工具 安全后门 风险提示"
       - "自动驾驶 技术法规 获批"
 
   - id: 3
@@ -246,6 +247,8 @@ search_groups:
       - "end-to-end autonomous driving paper site:arxiv.org 2026"
       - "world model driving paper site:arxiv.org 2026"
       - "VLA vision language action driving site:arxiv.org 2026"
+      - "VLA faithfulness Pinocchio site:arxiv.org 2026"
+      - "world model open source embodied 世界模型 开源 site:arxiv.org 2026"
       - "autonomous driving dataset benchmark site:arxiv.org 2026"
 
   - id: 5
@@ -269,6 +272,8 @@ search_groups:
         keywords:
           - "Tesla AI 员工 政策 限制"
           - "Google Amazon Meta AI 内部 政策"
+          - "Grok 4.5 SpaceXAI xAI 发布 对标 Claude Opus"
+          - "Claude Code 安全后门 工信部 NVDB 预警 Anthropic"
           - "美国 科技企业 AI 支出 管控 2026"
 
   - id: 6
@@ -314,6 +319,7 @@ search_groups:
           - "大模型 自动驾驶 应用 落地"
           - "AI 算力 智能驾驶 芯片"
           - "国产芯片 自动驾驶 训练 推理"
+          - "世界模型 小时级 实时生成 开源 蚂蚁灵波 LingBot"
           - "Scaling Law 自动驾驶 端到端"
       - name: "9B — 半导体突破"
         keywords:

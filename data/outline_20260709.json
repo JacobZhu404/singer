@@ -1,0 +1,158 @@
+{
+  "version": "2.0",
+  "generated_at": "2026-07-09",
+  "date_display": "2026年7月9日 星期四",
+  "title": "自动驾驶晨报 7月9日",
+  "digest": "今日12条自动驾驶与科技生态圈动态精选",
+  "total": 12,
+  "sections": [
+    {
+      "id": "sec-1",
+      "name": "行业动态",
+      "icon": "📊",
+      "count": 2,
+      "items": [
+        {
+          "num": 1,
+          "title": "特斯拉 Robotaxi 进军新奥尔良，测试车队已上路",
+          "source": "IT之家",
+          "url": "https://www.ithome.com/0/974/051.htm",
+          "date": "2026-07-08",
+          "dimension": "🏢 企业动向",
+          "summary": "特斯拉自动驾驶网约车网络规划新一轮地域扩张，将版图延伸至美国南部；网友发现新奥尔良已有 Model Y Robotaxi 上路测试，本地化验证加速推进。"
+        },
+        {
+          "num": 2,
+          "title": "蔚来ES8五座版等4款重磅新车7月上市 智驾成核心卖点",
+          "source": "新浪汽车",
+          "url": "https://finance.sina.com.cn/wm/2026-07-06/doc-inifwmvs1888399.shtml",
+          "date": "2026-07-06",
+          "dimension": "🏢 企业动向",
+          "summary": "乘联分会发布7月新车预告：全新奔驰纯电GLC、蔚来ES8五座版、领克07 GT、新款理想L6四款新车本月上市，高阶智驾配置成核心卖点。"
+        }
+      ]
+    },
+    {
+      "id": "sec-2",
+      "name": "产品发布",
+      "icon": "🚀",
+      "count": 1,
+      "items": [
+        {
+          "num": 3,
+          "title": "特斯拉VP：五年内自动驾驶与人形机器人将彻底融入生活",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/stock/t/2026-07-03/doc-inifpqky0412907.shtml",
+          "date": "2026-07-03",
+          "dimension": "🚀 产品愿景",
+          "summary": "特斯拉汽车工程VP Lars Moravy表示，未来五年由 Robotaxi、Cybercab 与 Optimus 构成的「真实世界AI」将全面融入工作、出行与家庭场景。"
+        }
+      ]
+    },
+    {
+      "id": "sec-3",
+      "name": "模型发布",
+      "icon": "🧠",
+      "count": 4,
+      "items": [
+        {
+          "num": 4,
+          "title": "腾讯发布混元Hy3大模型正式版 强化Agent能力",
+          "source": "财新",
+          "url": "https://www.caixin.com/2026-07-06/102461425.html",
+          "date": "2026-07-06",
+          "dimension": "🧠 模型发布",
+          "summary": "腾讯正式发布基座模型混元Hy3，是对4月开源预览版的迭代，进一步提升后训练算力规模与数据质量，重点强化 Agent（智能体）能力。"
+        },
+        {
+          "num": 5,
+          "title": "美团大模型LongCat-2.0开源",
+          "source": "财新",
+          "url": "https://www.caixin.com/2026-07-07/102461508.html",
+          "date": "2026-07-07",
+          "dimension": "🧠 模型发布",
+          "summary": "美团大模型 LongCat-2.0 开源，延续国内大厂开放基础模型的节奏；同日腾讯减持快手、宇树科技IPO注册生效。"
+        },
+        {
+          "num": 6,
+          "title": "马斯克确认SpaceXAI于7月9日向公众开放Grok 4.5 对标Claude Opus",
+          "source": "IT之家",
+          "url": "https://www.ithome.com/0/974/035.htm",
+          "date": "2026-07-08",
+          "dimension": "🧠 模型发布",
+          "summary": "马斯克确认由 SpaceXAI（新闻用名）于7月9日向公众开放最新大模型 Grok 4.5，称其达 Claude Opus 级别但速度更快、Token 效率更高、成本更低；模型基于 1.5T 参数的 V9 架构，并引入 Cursor 编程数据强化工程能力。"
+        },
+        {
+          "num": 7,
+          "title": "蚂蚁灵波开源LingBot-World 2.0 全球首个小时级实时世界模型",
+          "source": "ITBear",
+          "url": "https://www.itbear.com.cn/html/2026-07/1435968.html",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "蚂蚁灵波科技7月9日开源新一代实时交互世界模型 LingBot-World 2.0，支持小时级实时生成、720p/60fps 输出，并首次将 Agent 机制引入世界模型；提供 14B 主模型与轻量版两个开源版本，对自动驾驶仿真与具身智能训练具参考价值。"
+        }
+      ]
+    },
+    {
+      "id": "sec-4",
+      "name": "前沿论文",
+      "icon": "📄",
+      "count": 2,
+      "items": [
+        {
+          "num": 8,
+          "title": "端到端、世界模型与VLA三者到底是什么关系？",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260706A02PJU00",
+          "date": "2026-07-06",
+          "dimension": "📄 技术解读",
+          "summary": "中汽协报告显示2025年1-11月中国搭载城市NOA乘用车销量312.9万辆、渗透率15.1%；文章厘清端到端、世界模型与VLA的边界与协同关系。"
+        },
+        {
+          "num": 9,
+          "title": "斯坦福领衔多机构团队论文《VLA是否言行一致》提出Pinocchio评论家 量化推理与动作因果一致性",
+          "source": "arXiv",
+          "url": "https://arxiv.org/abs/2607.04681",
+          "date": "2026-07-06",
+          "dimension": "📄 技术解读",
+          "summary": "arXiv:2607.04681（7/6提交）区分「功能性推理」与「忠实性推理」，指出现有VLA口头CoT未必反映真实决策；提出Pinocchio为RL提供稠密奖励，自动驾驶基准忠实性提升4%~18%。注：斯坦福ASL领衔多机构合作（含米兰理工、KTH、AI4I及NVIDIA Research兼任），非英伟达官方成果。"
+        }
+      ]
+    },
+    {
+      "id": "sec-5",
+      "name": "其他消息",
+      "icon": "💡",
+      "count": 3,
+      "items": [
+        {
+          "num": 10,
+          "title": "2026世界机器人大会将于8月北京举行 聚焦具身智能产业化",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260707A078RM00",
+          "date": "2026-07-07",
+          "dimension": "🌐 生态圈",
+          "summary": "2026世界机器人大会新闻发布会7月6日在京召开，大会8月19-23日于北京经开区举行，主题「人机共生，产需共融」，焦点从炫技推向真实场景与产业落地。"
+        },
+        {
+          "num": 11,
+          "title": "深蓝S07智驾故障 厂家尚未发布召回",
+          "source": "车质网/新浪",
+          "url": "https://auto.sina.cn/2026-07-09/detail-inihczpf1480587.d.html?vt=4",
+          "date": "2026-07-09",
+          "dimension": "⚠️ 事故舆情",
+          "summary": "截至7月9日，深蓝汽车尚未就2026款S07智驾故障发官方召回，但针对车质网集中反映的辅助驾驶失灵、雷达误报、AEB异常已承诺形成技术方案。"
+        },
+        {
+          "num": 12,
+          "title": "工信部NVDB预警：AI编程工具Claude Code存安全后门隐患",
+          "source": "新浪科技",
+          "url": "https://finance.sina.com.cn/tech/roll/2026-07-08/doc-inihapna8067924.shtml",
+          "date": "2026-07-08",
+          "dimension": "🛡️ AI安全",
+          "summary": "工信部网络安全威胁和漏洞信息共享平台（NVDB）7月8日发布风险提示，监测发现 Anthropic 旗下 AI 编程工具 Claude Code（2.1.91–2.1.196 版本）内置监控机制，可在未授权情况下向远程服务器回传用户地域、身份标识等敏感信息，建议立即卸载受影响版本；阿里此前已将 Claude Code 列入高风险软件名单。"
+        }
+      ]
+    }
+  ]
+}

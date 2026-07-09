@@ -8,6 +8,7 @@
   python3 update_cover.py
 """
 import os, sys, json
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -44,6 +45,17 @@ if not COVER_PATH:
     COVER_PATH = str(fixed if fixed.exists() else OUTPUT_DIR / f"cover_{_DATE_STR}.png")
 
 
+def _post_json(url: str, body: bytes, timeout: int = 30) -> dict:
+    """用 urllib 发送 JSON POST（绕过 requests 导致 WeChat 乱码的问题）。"""
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def upload_image(token, img_path):
     url = "https://api.weixin.qq.com/cgi-bin/material/add_material"
     params = {"access_token": token, "type": "image"}
@@ -64,12 +76,14 @@ _WRITABLE_FIELDS = [
 
 def update_draft(token, media_id, thumb_id):
     """更新草稿封面：拉取原文 → 换封面 → 仅回传可写字段。"""
-    url = "https://api.weixin.qq.com/cgi-bin/draft/update"
-    get_url = "https://api.weixin.qq.com/cgi-bin/draft/get"
-    r = requests.post(get_url, params={"access_token": token},
-                      data=json.dumps({"media_id": media_id}, ensure_ascii=False).encode("utf-8"),
-                      headers={"Content-Type": "application/json; charset=utf-8"}, timeout=15)
-    existing = r.json()
+    update_url = f"https://api.weixin.qq.com/cgi-bin/draft/update?access_token={token}"
+    get_url = f"https://api.weixin.qq.com/cgi-bin/draft/get?access_token={token}"
+
+    existing = _post_json(
+        get_url,
+        json.dumps({"media_id": media_id}, ensure_ascii=False).encode("utf-8"),
+        timeout=15,
+    )
     src = (existing.get("news_item") or [{}])[0]
     # 只保留可写字段，剔除 url/thumb_url/article_type 等只读字段
     article = {k: src[k] for k in _WRITABLE_FIELDS if k in src}
@@ -79,12 +93,8 @@ def update_draft(token, media_id, thumb_id):
         "media_id": media_id,
         "index": 0,
         "articles": article,
-    }, ensure_ascii=False)
-    r = requests.post(url, params={"access_token": token},
-                      data=body.encode("utf-8"),
-                      headers={"Content-Type": "application/json; charset=utf-8"},
-                      timeout=30)
-    data = r.json()
+    }, ensure_ascii=False).encode("utf-8")
+    data = _post_json(update_url, body, timeout=30)
     if data.get("errcode", -1) != 0:
         raise RuntimeError(f"更新草稿失败: {data}")
     print(f"✅ 草稿封面更新成功")

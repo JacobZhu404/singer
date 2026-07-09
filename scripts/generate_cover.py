@@ -175,10 +175,11 @@ def process_cover(
         glow_radius=5, glow_passes=2, tracking=6,
     )
 
-    # 日期：移到右下角，带光晕保证可读性（格式 2026.07.07）
+    # 日期：右对齐、上提到安全区（公众号列表会居中裁成 1:1，
+    # 超出 x=700 会被切掉；右边缘对齐 x=700 可在列表和完整封面都可见）
     date_display = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:8]}"
     draw_glow_text(
-        canvas, (TARGET_W - 40, TARGET_H - 42), date_display, date_font,
+        canvas, (TARGET_W - 200, TARGET_H - 80), date_display, date_font,
         core_fill=MINT, glow_fill=GLOW, anchor="rm",
         glow_radius=8, glow_passes=3,
     )
