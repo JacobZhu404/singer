@@ -151,10 +151,13 @@ def _parse_date_from_url(url: str) -> str:
         y, mo, d = m.groups()
         if 2000 <= int(y) <= 2100 and 1 <= int(mo) <= 12 and 1 <= int(d) <= 31:
             return f"{y}-{mo}-{d}"
-    m2 = re.search(r"/(\d{8})/", url)
+    # 8 位紧凑日期：不强制后接 "/"，腾讯 /rain/a/20260710A0.. 与 36氪 等
+    # 日期后紧跟字母/数字的 URL 也能命中；靠年份前缀 + 月日范围校验防误判
+    # （如 eastmoney 长数字 ID 202607023792.. 的前 8 位恰为日期）。
+    m2 = re.search(r"/(\d{8})", url)
     if m2:
         s = m2.group(1)
-        if s.startswith(("19", "20")):
+        if s.startswith(("19", "20")) and 1 <= int(s[4:6]) <= 12 and 1 <= int(s[6:8]) <= 31:
             return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
     return ""
 

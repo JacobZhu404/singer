@@ -337,9 +337,12 @@ def test_dates():
             _parse_date_from_url("http://www.news.cn/tech/20260706/d611abc/c.html") == "2026-07-06")
     _report("url date none",
             _parse_date_from_url("https://example.com/article/abc.html") == "")
-    # 已知局限：紧凑日期后紧跟字母(如腾讯 /rain/a/20260710A0..)不被识别，需靠 RSS/其他兜底
-    _report("url date tencent紧凑无分隔→空(已知局限)",
-            _parse_date_from_url("https://news.qq.com/rain/a/20260710A067TS00") == "")
+    # 腾讯紧凑日期后紧跟字母(/rain/a/20260710A0..)现已能提取
+    _report("url date tencent紧凑无分隔",
+            _parse_date_from_url("https://news.qq.com/rain/a/20260710A067TS00") == "2026-07-10")
+    # 防误判：非日期长数字(月/日越界)应返回空
+    _report("url date 长数字非日期→空",
+            _parse_date_from_url("https://example.com/12345678901.html") == "")
 
     # 截断排序：同源多条，排序后 cap=1 应保留「高置信 + 最新」
     same = "新浪"
