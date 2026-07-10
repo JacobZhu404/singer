@@ -1,0 +1,126 @@
+{
+  "version": "2.0",
+  "generated_at": "2026-07-10",
+  "date_display": "2026年7月10日 星期五",
+  "title": "自动驾驶晨报 7月10日",
+  "digest": "今日6条自动驾驶与科技生态圈动态精选",
+  "total": 6,
+  "sections": [
+    {
+      "id": "sec-1",
+      "name": "行业动态",
+      "icon": "📊",
+      "count": 2,
+      "items": [
+        {
+          "num": 1,
+          "title": "Waymo在加州可免费乘坐：一项监管特殊规定催生罕见公共试点",
+          "source": "Ars Technica",
+          "url": "https://arstechnica.com/cars/2026/07/free-waymo-rides-in-california-you-can-thank-a-regulatory-quirk/",
+          "date": "2026-07",
+          "dimension": "🌐 生态圈",
+          "summary": "加州一项监管特殊规定使Waymo在部分区域提供免费乘坐，成为自动驾驶商业化中罕见的公共试点，引发关于责任界定与定价模式的讨论。"
+        },
+        {
+          "num": 2,
+          "title": "法规驱动4D毫米波雷达成新宠 车企与产业链共探智能驾驶感知方案",
+          "source": "IoT世界",
+          "url": "https://www.iotworld.com.cn/html/News/202606/cf09f56c41fb2f66.shtml",
+          "date": "2026-06-30",
+          "dimension": "🔧 技术趋势",
+          "summary": "L3/L4强制国标将4D毫米波雷达推向热议焦点，传统3D雷达因视觉算法提升而边缘化的趋势正在逆转，产业链加速布局四维感知能力。"
+        }
+      ]
+    },
+    {
+      "id": "sec-2",
+      "name": "产品发布",
+      "icon": "🚀",
+      "count": 1,
+      "items": [
+        {
+          "num": 3,
+          "title": "地平线HSD V2.0全场景辅助驾驶推送OTA 余凯：年底约20款车型交付",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260710A02KYW00",
+          "date": "2026-07-10",
+          "dimension": "🚀 产品发布",
+          "summary": "地平线6月底推出HSD V2.0，奇瑞iCAR V27首批搭载，今日起分批OTA；余凯称使用地平线智驾芯片车型超千万辆，年底累计约20款征程+HSD车型交付。"
+        }
+      ]
+    },
+    {
+      "id": "sec-3",
+      "name": "模型发布",
+      "icon": "🧠",
+      "count": 1,
+      "items": [
+        {
+          "num": 4,
+          "title": "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5",
+          "source": "新浪科技",
+          "url": "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "Grok 4.5是SpaceXAI上市后首款产品，专为编码和智能体训练，1.5万亿参数V9底座，与Cursor联合训练，Opus级能力定价更低，下月还有升级版本。"
+        }
+      ]
+    },
+    {
+      "id": "sec-4",
+      "name": "前沿论文",
+      "icon": "📄",
+      "count": 1,
+      "items": [
+        {
+          "num": 5,
+          "title": "2026自动驾驶AI最新进展：VLA大模型量产潮（小鹏二代VLA、理想MindVLA-o1）",
+          "source": "新浪科技",
+          "url": "https://k.sina.cn/article_7879848900_1d5acf3c401902wyu4.html",
+          "date": "2026-07-08",
+          "dimension": "📄 技术解读",
+          "summary": "小鹏第二代VLA端到端多模态融合、口语化指令直控车辆；理想MindVLA-o1原生3D ViT融合视觉+激光雷达；NVIDIA Alpamayo-R1引入因果推理，规划精度+12%、99ms低延迟。"
+        }
+      ]
+    },
+    {
+      "id": "sec-5",
+      "name": "其他消息",
+      "icon": "💡",
+      "count": 1,
+      "items": [
+        {
+          "num": 6,
+          "title": "2026中国（南京）具身智能机器人产业展今日开幕 450+企业参展",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260705A08FOG00",
+          "date": "2026-07-10",
+          "dimension": "🤖 具身智能",
+          "summary": "7月10-12日南京举行，450+海内外企业、35000+专业观众，从核心零部件（传感器、执行器、AI芯片）到整机系统（人形/服务/特种机器人）构建完整生态链。"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "all_urls": [
+      "https://arstechnica.com/cars/2026/07/free-waymo-rides-in-california-you-can-thank-a-regulatory-quirk/",
+      "https://www.iotworld.com.cn/html/News/202606/cf09f56c41fb2f66.shtml",
+      "https://news.qq.com/rain/a/20260710A02KYW00",
+      "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml",
+      "https://k.sina.cn/article_7879848900_1d5acf3c401902wyu4.html",
+      "https://news.qq.com/rain/a/20260705A08FOG00"
+    ],
+    "all_titles": [
+      "Waymo在加州可免费乘坐：一项监管特殊规定催生罕见公共试点",
+      "法规驱动4D毫米波雷达成新宠 车企与产业链共探智能驾驶感知方案",
+      "地平线HSD V2.0全场景辅助驾驶推送OTA 余凯：年底约20款车型交付",
+      "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5",
+      "2026自动驾驶AI最新进展：VLA大模型量产潮（小鹏二代VLA、理想MindVLA-o1）",
+      "2026中国（南京）具身智能机器人产业展今日开幕 450+企业参展"
+    ],
+    "merged_from": [
+      "llm_candidates_20260710.json"
+    ],
+    "quality_notes": "联合国ADS GTR全球法规因07-09已收录同事件（六方联合牵头落地），按P4每日去重剔除；日报共6条，质量优先于数量。Grok 4.5、地平线HSD V2.0、南京具身展为07-09~07-10新鲜动态。"
+  }
+}
