@@ -3,7 +3,7 @@
   "generated_at": "2026-07-10",
   "date_display": "2026年7月10日 星期五",
   "title": "自动驾驶晨报 7月10日",
-  "digest": "今日14条：自动驾驶动态 + 头部大模型公司进展",
+  "digest": "今日14条自动驾驶与头部大模型动态",
   "total": 14,
   "sections": [
     {
@@ -62,7 +62,7 @@
       "id": "sec-3",
       "name": "模型发布",
       "icon": "🧠",
-      "count": 1,
+      "count": 6,
       "items": [
         {
           "num": 5,
@@ -72,6 +72,51 @@
           "date": "2026-07-09",
           "dimension": "🧠 模型发布",
           "summary": "英伟达与Hugging Face合作开发面向机器人的开源模型，降低具身智能开发者门槛；延续LeRobot等开源路线，意在抢占机器人时代的基础模型与工具链生态。"
+        },
+        {
+          "num": 6,
+          "title": "OpenAI GPT-5.6系列全面开放 旗舰Sol支持Ultra多代理并行",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260710A03F5J00",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "7月9日OpenAI正式开放GPT-5.6系列：旗舰Sol、均衡Terra、低成本Luna；Sol支持Ultra模式默认协调4个AI代理并行处理复杂任务，多项基准领先且推理成本下降，并支持程序化工具调用。"
+        },
+        {
+          "num": 7,
+          "title": "Meta发布Muse Spark 1.1 小扎三年后重启个人X账号官宣",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260710A01VCW00",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "7月9日深夜扎克伯格重启沉寂三年的X账号，连发三条推文官宣Meta最新模型Muse Spark 1.1，被视为Meta在生成式AI赛道加码的重要信号。"
+        },
+        {
+          "num": 8,
+          "title": "谷歌Gemini 3.5 Pro定档7月17日 200万上下文+深度思考",
+          "source": "站长之家",
+          "url": "https://www.chinaz.com/ainews/29413.shtml",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "据爆料谷歌将于7月17日发布Gemini 3.5 Pro，支持200万超大上下文与全新\"深度思考\"推理模式，面向复杂智能体工作流、子智能体协同与长时程任务，定位高阶推理系统。"
+        },
+        {
+          "num": 9,
+          "title": "Anthropic调整Claude Fable 5访问策略 免费期延至7月12日后续按量计费",
+          "source": "腾讯新闻",
+          "url": "https://news.qq.com/rain/a/20260708A05SL400",
+          "date": "2026-07-08",
+          "dimension": "🧠 模型发布",
+          "summary": "Anthropic将其最强公开模型Claude Fable 5免费访问期延长至7月12日，之后从订阅中剥离、改为按量计费；同期阿里宣布7月10日起全面禁用Claude产品，引发企业AI供给格局关注。"
+        },
+        {
+          "num": 10,
+          "title": "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5",
+          "source": "新浪科技",
+          "url": "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml",
+          "date": "2026-07-09",
+          "dimension": "🧠 模型发布",
+          "summary": "Grok 4.5是SpaceXAI上市后首款产品，专为编码和智能体训练，1.5万亿参数V9底座，与Cursor联合训练，Opus级能力定价更低，下月还有升级版本。"
         }
       ]
     },
@@ -82,7 +127,7 @@
       "count": 1,
       "items": [
         {
-          "num": 6,
+          "num": 11,
           "title": "2026自动驾驶AI最新进展：VLA大模型量产潮（小鹏二代VLA、理想MindVLA-o1）",
           "source": "新浪科技",
           "url": "https://k.sina.cn/article_7879848900_1d5acf3c401902wyu4.html",
@@ -99,7 +144,7 @@
       "count": 3,
       "items": [
         {
-          "num": 7,
+          "num": 12,
           "title": "2026中国（南京）具身智能机器人产业展今日开幕 450+企业参展",
           "source": "腾讯新闻",
           "url": "https://news.qq.com/rain/a/20260705A08FOG00",
@@ -108,7 +153,7 @@
           "summary": "7月10-12日南京举行，450+海内外企业、35000+专业观众，从核心零部件（传感器、执行器、AI芯片）到整机系统（人形/服务/特种机器人）构建完整生态链。"
         },
         {
-          "num": 8,
+          "num": 13,
           "title": "马斯克评审通过Optimus Gen 3 年底量产 具身智能从实验室走向产线",
           "source": "腾讯新闻",
           "url": "https://view.inews.qq.com/a/20260710A02AG700",
@@ -117,66 +162,13 @@
           "summary": "据供应链消息，马斯克在6月底高管会评审通过Optimus Gen 3，要求年底前实现产能目标，否则撤换采购团队；研发三年多的Gen 3终于走出实验室进入量产阶段。"
         },
         {
-          "num": 9,
+          "num": 14,
           "title": "第六镜完成B1轮数千万融资 启动第四代具身智能工业机器人",
           "source": "腾讯新闻",
           "url": "https://news.qq.com/rain/a/20260709A03KF800",
           "date": "2026-07-09",
           "dimension": "💡 其他消息",
           "summary": "第六镜（发源于西北工业大学）完成B1轮数千万融资，昆仑信托与西高投参投、估值超十亿，启动B+轮；公司自2019年布局具身智能，正推第四代工业机器人，已走向海外。"
-        }
-      ]
-    },
-    {
-      "id": "sec-6",
-      "name": "大模型进展",
-      "icon": "🤖",
-      "count": 5,
-      "items": [
-        {
-          "num": 10,
-          "title": "OpenAI GPT-5.6系列全面开放 旗舰Sol支持Ultra多代理并行",
-          "source": "腾讯新闻",
-          "url": "https://news.qq.com/rain/a/20260710A03F5J00",
-          "date": "2026-07-09",
-          "dimension": "🤖 大模型进展",
-          "summary": "7月9日OpenAI正式开放GPT-5.6系列：旗舰Sol、均衡Terra、低成本Luna；Sol支持Ultra模式默认协调4个AI代理并行处理复杂任务，多项基准领先且推理成本下降，并支持程序化工具调用。"
-        },
-        {
-          "num": 11,
-          "title": "Meta发布Muse Spark 1.1 小扎三年后重启个人X账号官宣",
-          "source": "腾讯新闻",
-          "url": "https://news.qq.com/rain/a/20260710A01VCW00",
-          "date": "2026-07-09",
-          "dimension": "🤖 大模型进展",
-          "summary": "7月9日深夜扎克伯格重启沉寂三年的X账号，连发三条推文官宣Meta最新模型Muse Spark 1.1，被视为Meta在生成式AI赛道加码的重要信号。"
-        },
-        {
-          "num": 12,
-          "title": "谷歌Gemini 3.5 Pro定档7月17日 200万上下文+深度思考",
-          "source": "站长之家",
-          "url": "https://www.chinaz.com/ainews/29413.shtml",
-          "date": "2026-07-09",
-          "dimension": "🤖 大模型进展",
-          "summary": "据爆料谷歌将于7月17日发布Gemini 3.5 Pro，支持200万超大上下文与全新\"深度思考\"推理模式，面向复杂智能体工作流、子智能体协同与长时程任务，定位高阶推理系统。"
-        },
-        {
-          "num": 13,
-          "title": "Anthropic调整Claude Fable 5访问策略 免费期延至7月12日后续按量计费",
-          "source": "腾讯新闻",
-          "url": "https://news.qq.com/rain/a/20260708A05SL400",
-          "date": "2026-07-08",
-          "dimension": "🤖 大模型进展",
-          "summary": "Anthropic将其最强公开模型Claude Fable 5免费访问期延长至7月12日，之后从订阅中剥离、改为按量计费；同期阿里宣布7月10日起全面禁用Claude产品，引发企业AI供给格局关注。"
-        },
-        {
-          "num": 14,
-          "title": "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5",
-          "source": "新浪科技",
-          "url": "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml",
-          "date": "2026-07-09",
-          "dimension": "🤖 大模型进展",
-          "summary": "Grok 4.5是SpaceXAI上市后首款产品，专为编码和智能体训练，1.5万亿参数V9底座，与Cursor联合训练，Opus级能力定价更低，下月还有升级版本。"
         }
       ]
     }
@@ -188,15 +180,15 @@
       "https://news.qq.com/rain/a/20260709A05CX000",
       "https://news.qq.com/rain/a/20260710A02KYW00",
       "https://finance.sina.com.cn/stock/t/2026-07-09/doc-inihenca8261429.shtml",
-      "https://k.sina.cn/article_7879848900_1d5acf3c401902wyu4.html",
-      "https://news.qq.com/rain/a/20260705A08FOG00",
-      "https://view.inews.qq.com/a/20260710A02AG700",
-      "https://news.qq.com/rain/a/20260709A03KF800",
       "https://news.qq.com/rain/a/20260710A03F5J00",
       "https://news.qq.com/rain/a/20260710A01VCW00",
       "https://www.chinaz.com/ainews/29413.shtml",
       "https://news.qq.com/rain/a/20260708A05SL400",
-      "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml"
+      "https://finance.sina.com.cn/tech/roll/2026-07-09/doc-inihench4478808.shtml",
+      "https://k.sina.cn/article_7879848900_1d5acf3c401902wyu4.html",
+      "https://news.qq.com/rain/a/20260705A08FOG00",
+      "https://view.inews.qq.com/a/20260710A02AG700",
+      "https://news.qq.com/rain/a/20260709A03KF800"
     ],
     "all_titles": [
       "Waymo在加州可免费乘坐：一项监管特殊规定催生罕见公共试点",
@@ -204,21 +196,21 @@
       "小鹏Robotaxi启动员工内测 何小鹏称迈向\"机器人汽车\"关键一步",
       "地平线HSD V2.0全场景辅助驾驶推送OTA 余凯：年底约20款车型交付",
       "英伟达携手Hugging Face开发机器人开源模型 具身智能基础设施再升级",
-      "2026自动驾驶AI最新进展：VLA大模型量产潮（小鹏二代VLA、理想MindVLA-o1）",
-      "2026中国（南京）具身智能机器人产业展今日开幕 450+企业参展",
-      "马斯克评审通过Optimus Gen 3 年底量产 具身智能从实验室走向产线",
-      "第六镜完成B1轮数千万融资 启动第四代具身智能工业机器人",
       "OpenAI GPT-5.6系列全面开放 旗舰Sol支持Ultra多代理并行",
       "Meta发布Muse Spark 1.1 小扎三年后重启个人X账号官宣",
       "谷歌Gemini 3.5 Pro定档7月17日 200万上下文+深度思考",
       "Anthropic调整Claude Fable 5访问策略 免费期延至7月12日后续按量计费",
-      "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5"
+      "SpaceXAI正式发布Grok 4.5：与Cursor联合训练 SWE-bench Pro 64.7%超越GPT-5.5",
+      "2026自动驾驶AI最新进展：VLA大模型量产潮（小鹏二代VLA、理想MindVLA-o1）",
+      "2026中国（南京）具身智能机器人产业展今日开幕 450+企业参展",
+      "马斯克评审通过Optimus Gen 3 年底量产 具身智能从实验室走向产线",
+      "第六镜完成B1轮数千万融资 启动第四代具身智能工业机器人"
     ],
     "merged_from": [
       "llm_candidates_20260710.json",
       "script_candidates_20260710.json",
       "user_supplement_20260710.md"
     ],
-    "quality_notes": "应运营要求补充：① Robotaxi生态漏报（小鹏Robotaxi内测/Optimus Gen3/NVIDIA×HuggingFace/第六镜），根因为07-10泛搜缺品牌级Robotaxi词+脚本爬虫date曾全空（已修复，collect_news.py现填充日期，search_matrix v3.2补关键词）；② 头部大模型公司进展（OpenAI GPT-5.6/Meta Muse Spark/Google Gemini 3.5 Pro/Anthropic Claude Fable 5/SpaceX Grok 4.5）并入新板块\"大模型进展\"。合计14条。联合国ADS GTR因07-09已收录同事件按P4去重剔除。"
+    "quality_notes": "运营要求将\"大模型进展\"板块并入\"模型发布\"板块（取消独立 sec-6），保留14条；模型发布板块现含英伟达×Hugging Face / OpenAI GPT-5.6 / Meta Muse Spark 1.1 / Google Gemini 3.5 Pro / Anthropic Claude Fable 5 / SpaceX Grok 4.5。联合国ADS GTR因07-09已收录同事件按P4去重剔除。"
   }
 }
