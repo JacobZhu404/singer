@@ -61,3 +61,10 @@
 - 通用关键词用"智能驾驶"、"智驾"替代"自动驾驶"，覆盖面更广
 - 新增聚合门户站点批量扫站(tophub/maomu/huxiu/leiphone等)，溯源原始来源
 - 过滤广告和购物导向的导航内容
+
+## 14. 脚本爬虫 date 全空 = 漏报的深层根因
+- 现象：07-10 晨报漏掉 小鹏Robotaxi内测 / Optimus Gen3量产 / 第六镜融资 等**已在媒体源出现**的新闻
+- 根因：`collect_news.py` 所有 `Candidate(...)` 构造未传 `date` → 300 条脚本候选 date 全空 → 无法进入新鲜度优先队列，LLM 精编阶段根本没见到这些候选（它们本就在新浪tag/36氪/IT之家源里）
+- 修复：`collect_news.py` 新增 `_parse_rss_date`(RSS pubDate/updated) + `_parse_date_from_url`(URL路径日期兜底)；RSS 候选日期填充率 0% → ~90%
+- 配套：`search_matrix.yaml` v3.2 增补 Robotaxi 业务视角(内测/全员会) / 具身融资量产(Optimus Gen3·第六镜·宇树智元) / NVIDIA机器人开源(GR00T·LeRobot·Hugging Face) / 主流大模型发布雷达(5D, 受限范围)
+- 教训：脚本爬虫是"覆盖兜底"，**若候选无日期则形同虚设**；采集阶段必须带日期才能参与新鲜度排序，否则等于没爬

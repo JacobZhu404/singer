@@ -24,6 +24,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import List
 
 try:
@@ -109,6 +110,52 @@ def _match_keywords(title: str) -> str:
     for kw in TIER2_KEYWORDS:
         if kw.lower() in tl:
             return "low"
+    return ""
+
+
+def _parse_rss_date(s: str) -> str:
+    """将 RSS/Atom 日期字符串解析为 YYYY-MM-DD（解析失败返回空串）。
+
+    RSS 用 RFC2822（'Thu, 09 Jul 2026 03:45:00 GMT'），Atom 用 ISO
+    （'2026-07-09T03:45:00Z'）。IT之家/Techmeme/36氪 RSS 均带日期，
+    解析后写入 Candidate.date，使脚本候选能进入新鲜度优先队列，
+    不再因 date 全空而被 LLM 精编阶段忽略。
+    """
+    if not s:
+        return ""
+    s = s.strip()
+    try:
+        dt = parsedate_to_datetime(s)
+        if dt:
+            return dt.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    return ""
+
+
+def _parse_date_from_url(url: str) -> str:
+    """尽力从 URL 路径提取发表日期 YYYY-MM-DD。
+
+    新浪（doc-...2026-07-09）/腾讯（/rain/a/20260710...）/36氪等新闻
+    URL 多内嵌日期；媒体站无 meta 日期时靠此兜底，让脚本候选带日期。
+    """
+    if not url:
+        return ""
+    m = re.search(r"(\d{4})[-/](\d{2})[-/](\d{2})", url)
+    if m:
+        y, mo, d = m.groups()
+        if 2000 <= int(y) <= 2100 and 1 <= int(mo) <= 12 and 1 <= int(d) <= 31:
+            return f"{y}-{mo}-{d}"
+    m2 = re.search(r"/(\d{8})/", url)
+    if m2:
+        s = m2.group(1)
+        if s.startswith(("19", "20")):
+            return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
     return ""
 
 
@@ -221,6 +268,7 @@ def fetch_media_site(name: str, url: str) -> List[Candidate]:
                 title=link["title"],
                 url=href if href.startswith("http") else "",
                 source_name=name,
+                date=_parse_date_from_url(href),
                 origin="script_crawl",
                 confidence=conf,
             ))
@@ -289,10 +337,20 @@ def fetch_rss_feed(name: str, url: str) -> List[Candidate]:
             if not conf:
                 continue
 
+            # RSS 自带 pubDate/updated，优先取；缺失则留空（阶段二可补）
+            date_str = ""
+            for tag in ("pubDate", "published", "updated", "dc:date"):
+                de = entry.find(tag)
+                if de is not None and de.text:
+                    date_str = _parse_rss_date(de.text.strip())
+                    if date_str:
+                        break
+
             items.append(Candidate(
                 title=title,
                 url=href if href.startswith("http") else "",
                 source_name=name,
+                date=date_str,
                 origin="script_crawl",
                 confidence=conf,
             ))
