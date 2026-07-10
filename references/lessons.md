@@ -68,3 +68,10 @@
 - 修复：`collect_news.py` 新增 `_parse_rss_date`(RSS pubDate/updated) + `_parse_date_from_url`(URL路径日期兜底)；RSS 候选日期填充率 0% → ~90%
 - 配套：`search_matrix.yaml` v3.2 增补 Robotaxi 业务视角(内测/全员会) / 具身融资量产(Optimus Gen3·第六镜·宇树智元) / NVIDIA机器人开源(GR00T·LeRobot·Hugging Face) / 主流大模型发布雷达(5D, 受限范围)
 - 教训：脚本爬虫是"覆盖兜底"，**若候选无日期则形同虚设**；采集阶段必须带日期才能参与新鲜度排序，否则等于没爬
+
+## 15. Robotaxi 漏报 = 查询设计(非数据源) + 爬虫源覆盖有限
+- 调查（point 2）：定向搜"小鹏 Robotaxi 内测 何小鹏"→ 5条全中(新浪/腾讯/北京日报/凤凰)，证明 **WebSearch 数据源没问题**；07-10 用的泛搜"Robotaxi 最新进展 商业化"只返回特斯拉迈阿密(7/7)、虎嗅(6/23)等旧/聚合内容，把1天前的小鹏内测埋了
+- 结论：漏报根因是「LLM 搜索缺品牌级 Robotaxi 词(query design) + 脚本爬虫 date 曾全空」，二者已分别由 search_matrix v3.2 关键词 与 日期修复 解决。**不是数据源问题**
+- 爬虫源覆盖局限：collect_news.py 的 RSS/媒体源列表(Techmeme/36氪/IT之家等)不含腾讯/新浪的 Robotaxi 原文页，其关键词过滤器(TIER1/2)也未命中对这些词 → 小鹏Robotaxi/Optimus/第六镜/NVIDIA×HF 等仍主要靠 **LLM 搜索**(现已靠 v3.2 补词)捞到，爬虫本身不会自动抓。未来若要爬虫自动覆盖，需扩充源列表+关键词，而非仅修日期
+- 补充旧报操作：用 `push_today.py --update <media_id>` 走 draft/update（复用 urllib），**勿新建草稿**造成重复；封面复用已上传的 thumb_media_id
+- 新增板块：头部大模型公司进展并入新板块"大模型进展"(sec-6)，需同步改 config.json newsletter.sections + generate_html.py SEC_COLORS/SEC_BADGE_COLORS + parse_cards.py SEC_META；generate_wechat.py 对未知板块有 fallback(用 outline 的 name/icon)，不强制改 config 也能渲染

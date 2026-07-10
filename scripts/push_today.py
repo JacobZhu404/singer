@@ -5,6 +5,7 @@
 正文生成: Jinja2 模板（assets/wechat_article.html.j2）
 """
 import json, re, os, sys
+import argparse
 import urllib.request
 from pathlib import Path
 from datetime import datetime
@@ -161,7 +162,43 @@ def create_draft(token, article):
     return d
 
 
+def update_draft(token, media_id, article):
+    """更新已存在的草稿（draft/update）。articles 为单个对象（非列表）。
+
+    用于「补充内容到已有草稿」场景，复用 urllib（与 create_draft 同根因修复）。
+    """
+    url = f"https://api.weixin.qq.com/cgi-bin/draft/update?access_token={token}"
+    body = json.dumps({
+        "media_id": media_id,
+        "index": 0,
+        "articles": {
+            "title": article["title"],
+            "digest": article["digest"],
+            "content": article["content"],
+            "content_source_url": article.get("content_source_url", ""),
+            "thumb_media_id": article.get("thumb_media_id", ""),
+            "need_open_comment": 1,
+            "only_fans_can_comment": 0,
+        },
+    }, ensure_ascii=False).encode("utf-8")
+    d = _post_json(url, body, timeout=30)
+    if d.get("errcode", 0) != 0:
+        raise RuntimeError(f"更新草稿失败: {d}")
+    print(f"✅ 草稿更新成功! media_id={media_id}")
+    return d
+
+
 def main():
+    parser = argparse.ArgumentParser(description="推送/更新今日晨报到微信公众号草稿箱")
+    parser.add_argument("--update", default="", help="若提供 media_id，则更新该草稿而非新建")
+    parser.add_argument("--date", default=None, help="指定日期 YYYYMMDD（默认今天）")
+    args = parser.parse_args()
+
+    global _DATE_STR, OUTLINE_FILE
+    if args.date:
+        _DATE_STR = args.date
+        OUTLINE_FILE = BASE / f"data/outline_{_DATE_STR}.json"
+
     if not OUTLINE_FILE.exists():
         print(f"❌ outline 不存在: {OUTLINE_FILE}")
         sys.exit(1)
@@ -193,8 +230,12 @@ def main():
     thumb_id = upload_cover(token)
     article["thumb_media_id"] = thumb_id
 
-    print("\n📝 创建草稿...")
-    create_draft(token, article)
+    if args.update:
+        print(f"\n📝 更新草稿 {args.update}...")
+        update_draft(token, args.update, article)
+    else:
+        print("\n📝 创建草稿...")
+        create_draft(token, article)
 
     print("\n🎉 完成! 请到公众号后台「草稿箱」查看并发布。")
 

@@ -32,6 +32,7 @@ SEC_COLORS = {
     3: "f59e0b",
     4: "ec4899",
     5: "ef4444",
+    6: "0ea5e9",
 }
 
 SEC_BADGE_COLORS = {
@@ -40,6 +41,7 @@ SEC_BADGE_COLORS = {
     3: {"bg": "e0e7ff", "fg": "4338ca"},
     4: {"bg": "fce7f3", "fg": "be185d"},
     5: {"bg": "fef3c7", "fg": "b45309"},
+    6: {"bg": "e0f2fe", "fg": "0369a1"},
 }
 
 
