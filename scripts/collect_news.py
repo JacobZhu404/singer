@@ -341,6 +341,8 @@ def fetch_rss_feed(name: str, url: str) -> List[Candidate]:
             date_str = ""
             for tag in ("pubDate", "published", "updated", "dc:date"):
                 de = entry.find(tag)
+                if de is None and tag == "dc:date":
+                    de = entry.find("{http://purl.org/dc/elements/1.1/}date")
                 if de is not None and de.text:
                     date_str = _parse_rss_date(de.text.strip())
                     if date_str:
@@ -523,9 +525,10 @@ def main():
         all_items.extend(api)
 
     all_items = dedup_candidates(all_items)
-    # 稳定排序：高置信优先，同置信内保持来源优先级/插入顺序。
-    # 使 per-source 截断优先保留 high，全局截断也偏向高置信。
+    # 稳定排序：高置信优先，同置信内日期越新越优先。
+    # 使 per-source 截断保留的是各源最新+最高置信的内容。
     _rank = {"high": 0, "low": 1}
+    all_items.sort(key=lambda c: c.date or "0000-00-00", reverse=True)
     all_items.sort(key=lambda c: _rank.get(c.confidence, 2))
     all_items = cap_per_source(all_items, args.per_source)[:args.max_items]
 

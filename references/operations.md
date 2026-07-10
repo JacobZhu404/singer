@@ -20,22 +20,23 @@
 
 | 脚本 | 功能 | 何时运行 |
 |------|------|---------|
-| `scripts/push_today.py` | 读 outline.json → 微信正文(Jinja2) → 推送草稿箱 | 终稿确认后 |
+| `scripts/push_today.py` | 读 outline.json → 微信正文(Jinja2) → 推送/更新草稿箱 | 终稿确认后 |
 | `scripts/verify_links.py` | Curl所有URL，验证HTTP可达 | 生成HTML后，推送前 |
 | `scripts/verify_content.py` | 抓取网页<title>，检查与卡片标题匹配度 | verify_links之后 |
 | `scripts/check_url_quality.py` | 检查URL质量(聚合器/登录墙/首页) | 链接验证后 |
-| `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | 质量检查时 |
+| `scripts/check_freshness.py` | 检查内容新鲜度(>30天标记stale) | merge后、精编前 |
 | `scripts/dedup.py` | 历史去重（URL精确+标题模糊匹配），输出排除报告 | merge内部调用 |
-| `scripts/collect_news.py` | 阶段一·脚本采集（热榜+媒体，双层关键词） | 与LLM搜索并行 |
+| `scripts/collect_news.py` | 阶段一·脚本采集（热榜+媒体+RSS+API，双层关键词） | 与LLM搜索并行 |
 | `scripts/merge_candidates.py` | 阶段二·融合（合并+去重+链接验证+报告） | 采集完成后 |
-| `scripts/generate_html.py` | outline.json → Jinja2模板 → HTML（逐字节可复现） | outline定稿后 |
+| `scripts/generate_html.py` | outline.json → Jinja2模板 → HTML仪表盘 | outline定稿后 |
 | `scripts/generate_wechat.py` | outline.json → 微信公众号正文HTML(Jinja2) | push_today内部调用 |
-| `scripts/generate_links_page.py` | 从仪表盘HTML生成链接汇总页 | HTML定稿后 |
+| `scripts/generate_links_page.py` | 从outline生成链接汇总页 | 推送前 |
+| `scripts/export_mini.py` | outline.json → 小程序数据(miniprogram/data/) | 终稿确认后 |
 | `scripts/test_pipeline.py` | 管线功能测试(9项32检查)，产出到data/test/ | 开发/调试时 |
 | `scripts/utils/outline_schema.py` | pydantic验证outline.json | 生成outline后 |
 | `scripts/utils/candidate_schema.py` | pydantic验证candidates.json | 阶段一产出后 |
 | `scripts/generate_cover.py` | 一键封面管道（ImageGen→裁剪→字体叠加→900×500） | 推送前 |
-| `scripts/update_cover.py` | 更新已有草稿封面图 | 推送后需要更换封面时 |
+| `scripts/update_cover.py` | 更新已有草稿封面图(media_id不变) | 推送后换封面时 |
 
 ---
 
@@ -116,9 +117,13 @@ template.save(f"data/cover_YYYYMMDD.png")
 ```bash
 python3 scripts/push_today.py
 ```
-跳过质量门禁：
+更新已有草稿（补充稿场景）：
 ```bash
-python3 scripts/push_today.py --skip-qa
+python3 scripts/push_today.py --update <media_id>
+```
+指定日期推送：
+```bash
+python3 scripts/push_today.py --date 20260710
 ```
 覆盖配置：
 ```bash
@@ -141,14 +146,13 @@ python3 scripts/push_today.py
 
 ### 公众号脚本行为
 1. 从 config.json 加载配置（环境变量可覆盖）
-2. 质量门禁检查
-3. 读取HTML → 解析标题/摘要/正文
-4. 生成链接汇总页到 data/ 目录
-5. 上传封面图到微信素材库
-6. 按5个版块生成公众号兼容HTML正文（不用 `<a>` 标签）
-7. 概览区用4列 `<table>`（编号|标题|板块|来源）
-8. 设置 `content_source_url` 为 CloudStudio 链接汇总页
-9. 调用 draft/add API 创建草稿
+2. 读取 outline.json → 生成微信正文（Jinja2 模板）
+3. 生成链接汇总页到 data/ 目录
+4. 上传封面图到微信素材库
+5. 按5个版块生成公众号兼容HTML正文（不用 `<a>` 标签）
+6. 概览区用4列 `<table>`（编号|标题|板块|来源）
+7. 设置 `content_source_url` 为链接汇总页部署地址
+8. 调用 draft/add 创建草稿；若传 `--update` 则调用 draft/update 更新已有草稿
 
 ---
 
