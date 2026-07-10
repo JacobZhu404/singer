@@ -12,6 +12,7 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta
+from typing import Optional
 
 # Chinese date patterns to parse
 DATE_PATTERNS = [
@@ -27,7 +28,7 @@ MONTH_CN = {
 }
 
 
-def parse_date(text: str, default_year: int) -> datetime | None:
+def parse_date(text: str, default_year: int) -> Optional[datetime]:
     for pat, style in DATE_PATTERNS:
         m = pat.search(text)
         if not m:
