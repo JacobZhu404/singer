@@ -39,6 +39,26 @@ def parse_date(text: str, default_year: int) -> datetime | None:
     return None
 
 
+def _extract_items(data):
+    """归一化不同输入形态为 [{date, ...}] 扁平列表。
+
+    支持三种真实文件形态：
+      - 扁平数组 [{date,...}]         → 直接用
+      - 候选文件 {candidates:[...]}    → 取 candidates（collect/merge 产出）
+      - 成稿 outline {sections:[{items:[...]}]} → 展平各版块 items
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if isinstance(data.get("candidates"), list):
+            return data["candidates"]
+        if isinstance(data.get("sections"), list):
+            return [it for sec in data["sections"] for it in sec.get("items", [])]
+        if isinstance(data.get("items"), list):
+            return data["items"]
+    raise SystemExit("❌ 无法识别的输入格式：需为扁平数组 / {candidates:[]} / {sections:[{items:[]}]}")
+
+
 def main():
     max_age = 30
     ref_date = datetime.now()
@@ -64,7 +84,7 @@ def main():
         sys.exit(2)
 
     with open(input_path) as f:
-        items = json.load(f)
+        items = _extract_items(json.load(f))
 
     cutoff = ref_date - timedelta(days=max_age)
     fresh = []

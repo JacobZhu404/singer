@@ -10,6 +10,7 @@
     python3 scripts/test_pipeline.py --only dedup       # 只测去重
     python3 scripts/test_pipeline.py --only cover       # 只测封面生成
     python3 scripts/test_pipeline.py --only collect     # 只测热榜爬虫
+    python3 scripts/test_pipeline.py --only dates       # 只测日期解析+截断排序(纯函数,无网络)
     python3 scripts/test_pipeline.py --only checklist   # 只测搜索计划
 
 所有产出写入 data/test/，不污染 data/ 正式文件。
@@ -315,6 +316,47 @@ def test_wechat():
             f"期望{outline.total}, 实际{card_count}")
 
 
+# ─────────────── 日期/排序纯函数（无网络） ───────────────
+
+def test_dates():
+    print("\n=== 日期解析 + 截断排序（纯函数） ===")
+    from collect_news import _parse_rss_date, _parse_date_from_url, cap_per_source
+    from utils.candidate_schema import Candidate
+
+    # _parse_rss_date：RFC2822 / ISO / 空
+    _report("rss date RFC2822",
+            _parse_rss_date("Thu, 09 Jul 2026 03:45:00 GMT") == "2026-07-09")
+    _report("rss date ISO",
+            _parse_rss_date("2026-07-08T10:00:00Z") == "2026-07-08")
+    _report("rss date empty", _parse_rss_date("") == "")
+
+    # _parse_date_from_url：连字符式 / 斜杠分隔的8位紧凑式 / 无日期
+    _report("url date sina(连字符)",
+            _parse_date_from_url("https://finance.sina.com.cn/x/2026-07-09/doc-y.shtml") == "2026-07-09")
+    _report("url date newscn(斜杠8位)",
+            _parse_date_from_url("http://www.news.cn/tech/20260706/d611abc/c.html") == "2026-07-06")
+    _report("url date none",
+            _parse_date_from_url("https://example.com/article/abc.html") == "")
+    # 已知局限：紧凑日期后紧跟字母(如腾讯 /rain/a/20260710A0..)不被识别，需靠 RSS/其他兜底
+    _report("url date tencent紧凑无分隔→空(已知局限)",
+            _parse_date_from_url("https://news.qq.com/rain/a/20260710A067TS00") == "")
+
+    # 截断排序：同源多条，排序后 cap=1 应保留「高置信 + 最新」
+    same = "新浪"
+    items = [
+        Candidate(title="低置信新文", url="u1", source_name=same, date="2026-07-10", origin="script_crawl", confidence="low"),
+        Candidate(title="高置信旧文", url="u2", source_name=same, date="2026-07-05", origin="script_crawl", confidence="high"),
+        Candidate(title="高置信新文", url="u3", source_name=same, date="2026-07-10", origin="script_crawl", confidence="high"),
+        Candidate(title="高置信无日期", url="u4", source_name=same, date="", origin="script_crawl", confidence="high"),
+    ]
+    _rank = {"high": 0, "low": 1}
+    items.sort(key=lambda c: c.date or "0000-00-00", reverse=True)
+    items.sort(key=lambda c: _rank.get(c.confidence, 2))
+    capped = cap_per_source(items, 1)
+    _report("cap keeps newest high", len(capped) == 1 and capped[0].title == "高置信新文",
+            capped[0].title if capped else "空")
+
+
 # ─────────────── main ───────────────
 
 ALL_TESTS = {
@@ -327,6 +369,7 @@ ALL_TESTS = {
     "merge": test_merge,
     "checklist": test_checklist,
     "wechat": test_wechat,
+    "dates": test_dates,
 }
 
 
