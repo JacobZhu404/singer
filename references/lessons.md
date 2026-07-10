@@ -75,3 +75,8 @@
 - 爬虫源覆盖局限：collect_news.py 的 RSS/媒体源列表(Techmeme/36氪/IT之家等)不含腾讯/新浪的 Robotaxi 原文页，其关键词过滤器(TIER1/2)也未命中对这些词 → 小鹏Robotaxi/Optimus/第六镜/NVIDIA×HF 等仍主要靠 **LLM 搜索**(现已靠 v3.2 补词)捞到，爬虫本身不会自动抓。未来若要爬虫自动覆盖，需扩充源列表+关键词，而非仅修日期
 - 补充旧报操作：用 `push_today.py --update <media_id>` 走 draft/update（复用 urllib），**勿新建草稿**造成重复；封面复用已上传的 thumb_media_id
 - 新增板块：头部大模型公司进展并入新板块"大模型进展"(sec-6)，需同步改 config.json newsletter.sections + generate_html.py SEC_COLORS/SEC_BADGE_COLORS + parse_cards.py SEC_META；generate_wechat.py 对未知板块有 fallback(用 outline 的 name/icon)，不强制改 config 也能渲染
+
+## 16. 发布后清理中间产物 + 条目归类约定
+- 清理：每次晨报发布后，data/ 下的中间产物（*_candidates_*.json、merged_candidates_*.json、merge_report_*.md）应物理删除，/tmp 临时 flat 文件不再留作噪声；交付物（outline_*.json / 自动驾驶晨报_*.html / links_*.html / cover_*_fixed.png）保留。
+- 中间产物应尽早纳入 .gitignore（data/cover_src/、*candidates*.json、merge_report*.md 等），避免反复出现未跟踪文件污染 working tree。
+- 条目归类约定：明确进入「量产/交付里程碑」的新闻（如 Optimus Gen 3 年底量产、地平线 HSD OTA 推送）归入「产品发布」板块，而非兜底「其他消息」；"其他消息"仅留无明确板块归属的杂项（如产业展、弱相关融资）。
