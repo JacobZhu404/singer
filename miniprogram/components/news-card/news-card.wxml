@@ -1,0 +1,10 @@
+<view class="card" bindtap="onCopy" hover-class="card-hover">
+  <view class="meta">
+    <text class="num">{{num}}</text>
+    <text class="source">{{item.source}} · {{item.date}}</text>
+    <text class="dim" wx:if="{{item.dimension}}">{{item.dimension}}</text>
+  </view>
+  <view class="title">{{item.title}}</view>
+  <view class="summary">{{item.summary}}</view>
+  <view class="copy-hint">📋 点击复制原文链接</view>
+</view>

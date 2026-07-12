@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "news-card": "/components/news-card/news-card"
+  },
+  "navigationBarTitleText": "自动驾驶晨报"
+}

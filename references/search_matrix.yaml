@@ -1,0 +1,370 @@
+# 自动驾驶晨报 — 搜索矩阵
+# LLM 按此矩阵执行搜索，覆盖 10 组 + 热榜，确保不遗漏
+# 脚本按 media_crawl 配置爬取媒体站点，与 LLM 搜索互补
+
+meta:
+  version: "3.2"
+  updated: "2026-07-10"
+  description: "双轨采集: LLM WebSearch(10组+5D) + 脚本爬虫(热榜+媒体)。去重后合并。v3.2 增补 Robotaxi 业务视角/具身融资量产/NVIDIA机器人开源/主流大模型发布雷达。"
+
+# ────────────────────────── 时效性规则 ──────────────────────────
+
+freshness:
+  default_days: 3
+  exception_days: 14
+  exception_triggers:
+    - "全球首创"
+    - "里程碑法规"
+    - "百亿融资"
+    - "颠覆性技术"
+    - "国际标准获批"
+
+# ────────────────────────── 热榜数据源（脚本爬取） ──────────────────────────
+
+hotlist:
+  - rank: "P1"
+    url: "https://tophub.today"
+    method: "script"
+    description: "日热榜（微博/知乎/微信/36氪/IT之家/虎嗅/量子位）"
+    keywords: ["智能驾驶", "自动驾驶", "robotaxi", "Waymo", "Tesla", "萝卜快跑", "华为智驾", "具身智能", "小鹏Robotaxi", "Optimus", "GPT-5.6", "Muse Spark", "Grok 4.5"]
+
+  - rank: "P2"
+    url: "https://buzzing.cc"
+    method: "script"
+    description: "海外信息差（HN/Reddit/彭博/经济学人）"
+    keywords: ["autonomous driving", "robotaxi", "Waymo", "Tesla FSD", "self-driving", "humanoid robot", "Optimus", "GR00T", "LeRobot"]
+
+# ────────────────────────── 媒体站点爬取（脚本） ──────────────────────────
+# collect_news.py 直接爬取以下站点首页/分类页，用关键词过滤智驾内容
+# 与 LLM WebSearch 互补：脚本保证覆盖面，LLM 保证判断力
+
+media_crawl:
+  # tier-1: 高置信精确词（直接匹配即收录）— collect_news.py 直接消费
+  # 条目可为单词，或「别名组」子列表 [中文, 英文/品牌]，命中任一即算 high。
+  # ⚠️ 只放「纯智驾」词/公司：名字≈必然是智驾语境。多业务公司（小米/理想/
+  #    华为/百度/Tesla 等）放 tier2 或用复合词，否则手机/整车销量新闻会误判 high。
+  keywords_tier1:
+    - "智驾"
+    - "自动驾驶"
+    - "智能驾驶"
+    - "无人驾驶"
+    - "robotaxi"
+    - "端到端"
+    - ["vla", "vision language action"]
+    - ["世界模型", "world model"]
+    - ["纯视觉", "vision-only"]
+    - "激光雷达"
+    - "具身智能"
+    - "萝卜快跑"
+    - "华为智驾"
+    - "乾崑"
+    # ── 纯智驾公司别名组（中文 / 英文品牌）──
+    - ["waymo"]
+    - ["fsd", "tesla fsd", "full self-driving"]
+    - ["小马智行", "pony.ai"]
+    - ["文远知行", "weride"]
+    - ["元戎启行", "deeproute"]
+    - ["momenta", "魔门塔"]
+    - ["wayve"]
+    - ["zoox"]
+    - ["nuro"]
+    # ── 多业务公司的智驾子品牌/产品（品牌≈必是智驾语境，故仍归 high）──
+    #    注：公司裸名（小米/理想/蔚来/华为/百度）不入 tier1，避免手机/整车
+    #    销量新闻误判；且子串匹配下「公司 智驾」这类复合词对中文标题几乎不生效，
+    #    真正会出现在标题里的是下列子品牌 token。
+    - ["xngp", "xpeng ngp", "小鹏智驾"]
+    - ["cybercab"]
+    - ["autopilot"]
+    - ["卓驭", "大疆车载"]
+    - ["apollo go", "百度apollo"]
+    - ["drive thor", "drive orin", "drive agx"]
+    - ["noa", "城市noa", "高速noa", "领航辅助"]
+
+  # tier-2: 低置信泛化词（匹配后标记 low confidence，宁多勿漏）— collect_news.py 直接消费
+  keywords_tier2:
+    - "汽车"
+    - "车企"
+    - "新能源"
+    - "电动"
+    - "出行"
+    - "机器人"
+    - "芯片"
+    - "半导体"
+    - "大模型"
+    - "ai"
+    - "人工智能"
+    - "llm"
+    - "gpt"
+    - "车规"
+    - "域控"
+    - "adas"
+    - "lidar"
+    - "智能网联"
+
+  sites:
+    - name: "新浪(无人驾驶)"
+      url: "https://tags.news.sina.com.cn/无人驾驶"
+      priority: 1
+      note: "命中率46%, 最高产"
+
+    - name: "雷锋网(智能驾驶)"
+      url: "https://www.leiphone.com/category/transportation"
+      priority: 2
+      note: "命中率30%, 专业垂直"
+
+    - name: "36氪(科技)"
+      url: "https://36kr.com/information/technology/"
+      priority: 3
+      note: "命中率7%, 覆盖面广"
+
+    - name: "量子位"
+      url: "https://www.qbitai.com/"
+      priority: 4
+      note: "AI+智驾交叉"
+
+    - name: "智东西"
+      url: "https://zhidx.com/"
+      priority: 5
+      note: "智能硬件+智驾"
+
+    - name: "盖世汽车"
+      url: "https://auto.gasgoo.com/"
+      priority: 6
+      note: "汽车行业专业媒体"
+
+    - name: "IT之家(汽车)"
+      url: "https://auto.ithome.com/"
+      priority: 7
+      note: "汽车/智驾垂直页，更新极早（/tech/ 已404，改用 auto 子站）"
+
+    - name: "快科技"
+      url: "https://www.mydrivers.com/"
+      priority: 8
+      note: "车企发布会、L3落地快讯（search.aspx 已404，改用首页+关键词过滤；站点为gbk编码）"
+
+    - name: "TechCrunch"
+      url: "https://techcrunch.com/category/transportation/"
+      priority: 9
+      note: "海外Robotaxi、初创融资动态"
+
+    - name: "电子发烧友(智能驾驶)"
+      url: "https://www.elecfans.com/"
+      priority: 10
+      note: "硬件视角：激光雷达/车载芯片/毫米波雷达/车路协同"
+
+  # ────────── RSS 订阅源（标准化XML，无反爬，稳定性高） ──────────
+  feeds:
+    - name: "IT之家RSS"
+      url: "https://www.ithome.com/rss/"
+      priority: 1
+      note: "国内科技快讯RSS"
+
+    - name: "TechmemeRSS"
+      url: "https://www.techmeme.com/feed.xml"
+      priority: 2
+      note: "全球科技聚合RSS，含自动驾驶"
+
+    - name: "36氪RSS"
+      url: "https://36kr.com/feed"
+      priority: 3
+      note: "产业深度+融资"
+
+  # ────────── API 数据源（官方开放接口，零反爬） ──────────
+  apis:
+    - name: "HackerNews"
+      search_endpoint: "https://hn.algolia.com/api/v1/search"
+      query: "autonomous driving"
+      max_items: 50
+      priority: 1
+      note: "官方Algolia搜索API，零反爬，单次请求按关键词返回技术向新闻（比Firebase topstories逐条取详情更快、不会挂起）"
+
+  # 以下站点不可爬取（WAF/JS渲染/下线），仅通过 LLM WebSearch 覆盖
+  not_scrapable:
+    - "huxiu.com — WAF拦截，LLM用site:搜索覆盖"
+    - "jiqizhixin.com — 着陆页跳转，LLM用site:搜索覆盖"
+    - "latepost.com — JS渲染，LLM用site:搜索覆盖"
+    - "newsnow.busiyi.world — SPA，需headless浏览器"
+    - "appso.com — 站点已下线，无智驾内容"
+
+# ────────────────────────── 10 组 LLM 搜索 ──────────────────────────
+
+search_groups:
+  - id: 1
+    name: "头部企业动向"
+    priority: 10
+    section: "行业动态"
+    keywords:
+      - "智能驾驶 智驾 自动驾驶"
+      - "Waymo"
+      - "Tesla FSD Cybercab"
+      - "百度Apollo 萝卜快跑"
+      - "小马智行 Pony.ai"
+      - "文远知行 WeRide"
+      - "滴滴 自动驾驶"
+      - "元戎启行 DeepRoute"
+      - "华为 乾崑 智驾"
+      - "大疆 卓驭 智驾"
+      - "小鹏 XNGP VLA 智驾"
+      - "理想 AD 智驾"
+      - "蔚来 智驾"
+      - "小米 智驾"
+      - "Momenta"
+      - "地平线 征程"
+      - "英伟达 NVIDIA Drive Thor"
+      - "Uber robotaxi"
+      - "Wayve"
+      - "小鹏 Robotaxi 内测 全员会"
+      - "特斯拉 Cybercab Robotaxi 内测 规模化"
+      - "Robotaxi 内测 员工测试 商业化 落地"
+    tech_keywords: ["端到端 E2E 智驾", "无图 NOA", "激光雷达 LiDAR", "纯视觉 vision-only", "车规级 芯片 域控", "Robotaxi 内测 规模化 运营"]
+
+  - id: 2
+    name: "政策法规"
+    priority: 9
+    section: "行业动态"
+    keywords:
+      - "智能驾驶 政策 法规 标准"
+      - "L3 L4 准入 国标"
+      - "联合国 WP29 法规"
+      - "工信部 智能驾驶 标准"
+      - "工信部 NVDB AI编程工具 安全后门 风险提示"
+      - "自动驾驶 技术法规 获批"
+
+  - id: 3
+    name: "行业融资与商业"
+    priority: 8
+    section: "行业动态"
+    keywords:
+      - "robotaxi 融资 投资"
+      - "智能驾驶 量产 商业化"
+      - "智驾 合作 联盟"
+      - "智驾 芯片 域控制器"
+
+  - id: 4
+    name: "前沿论文"
+    priority: 7
+    section: "前沿论文"
+    notes: "必须搜索原始论文链接(arxiv.org/openaccess.thecvf.com/openreview.net)"
+    keywords:
+      - "CVPR 2026 autonomous driving paper site:openaccess.thecvf.com"
+      - "end-to-end autonomous driving paper site:arxiv.org 2026"
+      - "world model driving paper site:arxiv.org 2026"
+      - "VLA vision language action driving site:arxiv.org 2026"
+      - "VLA faithfulness Pinocchio site:arxiv.org 2026"
+      - "world model open source embodied 世界模型 开源 site:arxiv.org 2026"
+      - "autonomous driving dataset benchmark site:arxiv.org 2026"
+
+  - id: 5
+    name: "事故舆情 + 中美大厂AI动态"
+    priority: 6
+    section: "其他消息"
+    subgroups:
+      - name: "5A — 事故舆情"
+        keywords:
+          - "智驾 事故 召回 投诉"
+          - "智能驾驶 事故 撞车"
+          - "智驾 离职 人事变动"
+      - name: "5B — 国内大厂AI"
+        keywords:
+          - "美团 龙猫 LongCat 大模型"
+          - "字节 豆包 大模型 战略"
+          - "腾讯 混元 大模型 落地"
+          - "百度 文心 大模型 应用"
+          - "华为 盘古 大模型 智驾"
+      - name: "5C — 美国大厂AI"
+        keywords:
+          - "Tesla AI 员工 政策 限制"
+          - "Google Amazon Meta AI 内部 政策"
+          - "Grok 4.5 SpaceXAI xAI Cursor 法律 金融 编程 发布 对标 Claude Opus"
+          - "Claude Code 安全后门 工信部 NVDB 预警 Anthropic"
+          - "美国 科技企业 AI 支出 管控 2026"
+      - name: "5D — 主流大模型发布（受限雷达：仅记与智驾/具身能力相关的 Agent/编程/多模态进展）"
+        keywords:
+          - "OpenAI GPT-5.6 Sol Terra Luna Ultra 多智能体 发布"
+          - "Meta Muse Spark 1.1 发布 Agentic 编程"
+          - "Anthropic Claude 发布 新模型 编程 智驾"
+          - "Google Gemini 发布 多模态 智能体"
+          - "xAI Grok 发布 Cursor 法律 金融 编程"
+        note: "纯大模型发布若无智驾/具身直接关联，阶段二精编应判低相关剔除；本组仅作'AI能力底座'雷达，不凑数"
+
+  - id: 6
+    name: "行业峰会"
+    priority: 5
+    section: "行业动态"
+    keywords:
+      - "CES 自动驾驶"
+      - "车展 亮相 自动驾驶"
+      - "智能驾驶 峰会 论坛"
+
+  - id: 7
+    name: "重点媒体定向"
+    priority: 4
+    section: "按内容归入对应版块"
+    keywords:
+      - "site:36kr.com 智能驾驶"
+      - "site:huxiu.com 智能驾驶"
+      - "site:latepost.com 智能驾驶"
+      - "site:leiphone.com 智能驾驶"
+      - "site:qbitai.com 智能驾驶"
+      - "site:jiqizhixin.com 自动驾驶"
+      - "site:zhidx.com 智能驾驶"
+      - "新智驾"
+
+  - id: 8
+    name: "具身智能"
+    priority: 3
+    section: "其他消息"
+    keywords:
+      - "具身智能 embodied AI"
+      - "人形机器人 humanoid robot"
+      - "Tesla Optimus Gen 3 量产 供应链 年底"
+      - "Figure AI robot"
+      - "宇树 智元 银河通用 机器人 融资"
+      - "具身智能 工业机器人 融资 B轮"
+      - "NVIDIA Isaac GR00T Hugging Face LeRobot 机器人 开源模型"
+      - "机器人 开源基础模型 开源"
+
+  - id: 9
+    name: "AI基础设施 + 半导体突破"
+    priority: 8
+    section: "行业动态"
+    subgroups:
+      - name: "9A — AI基础设施"
+        keywords:
+          - "大模型 自动驾驶 应用 落地"
+          - "AI 算力 智能驾驶 芯片"
+          - "国产芯片 自动驾驶 训练 推理"
+          - "世界模型 小时级 实时生成 开源 蚂蚁灵波 LingBot"
+          - "Scaling Law 自动驾驶 端到端"
+      - name: "9B — 半导体突破"
+        keywords:
+          - "芯片 架构 突破 新范式 2026"
+          - "半导体 理论 新定律 论文"
+          - "华为 半导体 芯片 理论 突破"
+          - "台积电 制程 突破 2026"
+
+  - id: 10
+    name: "聚合门户扫站"
+    priority: 2
+    section: "按内容归入对应版块"
+    keywords:
+      - "site:guancha.cn 智能驾驶"
+      - "site:leiphone.com 智能驾驶"
+
+# ────────────────────────── 覆盖企业列表 ──────────────────────────
+
+companies:
+  - Waymo, Tesla, 百度Apollo, 小马智行, 文远知行
+  - 滴滴自动驾驶, 元戎启行, 华为, 大疆(卓驭)
+  - 小鹏, 理想, 蔚来, 小米, Momenta, 地平线, 英伟达
+  - Uber, Wayve
+  - Google, Amazon, Meta, OpenAI, Anthropic, 台积电
+
+# ────────────────────────── 不凑数原则 ──────────────────────────
+
+quality:
+  no_pad_sections: true
+  min_relevance: "行业关注度或实际影响"
+  stale_drop_days: 30
+  url_authenticity: "所有URL必须从WebSearch结果中提取,严禁编造"
+  date_verification: "必须用WebFetch验证每篇文章的实际发表日期"

@@ -1,0 +1,31 @@
+{
+  "pages": [
+    "pages/issue/issue",
+    "pages/archive/archive"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#064e3b",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "自动驾驶晨报",
+    "backgroundColor": "#f0fdf4",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#6b7280",
+    "selectedColor": "#059669",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/issue/issue",
+        "text": "今日"
+      },
+      {
+        "pagePath": "pages/archive/archive",
+        "text": "往期"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

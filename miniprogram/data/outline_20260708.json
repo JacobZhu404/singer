@@ -1,0 +1,180 @@
+{
+  "date": "20260708",
+  "date_display": "2026年7月8日 星期三",
+  "title": "自动驾驶晨报 7月8日",
+  "digest": "今日15条自动驾驶与科技生态圈动态精选",
+  "total": 15,
+  "sections": [
+    {
+      "id": "sec-1",
+      "name": "行业动态",
+      "icon": "📊",
+      "items": [
+        {
+          "num": 1,
+          "title": "华为乾崑回应智驾里程断网后仍滚动：前端页面平滑处理所致",
+          "source": "新浪科技",
+          "url": "https://finance.sina.com.cn/tech/shenji/2026-07-08/doc-inifzwqn4908263.shtml",
+          "date": "2026-07-08",
+          "dimension": "🏢 企业动向",
+          "summary": "针对断网后累计辅助驾驶里程仍滚动上涨的质疑，华为乾崑说明系前端展示平滑处理所致，强调真实里程已超125亿公里。"
+        },
+        {
+          "num": 2,
+          "title": "工信部辟谣智驾芯片自主化率要求，小米集团-W领涨港股汽车",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/jjxw/2026-07-08/doc-inihapne4801075.shtml",
+          "date": "2026-07-08",
+          "dimension": "📜 政策法规",
+          "summary": "工信部7月7日辟谣「新车智驾芯片自主化率不低于70%」等不实信息，澄清相关规范未出台或强制执行，市场担忧消除、汽车股走强。"
+        },
+        {
+          "num": 3,
+          "title": "DeepSeek被曝自研AI推理芯片，以减少对英伟达华为依赖",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/stock/t/2026-07-08/doc-inihapne4877939.shtml",
+          "date": "2026-07-08",
+          "dimension": "🏢 企业动向",
+          "summary": "据路透社7月7日报道，DeepSeek正开发自研AI推理芯片、项目启动约一年仍处早期，已接触芯片设计与代工方，以降低对英伟达、华为依赖。"
+        },
+        {
+          "num": 4,
+          "title": "特斯拉Robotaxi正式登陆美国迈阿密，股价涨超6%",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/jjxw/2026-07-07/doc-inifyvaw8391559.shtml",
+          "date": "2026-07-07",
+          "dimension": "🏢 企业动向",
+          "summary": "特斯拉Robotaxi服务继奥斯汀后登陆迈阿密，商业化版图再扩张；消息刺激股价涨约6.7%，总市值达1.58万亿美元。"
+        },
+        {
+          "num": 5,
+          "title": "杭州具身智能千亿集群提速，全国首部地方性法规施行、宇树云深处冲刺IPO",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/roll/2026-07-07/doc-inifxtra1500111.shtml",
+          "date": "2026-07-07",
+          "dimension": "🌐 生态圈",
+          "summary": "全国首部具身智能机器人地方性法规在杭州施行，宇树、云深处等头部企业冲刺科创板；当地已集聚机器人企业700余家，2025年集群产值1068亿元。"
+        },
+        {
+          "num": 6,
+          "title": "福瑞泰克获滴滴自动驾驶项目定点",
+          "source": "盖世汽车",
+          "url": "https://auto.gasgoo.com/news/202607/8I70464856C601.shtml",
+          "date": "2026-07-08",
+          "dimension": "🏢 企业动向",
+          "summary": "福瑞泰克宣布获得滴滴自动驾驶项目定点，国产智驾零部件供应商在Robotaxi前装供应链中的角色进一步巩固。"
+        },
+        {
+          "num": 7,
+          "title": "Momenta港股今日上市，IPO募资7.51亿美元成「物理AI第一股」",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/stock/usstock/c/2026-07-08/doc-inihaxzy4769297.shtml",
+          "date": "2026-07-08",
+          "dimension": "🏢 企业动向",
+          "summary": "自动驾驶供应商Momenta正式登陆港交所，IPO募资约7.51亿美元、被冠以「物理AI第一股」，通用汽车、奔驰、比亚迪等参与投资，官方称量产搭载量已突破百万辆，智驾供应商资本化提速。"
+        }
+      ]
+    },
+    {
+      "id": "sec-2",
+      "name": "产品发布",
+      "icon": "🚀",
+      "items": [
+        {
+          "num": 8,
+          "title": "特斯拉Cybercab将搭载更强FSD硬件，内存超32GB",
+          "source": "IT之家",
+          "url": "https://finance.sina.com.cn/tech/digi/2026-07-08/doc-inihapne4828481.shtml",
+          "date": "2026-07-08",
+          "dimension": "🚀 产品发布",
+          "summary": "据可靠信源，即将量产的Cybercab搭载的FSD计算机性能强于Model 3/Y等量产车，算力平台大幅升级、内存超32GB，专为无人出租车打造。"
+        },
+        {
+          "num": 9,
+          "title": "小米YU7 GT完成全球首个纽北自动驾驶圈速测试",
+          "source": "网通社",
+          "url": "https://k.sina.com.cn/article_7880068314_1d5b04cda01901b86c.html",
+          "date": "2026-07-08",
+          "dimension": "🚀 产品发布",
+          "summary": "小米YU7 GT以全自动驾驶完成纽北赛道圈速测试，号称全球首款达成该成绩的量产车型，展示其智能驾驶在极限工况下的能力边界。"
+        },
+        {
+          "num": 10,
+          "title": "至简动力i7Pro完成首批百台交付，落成全球首条CNC智能化具身机器人产线",
+          "source": "证券日报",
+          "url": "http://www.zqrb.cn/gscy/gongsi/2026-07-08/A1783412514135.html",
+          "date": "2026-07-08",
+          "dimension": "🤖 具身智能",
+          "summary": "杭州至简动力宣布首款全场景机器人i7Pro完成首批百台交付，并落成全球首条CNC智能化具身机器人产线，具身智能迈向量产交付。"
+        }
+      ]
+    },
+    {
+      "id": "sec-3",
+      "name": "模型发布",
+      "icon": "🧠",
+      "items": [
+        {
+          "num": 11,
+          "title": "蚂蚁灵波开源LingBot 2.0系列：VLA具身操作基座+Depth空间感知双模型",
+          "source": "量子位",
+          "url": "https://www.qbitai.com/2026/07/445668.html",
+          "date": "2026-07-08",
+          "dimension": "🧠 模型发布",
+          "summary": "蚂蚁灵波同步开源新一代具身基座LingBot-VLA 2.0（基于6万小时物理数据训练、支持20+机器人构型）并发布空间感知模型LingBot-Depth 2.0（面向深度估计与三维理解），形成「感知-动作」闭环能力。"
+        }
+      ]
+    },
+    {
+      "id": "sec-4",
+      "name": "前沿论文",
+      "icon": "📄",
+      "items": [
+        {
+          "num": 12,
+          "title": "全球首个50FPS实时交互世界模型MoWorld发布，全栈国产NPU、零英伟达",
+          "source": "36氪",
+          "url": "https://36kr.com/p/3886462577094915",
+          "date": "2026-07-08",
+          "dimension": "📄 前沿研究",
+          "summary": "魔芯科技联合浙江大学潘云鹤院士团队发布MoWorld——全球首个Flash World Model，也是首个全栈基于国产NPU构建的实时交互世界模型，将交互帧率推上50FPS，摆脱对英伟达GPU的依赖，世界模型迈入实时时代。"
+        }
+      ]
+    },
+    {
+      "id": "sec-5",
+      "name": "其他消息",
+      "icon": "💡",
+      "items": [
+        {
+          "num": 13,
+          "title": "豆包、千问7月15日下线自建智能体，AI拟人互动合规整改启动",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/wm/2026-07-04/doc-inifrnzw2237564.shtml",
+          "date": "2026-07-04",
+          "dimension": "📜 AI监管",
+          "summary": "字节豆包与阿里通义千问7月4日同步宣布将于7月15日下线用户自建智能体，与《人工智能拟人化互动服务管理暂行办法》实施节奏吻合，行业进入合规整改。"
+        },
+        {
+          "num": 14,
+          "title": "特斯拉2025影响力报告：开启辅助驾驶后重大碰撞率为美国平均1/8",
+          "source": "新浪财经",
+          "url": "https://finance.sina.com.cn/tech/discovery/2026-07-08/doc-inihattw8325513.shtml",
+          "date": "2026-07-08",
+          "dimension": "📊 安全数据",
+          "summary": "特斯拉《2025影响力报告》显示，开启辅助驾驶车辆重大碰撞率降至美国平均1/8、轻微碰撞1/7，累计行驶超170亿公里、平均节能5%。"
+        },
+        {
+          "num": 15,
+          "title": "具身智能企业墨奇智能获超10亿融资",
+          "source": "盖世汽车",
+          "url": "https://autodata.gasgoo.com/information/imView/articleDetails/2074691484903952384",
+          "date": "2026-07-08",
+          "dimension": "🤖 具身智能",
+          "summary": "具身智能企业墨奇智能完成超10亿元融资，资本持续加码具身智能赛道，产业正从Demo演示向量产与商业闭环切换。"
+        }
+      ]
+    }
+  ],
+  "editor_note": "V2精编+去重修正：新增#7 Momenta港股上市（纠正前次误将7/8上市当7/7去重剔除）、#12 MoWorld 50FPS实时世界模型。#11/#12 原为蚂蚁灵波VLA 2.0与Depth 2.0两条独立条目（同主体同日同信源），按P4合并为单条'LingBot 2.0系列：VLA+Depth双模型'，删除Depth独立URL(qbitai/445184)。最终15条(行业7/产品3/模型1/论文1/其他3)。已排除7/7已发稿（易控智驾、蔚来OTA、卓驭、Wayve/GAIA-1等）。#13豆包千问下线智能体适用P6重大例外放宽收录。"
+}

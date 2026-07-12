@@ -1,0 +1,21 @@
+{
+  "description": "自动驾驶晨报小程序",
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "bigPackageSizeSupport": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.0.0",
+  "appid": "wx4bd59eaceaddd0cf",
+  "projectname": "ad-newsletter-miniprogram",
+  "condition": {}
+}
