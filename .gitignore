@@ -63,5 +63,5 @@ data/tdx_vipdoc.zip
 backtest/results/*.json
 backtest/results/*.csv
 
-# ServerChan config (sensitive)
-serverchan_config.json
+# ServerChan config
+# serverchan_config.json (已提交到仓库，包含 SendKey)
