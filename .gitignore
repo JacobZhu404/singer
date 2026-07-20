@@ -53,3 +53,15 @@ venv/
 
 # Logs
 *.log
+
+# Stock data cache (large, auto-generated, should NOT be committed)
+data/cache/
+data/tdx_vipdoc/
+data/tdx_vipdoc.zip
+
+# Backtest results (large, auto-generated)
+backtest/results/*.json
+backtest/results/*.csv
+
+# ServerChan config (sensitive)
+serverchan_config.json
