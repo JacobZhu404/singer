@@ -5,38 +5,15 @@ __pycache__/
 dist/
 build/
 
-# Daily output: cover images (large, auto-generated)
-data/cover_*.png
-data/cover_*.jpg
-
-# ImageGen raw images (large)
-data/A_*
-data/科技封面*
-data/cover_src/
-
-# Test output (isolated)
-data/test/
-
-# Temporary / generated data
-data/search_plan_*
-data/backup_candidates_*
-data/script_candidates_*
-data/llm_candidates_*
-data/merged_candidates_*
-data/merge_report_*
-data/dedup_report.md
-data/deduped.json
-data/wechat_*.html
-
-# Legacy iteration artifacts
-data/wechat_clone*
-data/wechat_preview*
-data/wechat_pro*
-data/wechat_ready*
-data/wechat_article*
-data/dashboard_*
-data/index.html
-data/publish_guide.txt
+# Data
+data/cache/**/*.csv
+data/cache/backup_*/
+data/cache/temp/
+data/cache/meta.json
+data/last_screen_result.json
+data/portfolio.json
+data/tdx_vipdoc/
+*.sqlite
 
 # Environment
 .env
@@ -53,15 +30,11 @@ venv/
 
 # Logs
 *.log
+logs/
+data/cache/*.json
 
-# Stock data cache (large, auto-generated, should NOT be committed)
-data/cache/
-data/tdx_vipdoc/
-data/tdx_vipdoc.zip
-
-# Backtest results (large, auto-generated)
-backtest/results/*.json
-backtest/results/*.csv
-
-# ServerChan config
-# serverchan_config.json (已提交到仓库，包含 SendKey)
+# 回测自动生成的带时间戳结果转储（保留人工策展的命名结果）
+backtest/results/backtest_*_*.json
+backtest/results/composite_backtest_*.json
+backtest/results/chanlun_sweep_*.json
+backtest/results/.checkpoint*.json

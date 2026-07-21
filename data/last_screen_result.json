@@ -1,5 +1,0 @@
-{
-  "status": "error",
-  "error": "股票列表为空（数据源 API 与本地缓存均不可用），无法筛选",
-  "comprehensive_picks": []
-}

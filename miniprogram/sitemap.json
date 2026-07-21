@@ -1,9 +1,0 @@
-{
-  "desc": "关于本 Mini Program 的索引规则",
-  "rules": [
-    {
-      "action": "allow",
-      "page": "*"
-    }
-  ]
-}
