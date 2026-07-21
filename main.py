@@ -33,6 +33,10 @@ def main():
                                choices=["主板", "创业板", "科创板", "all"])
     screen_parser.add_argument("--top", "-n", type=int, default=10)
     screen_parser.add_argument("--json", action="store_true", help="输出 JSON")
+    screen_parser.add_argument("--push", action="store_true",
+                               help="筛选完成后通过 Server 酱推送结果到微信")
+    screen_parser.add_argument("--send-key", default=None,
+                               help="Server 酱 SendKey（不填则读 serverchan_config.json）")
 
     # 列出策略
     subparsers.add_parser("list", help="列出所有可用策略")
@@ -78,6 +82,11 @@ def _run_screen(args):
     print(f"📊 开始筛选... 市场: {args.market}, 策略: {strategies or '全部'}")
     result = engine.get_recommendation(strategies=strategies, top_n=args.top)
 
+    # Server 酱微信推送（--push）
+    if getattr(args, "push", False):
+        _push_to_wechat(result, market_label=args.market, top_n=args.top,
+                        send_key=getattr(args, "send_key", None))
+
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
@@ -107,6 +116,35 @@ def _run_screen(args):
         for s in detail.get("top_stocks", [])[:3]:
             sigs = " | ".join(s.get("signals", [])[:3])
             print(f"   → {s['name']}({s['ts_code']})  评分:{s['score']}  [{sigs}]")
+
+
+def _push_to_wechat(result, market_label="主板", top_n=20, send_key=None):
+    """通过 Server 酱把筛选结果推送到微信。
+
+    SendKey 优先级：命令行 --send-key > 环境变量 SERVERCHAN_SENDKEY
+                   > 项目根目录 serverchan_config.json。
+    """
+    import os
+    from stock_screener.core.serverchan import ServerChanPusher, push_result_from_config
+
+    print("\n📲 推送结果到微信（Server 酱）...")
+    key = send_key or os.environ.get("SERVERCHAN_SENDKEY")
+    try:
+        if key:
+            resp = ServerChanPusher(key).push_screen_result(
+                result, top_n=top_n, market_label=market_label)
+        else:
+            cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "serverchan_config.json")
+            resp = push_result_from_config(result, config_path=cfg)
+    except Exception as e:
+        print(f"   ❌ 推送异常: {e}")
+        return
+
+    if resp.get("success"):
+        print("   ✅ 微信推送成功")
+    else:
+        print(f"   ⚠️ 推送失败: {resp.get('error')}")
 
 
 def _list_strategies():

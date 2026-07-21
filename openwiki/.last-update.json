@@ -1,0 +1,9 @@
+{
+  "generatedAt": "2026-07-20T16:10:00+08:00",
+  "mode": "code",
+  "provider": "openai-compatible",
+  "baseUrl": "https://apihub.agnes-ai.com/v1",
+  "model": "agnes-2.0-flash",
+  "source": "docs/DOCUMENTATION.md (restructured to OKF)",
+  "note": "由 stock_screener 既有仓库代码分析生成；agnes-2.0-flash 免费额度，零成本。"
+}
