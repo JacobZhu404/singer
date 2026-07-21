@@ -20,8 +20,8 @@ data/tdx_vipdoc/
 venv/
 .venv/
 
-# Server 酱 SendKey（含密钥，禁止提交）
-serverchan_config.json
+# Server 酱 SendKey 配置文件：故意提交到仓库，便于多台机器复用（说明见 docs/serverchan.md）
+# serverchan_config.json
 
 # IDE
 .vscode/
