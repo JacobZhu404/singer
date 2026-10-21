@@ -109,7 +109,8 @@ class Observability:
 
     def error(self, source: str, op: str, message: str,
               context: Optional[Dict[str, Any]] = None,
-              exc: Optional[BaseException] = None) -> None:
+              exc: Optional[BaseException] = None,
+              duration_ms: Optional[float] = None) -> None:
         tb = None
         if exc is not None:
             try:
@@ -118,7 +119,8 @@ class Observability:
                 tb = "".join(tb_lines[-6:])[:2000]
             except Exception:
                 tb = None
-        self._record(Level.ERROR, source, op, message, context, tb=tb)
+        self._record(Level.ERROR, source, op, message, context,
+                     duration_ms=duration_ms, tb=tb)
 
     @contextmanager
     def timer(self, source: str, op: str, context: Optional[Dict[str, Any]] = None,
@@ -134,10 +136,9 @@ class Observability:
         finally:
             dur_ms = (time.perf_counter() - start) * 1000.0
             if err is not None:
+                # 只记一条 error（同时带上耗时），避免 errors_by_source 计数翻倍
                 self.error(source, op, f"{op} 异常: {err}",
-                           context=context, exc=err)
-                # 仍然把耗时记下来
-                self._record(Level.ERROR, source, op, f"{op} 失败耗时", context, dur_ms)
+                           context=context, exc=err, duration_ms=dur_ms)
             else:
                 self._record(level, source, op, f"{op} 完成", context, dur_ms)
 

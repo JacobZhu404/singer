@@ -26,6 +26,9 @@ def _to_tencent_code(code: str) -> str:
     if len(c) > 2 and c[:2].lower() in ("sh", "sz", "bj"):
         return c
     # 纯数字，添加前缀
+    # 北交所：新代码段 920xxx、精选层/老三板 8xxxxx/4xxxxx → bj
+    if c.startswith("920") or c.startswith("8") or c.startswith("4"):
+        return "bj" + c
     if c.startswith("6") or c.startswith("5"):
         return "sh" + c
     else:

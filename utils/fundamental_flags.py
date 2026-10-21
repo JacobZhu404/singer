@@ -63,7 +63,8 @@ def compute_fundamental_flags(pe, pb) -> List[dict]:
 def fundamental_score_adjustment(pe, pb) -> Tuple[float, List[str]]:
     """
     根据 PE/PB 计算综合分调整量（负数为惩罚，正数为加成）。
-    返回 (adjustment, reasons)。规模 ≤ ±8 分，避免压过技术面主因子。
+    返回 (adjustment, reasons)。总惩罚 clip 到 [-8, 0]，避免压过技术面主因子
+    （PE<0 与 PB<0 叠加原本可达 -11，超出设计上限）。
 
     设计意图：避免「技术好看但基本面踩雷」，不是做价值因子——
     所以**只罚不奖**：亏损/极高 PE 给惩罚；正常 PE 不加分。
@@ -87,4 +88,6 @@ def fundamental_score_adjustment(pe, pb) -> Tuple[float, List[str]]:
         elif pb > 10:
             adj -= 2.0
             reasons.append(f"PB极高({pb:.1f})")
+    # 兑现 ≤ ±8 的设计约束：叠加惩罚不越过下限
+    adj = max(adj, -8.0)
     return adj, reasons
