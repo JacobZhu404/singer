@@ -229,6 +229,16 @@ docker compose up --build
 # 访问 http://localhost:5188
 ```
 
+容器与本地统一使用 `requirements.txt`，容器额外安装 Gunicorn。
+默认使用 **1 个 worker、4 个线程**：筛选任务状态、停止事件和 SSE 订阅保存在
+进程内，不能直接增加 worker 或部署多个副本；扩容前需要引入共享任务状态和消息机制。
+
+数据卷挂载到 `/app/stock_screener/data`，覆盖实际的持仓、筛选结果及行情缓存目录。
+已有部署升级前应备份容器中的该目录和旧数据卷；旧 `/app/data` 卷不会自动合并容器内
+原先未挂载的持仓文件。恢复数据后再重建容器，不要使用 `docker compose down -v` 删除旧卷。
+
+修复与验证记录见 [维护记录](docs/maintenance.md)。
+
 ### 阿里云 ECS 一键部署
 
 ```bash

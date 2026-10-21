@@ -26,7 +26,7 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       # 持久化持仓数据
-      - gezhe-data:/app/data
+      - gezhe-data:/app/stock_screener/data
       # 持久化日志
       - gezhe-logs:/app/logs
     healthcheck:

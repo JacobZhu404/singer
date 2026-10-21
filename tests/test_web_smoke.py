@@ -7,11 +7,19 @@ POST 路由不在本测试覆盖范围内（会触发后台筛选/下载，不�
 import pytest
 
 
-@pytest.fixture(scope="module")
-def client():
-    from stock_screener.core.server import app
-    app.config["TESTING"] = True
-    with app.test_client() as c:
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    from stock_screener.core import server
+    from stock_screener.portfolio import manager
+
+    # 使用临时账户，既不读取用户持仓，也不向真实数据目录写入。
+    monkeypatch.setattr(manager, "PORTFOLIO_FILE", str(tmp_path / "portfolio.json"))
+    portfolio = manager.Portfolio()
+    portfolio.buy("600000", "测试股票", 10.0, 100)
+    monkeypatch.setattr(server, "get_portfolio", lambda: portfolio)
+    monkeypatch.setattr(server, "get_stock_realtime", lambda code: {"最新价": 12.0})
+    monkeypatch.setitem(server.app.config, "TESTING", True)
+    with server.app.test_client() as c:
         yield c
 
 
@@ -82,6 +90,10 @@ def test_portfolio_route(client):
     assert rv.status_code == 200
     body = rv.get_json()
     assert body.get("code") == 0
+    data = body["data"]
+    assert data["account"]["position_count"] == 1
+    assert data["positions"][0]["current_price"] == 12.0
+    assert data["account"]["position_value"] == 1200.0
 
 
 def test_screen_stop_when_idle(client):
